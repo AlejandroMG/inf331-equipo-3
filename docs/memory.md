@@ -112,3 +112,63 @@ Armar el backlog del proyecto para tres personas trabajando en paralelo, cargarl
 - La restricción de exclusión contra reservas cruzadas va en SQL dentro de una migración (ver `docs/arquitectura.md`), no en el schema de Prisma.
 
 ---
+
+### 2026-09-26 · A (AlejandroMG) · F-04 PostgreSQL en Docker y validación de variables de entorno
+
+**Issues:** #4 (F-04)
+**Rama / PR:** `feat/F-04-postgres-docker` · sin PR todavía
+**Duración aproximada:** 2 h
+**Herramientas:** manual, con Claude Code como guía (explicó cada paso y revisó el código; no escribió los archivos del proyecto)
+
+#### Objetivo
+Dejar una base de datos PostgreSQL de desarrollo y otra de test levantables con un solo comando, y hacer que la API se niegue a arrancar si faltan variables de entorno obligatorias.
+
+#### Qué se hizo
+- `docker-compose.yml` con dos servicios PostgreSQL 17: `db-dev` (puerto 5432, con volumen para conservar los datos) y `db-test` (puerto 5433, sin volumen).
+- `DATABASE_URL` y `DATABASE_TEST_URL` documentadas en `.env.example` y en la tabla de variables de `docs/arquitectura.md`.
+- Instaladas `@nestjs/config`, `class-validator` y `class-transformer` en `rentsmart-back`.
+- `src/config/env.validation.ts`: clase `EnvironmentVariables` y función `validate`, que lanza un error con el nombre de cada variable inválida y el motivo.
+- `ConfigModule.forRoot({ isGlobal: true, validate })` registrado en `AppModule`.
+- `src/config/env.validation.spec.ts` con 4 pruebas: configuración válida, falta `DATABASE_URL`, `PORT` no numérico y conversión de `PORT` de texto a número.
+
+#### Decisiones y por qué
+| Decisión | Alternativas consideradas | Por qué se eligió |
+|---|---|---|
+| Dos servicios separados (`db-dev` y `db-test`) con usuarios y bases distintos | Una sola base para todo; un solo contenedor con dos bases | Los tests de integración pueden borrar datos sin tocar los de desarrollo, y cada servicio se entiende por separado |
+| Volumen solo en `db-dev` | Volumen en ambas | La base de test debe partir limpia; la de desarrollo debe conservar los datos entre reinicios |
+| Credenciales de desarrollo escritas directamente en el compose y en `.env.example` | Leerlas desde un `.env` de la raíz | Son valores solo para local y así `docker compose up` funciona sin configurar nada. Si se cambia uno, hay que cambiar el otro |
+| Validar con `class-validator` | Joi o zod | El proyecto ya usa `class-validator` en los DTOs (`AGENTS.md`), así se evita una segunda librería |
+| `DATABASE_TEST_URL` y `PORT` opcionales; `DATABASE_URL` obligatoria | Exigir todas | Solo `DATABASE_URL` es necesaria para arrancar; la de test la usan únicamente los tests de integración y `PORT` tiene valor por defecto |
+| `import 'reflect-metadata'` al inicio de `env.validation.ts` | Importarlo solo en el spec | `@Type()` de `class-transformer` necesita `Reflect.getMetadata`. En la API lo carga Nest, pero en un test aislado no. Así el archivo funciona en cualquier contexto |
+
+#### Archivos principales
+- `docker-compose.yml`: bases `db-dev` y `db-test`.
+- `.env.example`: `DATABASE_URL` y `DATABASE_TEST_URL`.
+- `docs/arquitectura.md`: tabla de variables de entorno.
+- `rentsmart-back/src/config/env.validation.ts`: validación de variables.
+- `rentsmart-back/src/config/env.validation.spec.ts`: pruebas de la validación.
+- `rentsmart-back/src/app.module.ts`: registro de `ConfigModule`.
+- `rentsmart-back/package.json` y `package-lock.json`: dependencias nuevas.
+
+#### Cómo probarlo
+- Bases de datos (Docker Desktop encendido): `docker compose up -d`, luego `docker compose ps` y `docker compose exec db-dev psql -U devuser -d devdb -c "SELECT 1;"`.
+- Tests y calidad, desde `rentsmart-back`: `npm test`, `npm run lint` y `npm run build`.
+- Validación al arrancar: `cp ../.env.example .env` y `npm run start:dev` debe arrancar. Si se borra `DATABASE_URL` del `.env`, debe negarse a arrancar y nombrar la variable.
+
+#### Estado de verificación
+- Build: ✅
+- Lint: ✅ (0 advertencias, 0 errores)
+- Tests: ✅ (2 suites, 5 pruebas)
+
+#### Pendientes y bloqueos
+- F-03 (#3): modelo de datos, migración y seed con Prisma. Necesita estas bases de datos y usará `DATABASE_URL`.
+- El arranque de la API sin `DATABASE_URL` y `docker compose up` con las dos bases se probaron a mano solo si consta en el PR. Confirmar antes de mergear.
+- Falta abrir el PR con `Closes #4`; lo revisa B (@xReNatS) según la rotación.
+
+#### Para el resto del equipo
+- Desde ahora la API exige `DATABASE_URL` en `rentsmart-back/.env`. Copien `.env.example` como `.env` (`cp .env.example rentsmart-back/.env`) o el back no arranca.
+- Antes de trabajar con datos: `docker compose up -d` en la raíz del repo.
+- Los tests de integración deben usar `DATABASE_TEST_URL` (puerto 5433), nunca `DATABASE_URL`.
+- Al usar decoradores de `class-transformer` fuera de Nest (tests, scripts), importar `reflect-metadata` primero.
+
+---
