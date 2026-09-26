@@ -61,7 +61,7 @@ Lo que otro integrante o agente necesita saber antes de tocar esta parte: supues
 ### 2026-09-25 · B (xReNatS) · Backlog, decisiones iniciales y documentación base
 
 **Issues:** #1 (F-01), #2 (F-02), #68–#78 (P-01 a P-11)
-**Rama / PR:** sin rama, cambios locales en `main` · sin PR todavía
+**Rama / PR:** `docs/F-01-F-02-base-y-decisiones` · PR #85
 **Duración aproximada:** 3 h
 **Herramientas:** Claude Code
 
@@ -101,7 +101,7 @@ Armar el backlog del proyecto para tres personas trabajando en paralelo, cargarl
 - Tests: ❌ el back falla con Node 22.16 ("Must use import to load ES Module"). No lo causan estos cambios: NestJS 12 es solo ESM y Jest necesita Node 24.9+ (T-03). Hay que volver a correrlos con Node 24.9+.
 
 #### Pendientes y bloqueos
-- Commitear estos cambios (los commits son manuales) y abrir el PR que cierre #1 y #2.
+- Revisión y merge del PR #85 (revisa @gonzzza-lol según la rotación); al mergear se cierran #1 y #2.
 - Decidir P-12, P-13, P-15 y P-17 antes del 3 de octubre: las necesita el Sprint 2.
 - Preguntar al profesor P-11 (meta de pruebas) y si el 9 de octubre es la entrega final.
 - F-11: crear el tablero de GitHub Projects.
