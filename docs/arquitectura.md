@@ -209,7 +209,7 @@ Solo `PORT` y `VITE_API_URL` existen hoy. Las demás se agregan a `.env.example`
 |---|---|---|---|
 | `PORT` | back | Puerto de la API (3000 por defecto) | — |
 | `VITE_API_URL` | front | URL base de la API | F-07 |
-| `DATABASE_URL` | back | Conexión a PostgreSQL | F-03 |
+| `DATABASE_URL`, `DATABASE_TEST_URL` | back | Conexión a PostgreSQL | F-04, F-03 |
 | `JWT_SECRET`, `JWT_EXPIRES_IN` | back | Firma y duración del token | CU-02 |
 | `FRONTEND_URL` | back | Origen permitido por CORS y URLs de retorno de Stripe | CU-05 |
 | `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_BUCKET` | back | Subida de fotos | ES-03 |
