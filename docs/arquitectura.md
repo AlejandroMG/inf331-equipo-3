@@ -103,6 +103,21 @@ Borrador para F-03 ([#3](https://github.com/AlejandroMG/inf331-equipo-3/issues/3
 
 Estados de `Booking`: `PENDING`, `PAID`, `CONFIRMED`, `FINISHED`, `CANCELLED`, `EXPIRED`.
 
+### Migraciones y seed
+
+- El schema vive en `rentsmart-back/prisma/schema.prisma` y el cliente se genera en `src/generated/prisma` (no se versiona). Tras cada `git pull` con migraciones nuevas: `npx prisma migrate dev`.
+- `booking_no_overlap` es una migración SQL escrita a mano (ver [Cómo se evitan reservas cruzadas](#cómo-se-evitan-reservas-cruzadas)).
+- Cambios al schema: PR chico, solo del schema, avisando en el grupo; A lo revisa.
+- `npm run seed` carga:
+
+| Dato | Contenido |
+|---|---|
+| Usuarios | `admin@rentsmart.test` (ADMIN), `propietario@rentsmart.test` (USER, isHost), `arrendatario@rentsmart.test` (USER). Contraseña `Password123` |
+| Tipos de espacio | Los 8 de P-08 |
+| Ubicación | Región Metropolitana con 5 comunas |
+| Equipamiento | 5 ítems básicos |
+| Espacios | 10 en estado `ACTIVE`, del propietario de prueba, con horario lunes a viernes 09:00–21:00 y sin fotos |
+
 ### Fechas y dinero
 
 - Las fechas se guardan como `timestamptz` en UTC y se muestran en `America/Santiago`.

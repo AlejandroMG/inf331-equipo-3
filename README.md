@@ -24,8 +24,18 @@ Proyecto del ramo INF331, equipo 3.
    cp .env.example rentsmart-back/.env
    cp .env.example rentsmart-front/.env
    ```
+2. Base de datos, desde la raíz del repo:
 
-2. Backend (queda en http://localhost:3000):
+   ```bash
+   docker compose up -d
+   cd rentsmart-back
+   npm install
+   npx prisma migrate dev   # crear las tablas y generar el cliente de Prisma
+   npm run seed             # carga datos de prueba
+   ```
+
+   Usuarios de prueba (contraseña `Password123`): `admin@rentsmart.test`, `propietario@rentsmart.test` y `arrendatario@rentsmart.test`.
+3. Backend (queda en http://localhost:3000):
 
    ```bash
    cd rentsmart-back
@@ -33,7 +43,7 @@ Proyecto del ramo INF331, equipo 3.
    npm run start:dev
    ```
 
-3. Frontend, en otra terminal (queda en http://localhost:5173):
+4. Frontend, en otra terminal (queda en http://localhost:5173):
 
    ```bash
    cd rentsmart-front
@@ -53,6 +63,10 @@ Proyecto del ramo INF331, equipo 3.
 | front | `npm run dev` | Servidor de desarrollo de Vite |
 | front | `npm run build` | Build de producción en `dist/` |
 | front | `npm run lint` | Lint con ESLint |
+| raíz | `docker compose up -d` | Levanta PostgreSQL de desarrollo (5432) y de test (5433) |
+| back | `npx prisma migrate dev` | Aplica migraciones y regenera el cliente de Prisma |
+| back | `npm run seed` | Carga datos de prueba (se puede repetir) |
+| back | `npx prisma studio` | Explorador visual de la base de datos |
 
 ## Documentación
 
