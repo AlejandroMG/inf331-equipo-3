@@ -172,3 +172,52 @@ Dejar una base de datos PostgreSQL de desarrollo y otra de test levantables con 
 - Al usar decoradores de `class-transformer` fuera de Nest (tests, scripts), importar `reflect-metadata` primero.
 
 ---
+
+### 2026-09-27 · A (AlejandroMG) · F-03 modelo de datos v1 con Prisma, migraciones y seed
+
+**Issues:** #3 (F-03)
+**Rama / PR:** `feat/F-03-prisma-schema-seed` (sale de `feat/F-04-postgres-docker`) · sin PR todavía
+**Duración aproximada:** 3 h
+**Herramientas:** Claude Code (ayuda en redacción de `schema.prisma` y revisión del seed y de `PrismaService`)
+
+#### Objetivo
+Modelo de datos de los tres dominios en Prisma, migraciones reproducibles, datos de prueba y un `PrismaService` inyectable.
+
+#### Qué se hizo
+- Prisma 7.10.0 con `@prisma/adapter-pg`; `prisma.config.ts` con schema, migraciones y seed.
+- `schema.prisma` con todos los modelos de `docs/arquitectura.md`.
+- Migraciones `init` y `booking_no_overlap` (restricción SQL contra reservas traslapadas).
+- `prisma/seed.ts`: 3 usuarios (admin, propietario, arrendatario), 8 tipos de espacio, RM con 5 comunas y 10 espacios activos con horario.
+- `PrismaModule` global con `PrismaService` y un test de conexión contra la BD de test.
+
+#### Decisiones y por qué
+| Decisión | Alternativas consideradas | Por qué se eligió |
+|---|---|---|
+| Prisma 7.10.0 fijo | 8.0.0-rc (lo que instala `latest`) | Un release candidate no es estable para la entrega |
+| Campos de `Space` casi todos opcionales | Obligatorios en la BD | ES-02 guarda borradores; ES-04 valida en el servicio |
+| Anti-traslape en migración SQL | Solo validar en el servicio | Prisma no lo soporta y protege contra solicitudes simultáneas |
+| Seed con `upsert` | `create` | Se puede correr varias veces sin duplicar |
+
+#### Archivos principales
+- `rentsmart-back/prisma/`: schema, migraciones y seed.
+- `rentsmart-back/src/prisma/`: módulo, servicio y test.
+- `rentsmart-back/jest.config.ts`: mapeo de imports `.js` para el cliente generado.
+
+#### Cómo probarlo
+`docker compose up -d`; en `rentsmart-back`: `npx prisma migrate dev`, `npm run seed`, `npm test`. Usuarios `admin@`, `propietario@` y `arrendatario@rentsmart.test`, contraseña `Password123`.
+
+#### Estado de verificación
+- Build: ✅
+- Lint: ✅
+- Tests: ✅ (3 suites, 6 pruebas; requiere `db-test` levantada)
+
+#### Pendientes y bloqueos
+- Revisar el ERD con B y C (criterio de aceptación).
+- PR con base en F-04 hasta que F-04 se mergee.
+
+#### Para el resto del equipo
+- Tras un `git pull` con migraciones: `npx prisma migrate dev`, o el back no compila.
+- Usen `PrismaService` inyectado; no actualicen a `prisma@latest`.
+- C: la BD rechaza reservas activas traslapadas; traducir ese error a 409. El CI necesita `db-test` y `prisma generate`.
+
+---

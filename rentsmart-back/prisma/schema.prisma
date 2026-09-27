@@ -1,0 +1,278 @@
+// Modelo de datos de RentSmart (F-03). Diseño en docs/arquitectura.md.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+enum UserRole {
+  USER
+  ADMIN
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+}
+
+enum SpaceStatus {
+  DRAFT
+  ACTIVE
+  INACTIVE
+  BLOCKED
+}
+
+enum BookingUnit {
+  HOUR
+  DAY
+}
+
+enum BookingStatus {
+  PENDING
+  PAID
+  CONFIRMED
+  FINISHED
+  CANCELLED
+  EXPIRED
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
+  REFUNDED
+}
+
+// ---------------------------------------------------------------------------
+// Cuentas (dominio A)
+// ---------------------------------------------------------------------------
+
+model User {
+  id           String     @id @default(uuid())
+  email        String     @unique
+  passwordHash String
+  name         String
+  phone        String?
+  role         UserRole   @default(USER)
+  // Se activa al publicar el primer espacio (P-02).
+  isHost       Boolean    @default(false)
+  status       UserStatus @default(ACTIVE)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  spaces        Space[]
+  bookings      Booking[]      @relation("Renter")
+  bookingEvents BookingEvent[]
+  reviews       Review[]
+}
+
+// ---------------------------------------------------------------------------
+// Catálogos (dominio B). Los carga el seed.
+// ---------------------------------------------------------------------------
+
+model Region {
+  id   Int    @id @default(autoincrement())
+  name String @unique
+
+  communes Commune[]
+  spaces   Space[]
+}
+
+model Commune {
+  id       Int    @id @default(autoincrement())
+  name     String
+  regionId Int
+  region   Region @relation(fields: [regionId], references: [id])
+
+  spaces Space[]
+
+  // Dos regiones distintas pueden tener comunas con el mismo nombre.
+  @@unique([regionId, name])
+}
+
+model SpaceType {
+  id   Int    @id @default(autoincrement())
+  name String @unique
+
+  spaces Space[]
+}
+
+model Amenity {
+  id   Int    @id @default(autoincrement())
+  name String @unique
+
+  spaces SpaceAmenity[]
+}
+
+// ---------------------------------------------------------------------------
+// Espacios (dominio B)
+// ---------------------------------------------------------------------------
+
+// Muchos campos son opcionales porque el formulario guarda un borrador en cada
+// paso (ES-02). Las reglas de publicación (ES-04) se validan en el servicio.
+model Space {
+  id            String      @id @default(uuid())
+  ownerId       String
+  owner         User        @relation(fields: [ownerId], references: [id])
+  typeId        Int?
+  type          SpaceType?  @relation(fields: [typeId], references: [id])
+  name          String
+  description   String?
+  capacity      Int?
+  // Montos en CLP como enteros, sin decimales.
+  pricePerHour  Int?
+  pricePerDay   Int?
+  regionId      Int?
+  region        Region?     @relation(fields: [regionId], references: [id])
+  communeId     Int?
+  commune       Commune?    @relation(fields: [communeId], references: [id])
+  // Dirección pública.
+  address       String?
+  // Depto, oficina e indicaciones: solo lo ve quien tiene una reserva CONFIRMED (P-09).
+  addressDetail String?
+  rules         String?
+  status        SpaceStatus @default(DRAFT)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  amenities SpaceAmenity[]
+  photos    SpacePhoto[]
+  rulesWeek AvailabilityRule[]
+  bookings  Booking[]
+  reviews   Review[]
+
+  // Consultas del catálogo: solo activos, filtrados por comuna y tipo.
+  @@index([status, communeId])
+  @@index([status, typeId])
+  @@index([ownerId])
+}
+
+model SpaceAmenity {
+  spaceId   String
+  space     Space   @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  amenityId Int
+  amenity   Amenity @relation(fields: [amenityId], references: [id])
+
+  @@id([spaceId, amenityId])
+}
+
+model SpacePhoto {
+  id          String @id @default(uuid())
+  spaceId     String
+  space       Space  @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  storagePath String
+  url         String
+  // Orden en la galería; 0 es la portada.
+  position    Int    @default(0)
+
+  @@index([spaceId, position])
+}
+
+// ---------------------------------------------------------------------------
+// Disponibilidad y reservas (dominio C)
+// ---------------------------------------------------------------------------
+
+// Horario semanal en hora local de Santiago, en bloques de 1 h.
+model AvailabilityRule {
+  id        String @id @default(uuid())
+  spaceId   String
+  space     Space  @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  // 0 = domingo ... 6 = sábado.
+  weekday   Int
+  // Formato "HH:mm", por ejemplo "09:00".
+  startTime String
+  endTime   String
+
+  @@index([spaceId, weekday])
+}
+
+// OJO: la restricción que impide reservas traslapadas (booking_no_overlap)
+// se agrega a mano en SQL dentro de una migración. Prisma no la puede
+// expresar en el schema. Ver docs/arquitectura.md, "Cómo se evitan reservas cruzadas".
+model Booking {
+  id                      String        @id @default(uuid())
+  spaceId                 String
+  space                   Space         @relation(fields: [spaceId], references: [id])
+  renterId                String
+  renter                  User          @relation("Renter", fields: [renterId], references: [id])
+  // Se guardan como timestamptz (UTC); el front las muestra en America/Santiago.
+  startAt                 DateTime      @db.Timestamptz(3)
+  endAt                   DateTime      @db.Timestamptz(3)
+  unit                    BookingUnit
+  subtotal                Int
+  fee                     Int           @default(0)
+  total                   Int
+  status                  BookingStatus @default(PENDING)
+  // Hasta cuándo se retiene el horario mientras se paga (30 min).
+  expiresAt               DateTime?     @db.Timestamptz(3)
+  stripeCheckoutSessionId String?       @unique
+  createdAt               DateTime      @default(now())
+  updatedAt               DateTime      @updatedAt
+
+  events  BookingEvent[]
+  payment Payment?
+  review  Review?
+
+  @@index([spaceId, startAt, endAt])
+  @@index([renterId, status])
+  @@index([status, expiresAt])
+}
+
+// Historial de cada cambio de estado de una reserva.
+model BookingEvent {
+  id         String         @id @default(uuid())
+  bookingId  String
+  booking    Booking        @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  fromStatus BookingStatus?
+  toStatus   BookingStatus
+  // Nulo cuando el cambio lo hizo el sistema (webhook, tarea programada).
+  actorId    String?
+  actor      User?          @relation(fields: [actorId], references: [id])
+  reason     String?
+  createdAt  DateTime       @default(now())
+
+  @@index([bookingId, createdAt])
+}
+
+model Payment {
+  id                    String        @id @default(uuid())
+  bookingId             String        @unique
+  booking               Booking       @relation(fields: [bookingId], references: [id])
+  stripeSessionId       String        @unique
+  stripePaymentIntentId String?
+  amount                Int
+  fee                   Int           @default(0)
+  refundedAmount        Int           @default(0)
+  status                PaymentStatus @default(PENDING)
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
+}
+
+// ---------------------------------------------------------------------------
+// Reseñas (dominio A; se usan después del 9 de octubre)
+// ---------------------------------------------------------------------------
+
+model Review {
+  id        String   @id @default(uuid())
+  // Una reseña por reserva.
+  bookingId String   @unique
+  booking   Booking  @relation(fields: [bookingId], references: [id])
+  authorId  String
+  author    User     @relation(fields: [authorId], references: [id])
+  spaceId   String
+  space     Space    @relation(fields: [spaceId], references: [id])
+  // 1 a 5; el rango se valida en el servicio.
+  rating    Int
+  comment   String?
+  createdAt DateTime @default(now())
+
+  @@index([spaceId])
+}
