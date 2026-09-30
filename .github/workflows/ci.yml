@@ -1,0 +1,99 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend (NestJS)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: rentsmart-back
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: rentsmart-back/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint (oxlint)
+        run: npm run lint
+
+      - name: Unit tests y reporte de cobertura
+        run: npm run test:cov
+
+      - name: Publicar resumen de cobertura
+        if: always()
+        run: |
+          echo "### 📊 Cobertura del Backend" >> $GITHUB_STEP_SUMMARY
+          if [ -f coverage/coverage-summary.json ]; then
+            node -e "
+              const s = require('./coverage/coverage-summary.json').total;
+              const fmt = (v) => v.pct.toFixed(1) + '%';
+              console.log('| Métrica | Cobertura |');
+              console.log('|---|---|');
+              console.log('| Sentencias | ' + fmt(s.statements) + ' |');
+              console.log('| Ramas | ' + fmt(s.branches) + ' |');
+              console.log('| Funciones | ' + fmt(s.functions) + ' |');
+              console.log('| Líneas | ' + fmt(s.lines) + ' |');
+            " >> $GITHUB_STEP_SUMMARY
+          else
+            echo "Reporte de cobertura generado en \`rentsmart-back/coverage/\`" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Subir artefacto de cobertura
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-coverage-report
+          path: rentsmart-back/coverage/
+          retention-days: 7
+
+      - name: Build de producción
+        run: npm run build
+
+  frontend:
+    name: Frontend (React)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: rentsmart-front
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: rentsmart-front/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint (ESLint)
+        run: npm run lint
+
+      - name: Tests (si existen)
+        run: npm test --if-present
+
+      - name: Build de producción
+        run: npm run build
