@@ -112,3 +112,42 @@ Armar el backlog del proyecto para tres personas trabajando en paralelo, cargarl
 - La restricción de exclusión contra reservas cruzadas va en SQL dentro de una migración (ver `docs/arquitectura.md`), no en el schema de Prisma.
 
 ---
+
+### 2026-09-29 · C (gonzzza-lol) · Plantilla de Pull Request y convenciones de Git (F-11)
+
+**Issues:** #11 (F-11)
+**Rama / PR:** `feat/F-11-plantilla-pr-y-convenciones-git` · sin PR todavía
+**Duración aproximada:** 30 min
+**Herramientas:** Antigravity
+
+#### Objetivo
+Implementar la plantilla oficial de Pull Request para el repositorio y formalizar las convenciones de Git y ramas según lo especificado en la historia F-11.
+
+#### Qué se hizo
+- Se creó `.github/pull_request_template.md` alineado con `docs/flujo-de-trabajo.md`, incluyendo secciones para descripción del cambio (`Closes #N`), pasos de prueba y el checklist completo de la definición de terminado (tests, build/lint, Swagger, variables de entorno, bitácora de sesión y alerta de cambios en `schema.prisma`).
+- Se verificaron las convenciones de ramas (`feat/<ID>-descripcion-corta`) y commits convencionales `<tipo>(<ámbito>): <ID> <descripción en español>`.
+
+#### Decisiones y por qué
+| Decisión | Alternativas consideradas | Por qué se eligió |
+|---|---|---|
+| Plantilla de PR en `.github/pull_request_template.md` | Mantener solo el texto explicativo en `flujo-de-trabajo.md` | GitHub carga automáticamente este archivo al abrir un PR, asegurando que ningún desarrollador omita la definición de terminado ni el enlace al issue |
+
+#### Archivos principales
+- `.github/pull_request_template.md`: plantilla de Pull Request con checklist de Definition of Done.
+- `docs/memory.md`: registro de esta sesión.
+
+#### Cómo probarlo
+- Al abrir un nuevo Pull Request en GitHub o previsualizar `.github/pull_request_template.md`, se debe cargar automáticamente la estructura con el checklist de definición de terminado.
+
+#### Estado de verificación
+- Build: no aplica (solo configuración y markdown)
+- Lint: no aplica
+- Tests: no aplica
+
+#### Pendientes y bloqueos
+- Crear el PR para F-11 y solicitar revisión a A (@AlejandroMG) según la rotación de revisión.
+
+#### Para el resto del equipo
+- A partir de este cambio, cada nuevo PR creado en GitHub prellenará la plantilla con la checklist obligatoria de definición de terminado.
+
+---
