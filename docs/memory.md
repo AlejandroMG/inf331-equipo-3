@@ -413,3 +413,56 @@ Dejar la base del front para que A y C construyan sus pantallas: TypeScript, rut
 - C (@gonzzza-lol): el detalle del espacio (BU-02) tendrá un lugar para `<BookingWidget spaceId>`, y el formulario de publicar uno para `<HorarioSemanal>`.
 
 ---
+
+### 2026-10-05 · B (xReNatS) · F-08 pruebas del front con Vitest, Testing Library y MSW (en el mismo PR que F-07)
+
+**Issues:** #8 (F-08); completa la definición de terminado de #7 (F-07)
+**Rama / PR:** `feat/F-07-base-front-ts` · sin PR todavía
+**Duración aproximada:** 1,5 h
+**Herramientas:** Claude Code
+
+#### Objetivo
+Tener `npm test` corriendo en el CI y probar lo construido en F-07. Se decidió llevar F-08 en el mismo PR que F-07 para que ninguno quede sin pruebas (la entrada anterior de F-07 decía que los tests llegarían en un PR aparte).
+
+#### Qué se hizo
+- Vitest con jsdom, Testing Library y user-event, y MSW para simular la API. Scripts `test` y `test:watch`; el CI ya ejecutaba `npm test --if-present`, así que desde ahora corre las pruebas sin tocar el workflow.
+- `src/test/setup.ts`: jest-dom, ciclo de vida de MSW (una petición sin handler falla el test), limpieza de `localStorage` entre pruebas y simulación de `<dialog>`, que jsdom no implementa.
+- `src/mocks/`: `handlers.ts` (ejemplo: `GET /api/space-types`), `server.ts` para los tests y `browser.ts` con el service worker (`public/mockServiceWorker.js`), activado con `VITE_USE_MOCKS=true`.
+- 60 pruebas en 10 archivos: cliente HTTP (token, query string, JSON, FormData, 204, mensajes de error, 401, red caída y cancelación), token, `formatClp` y `cn`, un endpoint simulado de ejemplo, `Button`, `LinkButton`, `Input`, `Modal`, `Toast`, `Navbar` y las rutas (redirección a `/login` guardando la ruta pedida, acceso con token, 404).
+- Las pruebas encontraron un fallo real: el cliente HTTP no dejaba pasar la cancelación (`AbortError`) y la convertía en error de red, porque comparaba con `instanceof DOMException`. Ahora compara por nombre.
+
+#### Decisiones y por qué
+| Decisión | Alternativas consideradas | Por qué se eligió |
+|---|---|---|
+| F-08 en el mismo PR que F-07 | Dos PR apilados | Cada historia debe terminar con tests; son piezas que se revisan juntas (el PR crece, pero es la base del front) |
+| `onUnhandledRequest: 'error'` en los tests | Dejar pasar a la red | Un test no debe depender de un servidor real ni pasar por accidente |
+| Se simula `<dialog>` en el setup | Cambiar el `Modal` por un `div` | El `<dialog>` nativo da foco, Esc y fondo bloqueado; jsdom solo necesita `showModal` y `close` |
+| Worker de MSW para el navegador con una variable opcional | Solo MSW en los tests | `docs/arquitectura.md` prevé mocks mientras el back no exista, para que A y C avancen |
+| Un solo handler de ejemplo | Mockear catálogo y espacios | El contrato de la API (F-05) todavía no está definido; cada dominio agrega los suyos |
+
+#### Archivos principales
+- `rentsmart-front/vite.config.ts`: bloque `test`.
+- `rentsmart-front/src/test/setup.ts`, `src/mocks/*`, `public/mockServiceWorker.js` (generado con `npx msw init public/`).
+- `rentsmart-front/src/**/*.test.ts(x)`: las pruebas, junto al código.
+- `rentsmart-front/src/lib/http.ts`: corrección de la cancelación.
+- `docs/arquitectura.md`, `.env.example`, `rentsmart-front/README.md`: variable `VITE_USE_MOCKS` y sección de pruebas.
+
+#### Cómo probarlo
+Desde `rentsmart-front`: `npm test`, `npm run lint` y `npm run build`.
+
+#### Estado de verificación
+- Build: ✅
+- Lint: ✅
+- Tests: ✅ (10 archivos, 60 pruebas)
+- No verificado: el worker de MSW en el navegador. En el navegador integrado de la herramienta el service worker no se registra (ni a mano), aunque el servidor entrega el script bien. Hay que probar `VITE_USE_MOCKS=true npm run dev` en Chrome o Edge antes de contar con ello.
+
+#### Pendientes y bloqueos
+- Probar el worker de MSW en un navegador real.
+- Abrir el PR con `Closes #7` y `Closes #8`; lo revisa C (@gonzzza-lol).
+
+#### Para el resto del equipo
+- Los tests van junto al código (`Algo.test.tsx`) y usan `render` de Testing Library. Para probar una pantalla con rutas: `createMemoryRouter(routes, { initialEntries: [...] })` (ejemplo en `src/routes.test.tsx`).
+- Para simular un endpoint: agrega un handler en `src/mocks/handlers.ts`; en un test puntual, `server.use(...)`.
+- Cualquier petición a la API sin handler hace fallar el test: es a propósito.
+
+---

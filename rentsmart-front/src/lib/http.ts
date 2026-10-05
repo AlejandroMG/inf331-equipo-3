@@ -101,7 +101,8 @@ export function createHttpClient(config: HttpClientConfig) {
         signal: options.signal,
       })
     } catch (error) {
-      if (error instanceof DOMException && error.name === 'AbortError') throw error
+      // Cancelar una petición no es un fallo de red. Se compara por nombre porque la clase DOMException puede ser distinta según el entorno.
+      if (typeof error === 'object' && error !== null && 'name' in error && error.name === 'AbortError') throw error
       throw new ApiError(0, 'No pudimos conectar con el servidor. Revisa tu conexión.')
     }
 
