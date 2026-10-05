@@ -104,6 +104,7 @@ describe('toForm', () => {
     addressDetail: null,
     rules: null,
     amenityIds: [1, 3],
+    photos: [],
     createdAt: '2026-10-05T00:00:00.000Z',
     updatedAt: '2026-10-05T00:00:00.000Z',
   }
@@ -132,7 +133,8 @@ describe('toForm', () => {
 })
 
 describe('publishChecklist', () => {
-  const done = (form: SpaceForm) => Object.fromEntries(publishChecklist(form).map((i) => [i.label, i.done]))
+  const done = (form: SpaceForm, photoCount = 0) =>
+    Object.fromEntries(publishChecklist(form, photoCount).map((i) => [i.label, i.done]))
 
   it('sin datos no hay nada listo', () => {
     expect(Object.values(done(emptyForm)).every((d) => !d)).toBe(true)
@@ -155,7 +157,13 @@ describe('publishChecklist', () => {
     expect(done({ ...emptyForm, description: '   ' }).Descripción).toBe(false)
   })
 
-  it('las fotos y el horario siguen pendientes hasta que se puedan cargar', () => {
-    expect(done(filled)).toMatchObject({ 'Al menos una foto': false, 'Horario semanal': false })
+  it('la foto se cuenta desde la primera subida', () => {
+    expect(done(filled, 0)['Al menos una foto']).toBe(false)
+    expect(done(filled, 1)['Al menos una foto']).toBe(true)
+    expect(done(filled, 10)['Al menos una foto']).toBe(true)
+  })
+
+  it('el horario sigue pendiente hasta que se pueda cargar (DI-01)', () => {
+    expect(done(filled, 3)['Horario semanal']).toBe(false)
   })
 })

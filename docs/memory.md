@@ -631,3 +631,55 @@ Construir el formulario por pasos de "Publica tu espacio" según el prototipo ap
 - A (@AlejandroMG): el formulario espera que el back valide con `ValidationPipe`; los mensajes de error 400 se muestran tal cual.
 
 ---
+
+### 2026-10-05 · B (xReNatS) · ES-03 subir y ordenar fotos (front)
+
+**Issues:** #22 (ES-03), parte del front
+**Rama / PR:** `feat/ES-03-photos-ui`, apilada sobre `feat/ES-02-wizard` · sin PR todavía
+**Duración aproximada:** 1,5 h
+**Herramientas:** Claude Code
+
+#### Objetivo
+Completar el paso "Fotos" del formulario de publicar: subir de 1 a 10 fotos, ordenarlas (la primera es la portada) y borrarlas, contra los endpoints de fotos del back.
+
+#### Qué se hizo
+- `PhotosStep`: botón "Agregar fotos" (selección múltiple), contador "n de 10 fotos", una tarjeta por foto con la insignia "Portada", mover a izquierda y derecha, "Hacer portada" y "Eliminar" (con confirmación en un `Modal`). Las fotos suben una a una y aparecen a medida que terminan, con un aviso de progreso.
+- `photo-rules`: validación en el cliente antes de subir (JPG, PNG o WebP, hasta 5 MB y lugar para hasta 10), con un mensaje por cada archivo rechazado; `moveItem` calcula el orden nuevo. El servidor vuelve a comprobar todo.
+- Con un error del servidor se muestra con el nombre del archivo y se sigue con las demás; con un 409 (espacio lleno) se deja de intentar. Si falla el orden o el borrado, la lista queda como estaba.
+- El formulario guarda las fotos al momento (no con el borrador): la lista "Para publicar necesitas" marca "Al menos una foto" y el resumen del último paso cuenta las fotos. `OwnerSpace` trae `photos`, así que un borrador abierto por su dirección muestra las suyas.
+- Handlers de MSW de las fotos (subir, ordenar y borrar), con imágenes de color generadas en el momento.
+- 38 pruebas nuevas (197 en total). Las pruebas encontraron un error de redacción ("no se subióron") y que `instanceof File` no sirve en MSW dentro de jsdom; ambos corregidos.
+- Probado de punta a punta en el navegador contra el back real: tres fotos subidas, "Hacer portada", orden guardado en la base, borrado que elimina la fila y el archivo, y las imágenes se ven (900×600) desde `/api/uploads` por el proxy.
+
+#### Decisiones y por qué
+| Decisión | Alternativas consideradas | Por qué se eligió |
+|---|---|---|
+| Subir de a una, mostrando cada foto al terminar | Subir todas en paralelo | El servidor limita a 10 de forma segura, pero el orden de llegada y los mensajes por archivo son más claros de a una |
+| Las fotos no pasan por el guardado del borrador | Incluirlas en el `PATCH` | Son archivos con su propio ciclo en el servidor (subir, ordenar, borrar) |
+| Botones ← → y "Hacer portada" | Arrastrar y soltar | Funciona con teclado y en móvil sin una librería; el arrastre queda como mejora |
+| Confirmar antes de eliminar | Borrar al instante | Una foto borrada no se recupera; el servidor también borra el archivo |
+| Validar en el cliente y en el servidor | Solo en el servidor | Evita subir un archivo de 20 MB solo para que lo rechace |
+
+#### Archivos principales
+- `rentsmart-front/src/features/spaces/`: `PhotosStep`, `photo-rules`, `spaces-api` y `types`, con sus pruebas.
+- `rentsmart-front/src/mocks/handlers.ts`.
+
+#### Cómo probarlo
+- Desde `rentsmart-front`: `npm run lint`, `npm run build` y `npm test`.
+- Con el back de ES-03 en `localhost:3000`: `npm run dev`, entrar con el login de desarrollo, crear un borrador y abrir el paso 4.
+
+#### Estado de verificación
+- Build: ✅
+- Lint: ✅
+- Tests: ✅ (24 archivos, 197 pruebas)
+- Navegador contra el back real: ✅ (descrito arriba).
+
+#### Pendientes y bloqueos
+- Depende del back de ES-03 (rama `feat/ES-03-photos-api`) y de la cadena de ramas anteriores.
+- Arrastrar y soltar para ordenar (mejora).
+- ES-04 (publicar de verdad) y el horario semanal (DI-01 de C) completan el flujo.
+
+#### Para el resto del equipo
+- Las fotos locales se ven bajo `/api/uploads`; con Supabase la `url` ya viene absoluta.
+
+---

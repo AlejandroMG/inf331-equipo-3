@@ -10,8 +10,9 @@ import { cn } from '../../lib/cn'
 import { formatClp } from '../../lib/format'
 import { paths } from '../../lib/paths'
 import { emptyForm, publishChecklist, toForm, toPayload, validate, type FormErrors } from './form'
+import { PhotosStep } from './PhotosStep'
 import { createSpace, updateSpace } from './spaces-api'
-import type { OwnerSpace, ReferenceItem, SpaceForm } from './types'
+import type { OwnerPhoto, OwnerSpace, ReferenceItem, SpaceForm } from './types'
 
 const STEPS = ['Información', 'Ubicación', 'Precio y horario', 'Fotos', 'Revisar'] as const
 
@@ -32,6 +33,8 @@ export function SpaceWizard({ types, amenities, region, communes, initialSpace }
   const navigate = useNavigate()
   const [form, setForm] = useState<SpaceForm>(() => (initialSpace ? toForm(initialSpace) : emptyForm))
   const [spaceId, setSpaceId] = useState<string | null>(initialSpace?.id ?? null)
+  // Las fotos se suben, ordenan y borran en el servidor apenas se hace: no pasan por el guardado del borrador.
+  const [photos, setPhotos] = useState<OwnerPhoto[]>(initialSpace?.photos ?? [])
   const [step, setStep] = useState(1)
   const [errors, setErrors] = useState<FormErrors>({})
   const [saving, setSaving] = useState(false)
@@ -84,7 +87,7 @@ export function SpaceWizard({ types, amenities, region, communes, initialSpace }
     setStep(next)
   }
 
-  const checklist = publishChecklist(form)
+  const checklist = publishChecklist(form, photos.length)
   const typeName = types.find((t) => String(t.id) === form.typeId)?.name
   const communeName = communes.find((c) => String(c.id) === form.communeId)?.name
   const priceText = [
@@ -101,6 +104,7 @@ export function SpaceWizard({ types, amenities, region, communes, initialSpace }
     ['Capacidad', Number(form.capacity) > 0 ? `${form.capacity} personas` : ''],
     ['Precio', priceText],
     ['Equipamiento', amenities.filter((a) => form.amenityIds.includes(a.id)).map((a) => a.name).join(', ')],
+    ['Fotos', photos.length > 0 ? `${photos.length} ${photos.length === 1 ? 'foto' : 'fotos'}` : ''],
   ]
 
   return (
@@ -291,14 +295,7 @@ export function SpaceWizard({ types, amenities, region, communes, initialSpace }
             </>
           )}
 
-          {step === 4 && (
-            <>
-              <h2 className="font-display text-2xl font-bold">Fotos</h2>
-              <div className="rounded-card border border-dashed border-line bg-surface p-6 text-[15px] text-muted">
-                Pronto podrás subir de 1 a 10 fotos de tu espacio y elegir la portada.
-              </div>
-            </>
-          )}
+          {step === 4 && spaceId && <PhotosStep spaceId={spaceId} photos={photos} onChange={setPhotos} />}
 
           {step === 5 && (
             <>
@@ -312,7 +309,7 @@ export function SpaceWizard({ types, amenities, region, communes, initialSpace }
                 ))}
               </dl>
               <div className="rounded-card bg-accent-soft p-4 text-[15px] text-accent-ink">
-                Todavía no puedes publicar: faltan las fotos y el horario semanal, que llegan pronto. Tu borrador queda guardado.
+                Todavía no puedes publicar: falta el horario semanal, que llega pronto. Tu borrador queda guardado.
               </div>
               <div>
                 <Button disabled>Publicar espacio</Button>

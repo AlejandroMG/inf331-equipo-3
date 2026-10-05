@@ -1,6 +1,6 @@
 import { http, HttpResponse } from 'msw'
 import type { SpaceDetail } from '../features/catalog/types'
-import type { OwnerSpace, SpacePayload } from '../features/spaces/types'
+import type { OwnerPhoto, OwnerSpace, SpacePayload } from '../features/spaces/types'
 import { catalogData } from './catalog-data'
 
 /** Detalle de ejemplo a partir de un espacio de la lista: horario de lunes a viernes y datos genéricos. */
@@ -23,12 +23,26 @@ const drafts = new Map<string, OwnerSpace>()
 /** Vacía los borradores simulados (los tests lo llaman entre pruebas). */
 export function resetMockDrafts() {
   drafts.clear()
+  photoCounter = 0
 }
 
 function ownerSpace(id: string, payload: SpacePayload, previous?: OwnerSpace): OwnerSpace {
   const now = new Date().toISOString()
-  return { ...payload, id, status: 'DRAFT', createdAt: previous?.createdAt ?? now, updatedAt: now }
+  return { ...payload, id, status: 'DRAFT', photos: previous?.photos ?? [], createdAt: previous?.createdAt ?? now, updatedAt: now }
 }
+
+let photoCounter = 0
+
+/** Foto simulada: un cuadro de color en una dirección de datos, para no depender de archivos ni de la red. */
+function mockPhoto(position: number): OwnerPhoto {
+  photoCounter += 1
+  const hue = (photoCounter * 47) % 360
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="600" height="400"><rect width="600" height="400" fill="hsl(${hue} 45% 80%)"/><text x="300" y="215" font-size="40" text-anchor="middle" fill="hsl(${hue} 45% 25%)" font-family="sans-serif">Foto ${photoCounter}</text></svg>`
+  return { id: `photo-${photoCounter}`, url: `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`, position }
+}
+
+const notFound = (message: string) =>
+  HttpResponse.json({ message, error: 'Not Found', statusCode: 404 }, { status: 404 })
 
 /**
  * Respuestas simuladas de la API mientras el endpoint real no exista.
@@ -92,6 +106,43 @@ export const handlers = [
     const space = ownerSpace(id, (await request.json()) as SpacePayload, previous)
     drafts.set(id, space)
     return HttpResponse.json(space)
+  }),
+
+  // ES-03: fotos del espacio (hasta 10; la de posición 0 es la portada).
+  http.post('*/api/spaces/:id/photos', async ({ params, request }) => {
+    const space = drafts.get(String(params.id))
+    if (!space) return notFound('El espacio no existe')
+    const { file } = Object.fromEntries(await request.formData())
+    // No se usa `instanceof File`: en los tests el File del formulario (jsdom) y el que lee MSW (Node) son clases distintas.
+    if (!file || typeof file === 'string') {
+      return HttpResponse.json({ message: 'Falta la foto', statusCode: 400 }, { status: 400 })
+    }
+    if (space.photos.length >= 10) {
+      return HttpResponse.json({ message: 'Un espacio puede tener hasta 10 fotos', statusCode: 409 }, { status: 409 })
+    }
+    const photo = mockPhoto(space.photos.length)
+    drafts.set(space.id, { ...space, photos: [...space.photos, photo] })
+    return HttpResponse.json(photo, { status: 201 })
+  }),
+  http.patch('*/api/spaces/:id/photos/order', async ({ params, request }) => {
+    const space = drafts.get(String(params.id))
+    if (!space) return notFound('El espacio no existe')
+    const { photoIds } = (await request.json()) as { photoIds: string[] }
+    const sameSet = photoIds.length === space.photos.length && space.photos.every((p) => photoIds.includes(p.id))
+    if (!sameSet) {
+      return HttpResponse.json({ message: 'La lista debe tener exactamente las fotos del espacio, sin repetir', statusCode: 400 }, { status: 400 })
+    }
+    const photos = photoIds.map((id, position) => ({ ...space.photos.find((p) => p.id === id)!, position }))
+    drafts.set(space.id, { ...space, photos })
+    return HttpResponse.json(photos)
+  }),
+  http.delete('*/api/spaces/:id/photos/:photoId', ({ params }) => {
+    const space = drafts.get(String(params.id))
+    if (!space) return notFound('El espacio no existe')
+    if (!space.photos.some((p) => p.id === params.photoId)) return notFound('La foto no existe')
+    const photos = space.photos.filter((p) => p.id !== params.photoId).map((p, position) => ({ ...p, position }))
+    drafts.set(space.id, { ...space, photos })
+    return new HttpResponse(null, { status: 204 })
   }),
 
   // BU-01: catálogo paginado, `{ items, total, page, pageSize }`.

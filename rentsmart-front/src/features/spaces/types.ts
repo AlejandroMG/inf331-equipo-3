@@ -4,6 +4,13 @@ export interface ReferenceItem {
   name: string
 }
 
+/** Foto de un espacio. La de posición 0 es la portada. */
+export interface OwnerPhoto {
+  id: string
+  url: string
+  position: number
+}
+
 /** Espacio propio tal como lo devuelve el back al propietario (GET /api/spaces/:id). */
 export interface OwnerSpace {
   id: string
@@ -21,6 +28,8 @@ export interface OwnerSpace {
   addressDetail: string | null
   rules: string | null
   amenityIds: number[]
+  /** Por posición; la primera es la portada. */
+  photos: OwnerPhoto[]
   createdAt: string
   updatedAt: string
 }

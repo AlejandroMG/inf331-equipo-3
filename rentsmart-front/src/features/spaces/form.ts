@@ -95,12 +95,12 @@ export interface ChecklistItem {
 }
 
 /**
- * Lo que se exige para publicar (ES-04). Las fotos (ES-03) y el horario semanal (DI-01) todavía no se
- * pueden cargar desde esta pantalla, por eso quedan pendientes.
+ * Lo que se exige para publicar (ES-04). El horario semanal (DI-01, del equipo de reservas) todavía no
+ * se puede cargar desde esta pantalla, por eso queda pendiente.
  */
-export function publishChecklist(form: SpaceForm): ChecklistItem[] {
+export function publishChecklist(form: SpaceForm, photoCount: number): ChecklistItem[] {
   return [
-    { label: 'Al menos una foto', done: false },
+    { label: 'Al menos una foto', done: photoCount > 0 },
     { label: 'Precio por hora o por día', done: Number(form.pricePerHour) > 0 || Number(form.pricePerDay) > 0 },
     { label: 'Capacidad', done: Number(form.capacity) > 0 },
     { label: 'Descripción', done: form.description.trim() !== '' },

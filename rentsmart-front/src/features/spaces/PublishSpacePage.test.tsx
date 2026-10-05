@@ -150,6 +150,7 @@ describe('PublishSpacePage', () => {
     expect(screen.getByText('10 personas')).toBeInTheDocument()
     expect(screen.getAllByText('Falta').length).toBeGreaterThan(0)
     expect(screen.getByRole('button', { name: 'Publicar espacio' })).toBeDisabled()
+    expect(screen.getByText(/falta el horario semanal/)).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Siguiente' })).not.toBeInTheDocument()
   })
 
@@ -215,6 +216,43 @@ describe('PublishSpacePage', () => {
     await waitFor(() => expect(screen.getByLabelText('Nombre del espacio')).toHaveValue(''))
     expect(screen.getByText('Paso 1 de 5 · Información')).toBeInTheDocument()
   })
+
+  it('en el paso de fotos se sube una foto y la lista y el resumen lo reflejan', async () => {
+    await openForm()
+    await userEvent.type(screen.getByLabelText('Nombre del espacio'), 'Sala Alameda')
+    await userEvent.click(screen.getByRole('button', { name: /Fotos/ }))
+    expect(await screen.findByText('Paso 4 de 5 · Fotos')).toBeInTheDocument()
+    const aside = screen.getByRole('complementary', { name: 'Estado del borrador' })
+    expect(within(aside).getByText('Al menos una foto').closest('li')).toHaveTextContent('Pendiente')
+
+    await userEvent.upload(screen.getByLabelText('Elegir fotos'), new File(['x'], 'sala.png', { type: 'image/png' }))
+
+    expect(await screen.findByRole('img', { name: 'Foto 1' })).toBeInTheDocument()
+    expect(within(aside).getByText('Al menos una foto').closest('li')).toHaveTextContent('Listo')
+    await userEvent.click(screen.getByRole('button', { name: /Revisar/ }))
+    expect(await screen.findByText('1 foto')).toBeInTheDocument()
+  })
+
+  it('las fotos subidas siguen ahí al volver al paso y al continuar el borrador', async () => {
+    const router = await openForm()
+    await userEvent.type(screen.getByLabelText('Nombre del espacio'), 'Sala Alameda')
+    await userEvent.click(screen.getByRole('button', { name: /Fotos/ }))
+    await screen.findByText('Paso 4 de 5 · Fotos')
+    await userEvent.upload(screen.getByLabelText('Elegir fotos'), new File(['x'], 'sala.png', { type: 'image/png' }))
+    await screen.findByRole('img', { name: 'Foto 1' })
+
+    await userEvent.click(screen.getByRole('button', { name: 'Atrás' }))
+    await screen.findByText('Paso 3 de 5 · Precio y horario')
+    await userEvent.click(screen.getByRole('button', { name: 'Siguiente' }))
+    expect(await screen.findByRole('img', { name: 'Foto 1' })).toBeInTheDocument()
+
+    // Abrir el mismo borrador por su dirección carga las fotos guardadas en el servidor.
+    await act(() => router.navigate('/publish/draft-1', { replace: true }))
+    await userEvent.click(await screen.findByRole('button', { name: /Fotos/ }))
+    expect(await screen.findByRole('img', { name: 'Foto 1' })).toBeInTheDocument()
+    expect(screen.getByText('1 de 10 fotos')).toBeInTheDocument()
+  })
+
 
   it('si falla la carga muestra el error y permite reintentar', async () => {
     let calls = 0
