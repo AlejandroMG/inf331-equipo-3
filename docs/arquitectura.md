@@ -74,6 +74,19 @@ Listas públicas y de solo lectura que alimentan los formularios y filtros. Mód
 | `GET /api/regions` | Regiones, por nombre |
 | `GET /api/regions/:id/communes` | Comunas de la región, por nombre. 404 si la región no existe, 400 si `id` no es un número |
 
+### Catálogo público (BU-01, BU-02)
+
+Módulo `catalog`, sin sesión. Solo muestra espacios `ACTIVE`: borradores, inactivos y bloqueados dan lista vacía o 404.
+
+| Endpoint | Devuelve |
+|---|---|
+| `GET /api/catalog?page=&pageSize=` | `{ items, total, page, pageSize }`, los más recientes primero. `page` ≥ 1 (1 por defecto), `pageSize` de 1 a 50 (12 por defecto). Cualquier otro parámetro o valor inválido da 400 |
+| `GET /api/catalog/:id` | Detalle público: datos del espacio, `regionName`, `address`, `amenities` (nombres), `photos` por posición y `schedule` semanal. 404 si no existe o no está activo |
+
+- Cada item de la lista es `{ id, name, typeName, communeName, capacity, pricePerHour, pricePerDay, coverUrl }` (`null` donde no aplique).
+- **Nunca** se devuelve `addressDetail` (P-09), `ownerId` ni `status`: el `select` de `CatalogService` es una lista blanca y hay tests e2e que lo comprueban. El detalle de la dirección se entregará con la reserva confirmada.
+- Los filtros y la búsqueda (BU-03) se agregarán como parámetros de `GET /api/catalog`; el orden (BU-04), después del 9 de octubre.
+
 ## Frontend
 
 ```
