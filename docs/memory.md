@@ -113,10 +113,91 @@ Armar el backlog del proyecto para tres personas trabajando en paralelo, cargarl
 
 ---
 
+### 2026-09-29 · C (gonzzza-lol) · CI en GitHub Actions y main protegida (F-06)
+
+**Issues:** #6 (F-06)
+**Rama / PR:** `feat/F-06-ci-github-actions` · sin PR todavía
+**Duración aproximada:** 45 min
+**Herramientas:** Antigravity
+
+#### Objetivo
+Implementar el pipeline de Integración Continua en GitHub Actions para que cada PR a `main` ejecute lint, tests con cobertura y build de back y front, y dejar instrucciones para que el administrador active la protección de `main`.
+
+#### Qué se hizo
+- Se creó `.github/workflows/ci.yml` con dos jobs paralelos:
+  - **Backend (NestJS):** `npm ci` → `lint` (oxlint) → `test:cov` (Jest con cobertura) → publicar tabla de cobertura en el resumen del workflow → subir artefacto `backend-coverage-report` → `build`.
+  - **Frontend (React):** `npm ci` → `lint` (ESLint) → `npm test --if-present` (compatible con F-08 cuando lo implemente B) → `build`.
+- Se usa Node.js 24 en ambos jobs (decisión T-03).
+- Se configura `concurrency` para cancelar ejecuciones anteriores ante nuevos pushes en la misma rama.
+### 2026-09-29 · C (gonzzza-lol) · Plantilla de Pull Request y convenciones de Git (F-11)
+
+**Issues:** #11 (F-11)
+**Rama / PR:** `feat/F-11-plantilla-pr-y-convenciones-git` · sin PR todavía
+**Duración aproximada:** 30 min
+**Herramientas:** Antigravity
+
+#### Objetivo
+Implementar la plantilla oficial de Pull Request para el repositorio y formalizar las convenciones de Git y ramas según lo especificado en la historia F-11.
+
+#### Qué se hizo
+- Se creó `.github/pull_request_template.md` alineado con `docs/flujo-de-trabajo.md`, incluyendo secciones para descripción del cambio (`Closes #N`), pasos de prueba y el checklist completo de la definición de terminado (tests, build/lint, Swagger, variables de entorno, bitácora de sesión y alerta de cambios en `schema.prisma`).
+- Se verificaron las convenciones de ramas (`feat/<ID>-descripcion-corta`) y commits convencionales `<tipo>(<ámbito>): <ID> <descripción en español>`.
+
+#### Decisiones y por qué
+| Decisión | Alternativas consideradas | Por qué se eligió |
+|---|---|---|
+| `npm test --if-present` en el front | Fallar si no hay script `test` | F-08 (Vitest) aún no está implementada por B; así el CI no bloquea el Sprint 1 y adopta las pruebas en cuanto B las agregue |
+| Publicar cobertura en `$GITHUB_STEP_SUMMARY` | PR comment vía API | No requiere permisos extra; el resumen queda siempre accesible en la pestaña Actions del PR |
+| Artefacto de cobertura con retención 7 días | Publicar en Codecov u otro servicio | Sin dependencias externas ni secretos adicionales en esta etapa |
+| Protección de `main` por instrucción al admin | Configurarla por API con token de administrador | La cuenta activa no tiene permisos `admin` sobre el repositorio; se delega a @AlejandroMG |
+
+#### Archivos principales
+- `.github/workflows/ci.yml`: pipeline de CI (nuevo).
+- `docs/memory.md`: registro de esta sesión.
+
+#### Cómo probarlo
+1. Abrir el PR en GitHub: las ejecuciones deben aparecer en la pestaña **Actions**.
+2. Verificar que los jobs `Backend (NestJS)` y `Frontend (React)` terminan en ✅.
+3. En la pestaña **Summary** del job de backend, ver la tabla de cobertura.
+4. Revisar el artefacto `backend-coverage-report` adjunto a la ejecución.
+
+#### Estado de verificación
+- Build: no aplica (solo configuración YAML; se validará cuando GitHub Actions ejecute el workflow)
+| Plantilla de PR en `.github/pull_request_template.md` | Mantener solo el texto explicativo en `flujo-de-trabajo.md` | GitHub carga automáticamente este archivo al abrir un PR, asegurando que ningún desarrollador omita la definición de terminado ni el enlace al issue |
+
+#### Archivos principales
+- `.github/pull_request_template.md`: plantilla de Pull Request con checklist de Definition of Done.
+- `docs/memory.md`: registro de esta sesión.
+
+#### Cómo probarlo
+- Al abrir un nuevo Pull Request en GitHub o previsualizar `.github/pull_request_template.md`, se debe cargar automáticamente la estructura con el checklist de definición de terminado.
+
+#### Estado de verificación
+- Build: no aplica (solo configuración y markdown)
+- Lint: no aplica
+- Tests: no aplica
+
+#### Pendientes y bloqueos
+- **@AlejandroMG debe activar Branch Protection en `main`** tras el merge del PR:
+  - Settings → Branches → Add rule → Pattern: `main`.
+  - Activar: *Require a pull request before merging*, *Require 1 approval*, *Require status checks to pass*: `Backend (NestJS)` y `Frontend (React)`.
+- El script `test` del front se ejecutará vacío hasta que F-08 sea implementada por B (@xReNatS).
+
+#### Para el resto del equipo
+- A partir de este PR, cada PR hacia `main` activará el CI automáticamente.
+- El reporte de cobertura del back aparece en la pestaña "Summary" de cada ejecución en GitHub Actions y como artefacto descargable.
+- El CI usa Node 24 (T-03): no instalen `node_modules` con Node 22 en el runner.
+- Crear el PR para F-11 y solicitar revisión a A (@AlejandroMG) según la rotación de revisión.
+
+#### Para el resto del equipo
+- A partir de este cambio, cada nuevo PR creado en GitHub prellenará la plantilla con la checklist obligatoria de definición de terminado.
+
+---
+
 ### 2026-09-26 · A (AlejandroMG) · F-04 PostgreSQL en Docker y validación de variables de entorno
 
 **Issues:** #4 (F-04)
-**Rama / PR:** `feat/F-04-postgres-docker` · sin PR todavía
+**Rama / PR:** `feat/F-04-postgres-docker` · PR #86
 **Duración aproximada:** 2 h
 **Herramientas:** manual, con Claude Code como guía (explicó cada paso y revisó el código; no escribió los archivos del proyecto)
 
