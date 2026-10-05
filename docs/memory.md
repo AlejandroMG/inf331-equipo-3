@@ -454,3 +454,62 @@ Adelantar el back de "publicar un espacio" sin esperar el login de A: crear y ed
 - Los permisos por dueño se comprueban en el servicio, no en el controlador.
 
 ---
+
+### 2026-10-05 · B (xReNatS) · ES-03 subir y ordenar fotos (back) y almacenamiento de archivos
+
+**Issues:** #22 (ES-03), parte del back
+**Rama / PR:** `feat/ES-03-photos-api`, apilada sobre `feat/ES-02-spaces-api` (que depende del PR #92) · sin PR todavía
+**Duración aproximada:** 2,5 h
+**Herramientas:** Claude Code
+
+#### Objetivo
+Permitir que el propietario suba de 1 a 10 fotos a su espacio, las ordene (la primera es la portada) y las borre, con un `StorageService` intercambiable: disco local mientras no haya credenciales de Supabase.
+
+#### Qué se hizo
+- Módulo `storage`: `StorageService` (clase abstracta), `LocalStorageService` (disco, servido en `/api/uploads`) y `SupabaseStorageService` (API REST de Supabase con `fetch`, sin dependencias). Se elige con `STORAGE_DRIVER`; con `supabase` la API no arranca si faltan `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` o `SUPABASE_BUCKET`.
+- Endpoints: `POST /api/spaces/:id/photos` (multipart `file`), `PATCH /api/spaces/:id/photos/order` y `DELETE /api/spaces/:id/photos/:photoId`. `GET /api/spaces/:id` ahora trae `photos` ordenadas.
+- Reglas: JPG, PNG o WebP de hasta 5 MB (413 si pesa más) y hasta 10 por espacio (409). El formato se reconoce por los primeros bytes, no por el nombre ni el tipo declarado. El archivo se guarda con un nombre propio y el original se descarta.
+- Subidas simultáneas: se bloquea la fila del espacio (`FOR UPDATE`), así no se pasan de 10 ni repiten posición. Al borrar una foto, las siguientes suben una posición.
+- Si la base falla o se pasa del límite después de subir el archivo, se borra el archivo; si borrarlo falla, se anota y se sigue.
+- Pruebas: 34 unitarias nuevas (formato, almacenamiento local y de Supabase con `fetch` simulado, servicio de fotos y validación del entorno) y 19 e2e nuevos (63 y 58 en total). Se comprobó que el test de subidas simultáneas falla si se quita el bloqueo (se hizo a mano y se restauró).
+- Documentación en `docs/arquitectura.md`, `.env.example` y la tabla de variables.
+
+#### Decisiones y por qué
+| Decisión | Alternativas consideradas | Por qué se eligió |
+|---|---|---|
+| Supabase con `fetch` y la API REST | Instalar `@supabase/supabase-js` | Son dos llamadas (subir y borrar) y así se prueba con un `fetch` simulado, sin una dependencia más |
+| Local por defecto, Supabase por variable | Esperar las credenciales | Desbloquea el desarrollo y los tests ahora; la implementación de Supabase está lista pero sin probar contra un proyecto real |
+| Formato por los bytes del archivo | Confiar en el tipo MIME | El MIME lo manda el navegador y se puede falsear (un HTML con `Content-Type: image/png`) |
+| 409 al pasar de 10 fotos | 400 | Es un conflicto con el estado actual del espacio, no un dato mal escrito (AGENTS.md) |
+| Bloqueo de la fila del espacio | Contar y crear sin bloqueo | Sin él, dos subidas a la vez superaban el máximo (el test lo demuestra) |
+| Las fotos locales se sirven bajo `/api/uploads` | `/uploads` | Queda dentro del proxy de Vite en desarrollo y el prefijo de la API |
+| Subir primero el archivo y luego registrar | Registrar primero | Si el archivo falla no queda una fila apuntando a nada; si la fila falla se borra el archivo |
+
+#### Archivos principales
+- `rentsmart-back/src/storage/`: servicio abstracto, local, Supabase, módulo y pruebas.
+- `rentsmart-back/src/spaces/`: `photos.controller`, `photos.service`, `image-type`, `dto/photo.dto` y pruebas.
+- `rentsmart-back/src/config/env.validation.ts`, `src/app.setup.ts`, `src/app.module.ts`, `tsconfig.json` (tipos de multer).
+- `rentsmart-back/test/photos.e2e-spec.ts` y `test/utils/setup-env.ts` (carpeta temporal para las fotos de los e2e).
+
+#### Cómo probarlo
+- Con `docker compose up -d db-test`, en `rentsmart-back` (Node 24): `npm run lint`, `npm run build`, `npm test` y `npm run test:e2e`.
+- A mano: Swagger en `/docs`, `POST /api/spaces/{id}/photos` con un archivo; la foto se ve en la dirección `url` que devuelve.
+
+#### Estado de verificación
+- Build: ✅
+- Lint: ✅
+- Tests unitarios: ✅ (9 archivos, 63 pruebas)
+- Tests e2e: ✅ (4 archivos, 58 pruebas)
+- No verificado: `SupabaseStorageService` contra un proyecto real de Supabase.
+
+#### Pendientes y bloqueos
+- Depende del PR #92 y de la rama de ES-02.
+- Probar el almacenamiento con Supabase real cuando haya proyecto, bucket `space-photos` público y credenciales; decidir dónde configurarlas en el despliegue (P-17).
+- Borrar los archivos de un espacio cuando se borra el espacio (hoy no existe borrar espacios).
+- El front de ES-03 (subir, ordenar y borrar fotos en el paso 4) va en la rama del front.
+
+#### Para el resto del equipo
+- Nunca subir `SUPABASE_SERVICE_ROLE_KEY` al repositorio ni al front.
+- El catálogo público (`GET /api/catalog/:id`) ya muestra las fotos por posición, con la portada primero.
+
+---

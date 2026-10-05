@@ -109,6 +109,7 @@ describe('Espacios del propietario (e2e)', () => {
         addressDetail: null,
         rules: null,
         amenityIds: [],
+        photos: [],
         createdAt: expect.any(String),
         updatedAt: expect.any(String),
       });

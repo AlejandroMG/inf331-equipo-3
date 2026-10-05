@@ -1,5 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { SpaceStatus } from '../../generated/prisma/enums';
+import { PhotoDto } from './photo.dto';
 
 /** Espacio visto por su propietario: incluye el estado y el detalle privado de la dirección. */
 export class SpaceDto {
@@ -44,6 +45,9 @@ export class SpaceDto {
 
   @ApiProperty({ type: [Number] })
   amenityIds: number[];
+
+  @ApiProperty({ type: [PhotoDto], description: 'Por posición; la primera es la portada' })
+  photos: PhotoDto[];
 
   @ApiProperty()
   createdAt: Date;

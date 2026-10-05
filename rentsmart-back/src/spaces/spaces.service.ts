@@ -27,6 +27,10 @@ const OWNER_VIEW = {
   createdAt: true,
   updatedAt: true,
   amenities: { select: { amenityId: true }, orderBy: { amenityId: 'asc' } },
+  photos: {
+    select: { id: true, url: true, position: true },
+    orderBy: { position: 'asc' },
+  },
 } as const;
 
 type OwnerRow = {
@@ -90,6 +94,18 @@ export class SpacesService {
 
   async findOne(ownerId: string, id: string): Promise<SpaceDto> {
     return toDto(await this.findOwned(ownerId, id));
+  }
+
+  /** Comprueba que el espacio exista y sea del usuario: 404 si no existe, 403 si es de otro. */
+  async ensureOwner(ownerId: string, id: string): Promise<void> {
+    const space = await this.prisma.space.findUnique({
+      where: { id },
+      select: { ownerId: true },
+    });
+    if (!space) throw new NotFoundException('El espacio no existe');
+    if (space.ownerId !== ownerId) {
+      throw new ForbiddenException('Este espacio no es tuyo');
+    }
   }
 
   /** Carga el espacio y comprueba que sea del usuario: 404 si no existe, 403 si es de otro. */

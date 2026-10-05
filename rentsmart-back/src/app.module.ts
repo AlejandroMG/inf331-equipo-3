@@ -6,11 +6,13 @@ import { ConfigModule } from '@nestjs/config';
 import { PrismaModule } from './prisma/prisma.module';
 import { SpaceTypesModule } from './space-types/space-types.module';
 import { SpacesModule } from './spaces/spaces.module';
+import { StorageModule } from './storage/storage.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true, validate }),
     PrismaModule,
+    StorageModule,
     SpaceTypesModule,
     SpacesModule,
   ],
