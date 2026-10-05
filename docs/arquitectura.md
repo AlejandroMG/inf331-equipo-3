@@ -61,6 +61,18 @@ src/bookings/
 - Códigos de error: 400 validación, 401 sin sesión, 403 sin permiso, 404 no existe, 409 conflicto de estado o de horario.
 - Fechas en ISO 8601 y UTC. Montos en CLP como enteros.
 - Listados paginados con `?page=1&pageSize=20`; la respuesta trae `{ items, total, page, pageSize }`.
+- La configuración común (prefijo, `ValidationPipe`, Swagger) vive en `src/app.setup.ts` y la usan `main.ts` y los tests e2e. `main.ts` crea la app con `rawBody: true` para el webhook de Stripe.
+
+### Datos de referencia (ES-01)
+
+Listas públicas y de solo lectura que alimentan los formularios y filtros. Módulo `space-types`; devuelven `[{ id, name }]`.
+
+| Endpoint | Devuelve |
+|---|---|
+| `GET /api/space-types` | Tipos de espacio, en el orden en que se cargaron |
+| `GET /api/amenities` | Equipamiento, por nombre |
+| `GET /api/regions` | Regiones, por nombre |
+| `GET /api/regions/:id/communes` | Comunas de la región, por nombre. 404 si la región no existe, 400 si `id` no es un número |
 
 ## Frontend
 
@@ -237,7 +249,7 @@ Solo `PORT` y `VITE_API_URL` existen hoy. Las demás se agregan a `.env.example`
 | Nivel | Herramienta | Qué cubre |
 |---|---|---|
 | Unitarias back | Jest | Servicios: disponibilidad, estados de reserva, precios, reglas de publicación |
-| Integración API | Jest + Supertest + BD de test (Docker) | Endpoints con base de datos real |
+| Integración API | Jest + Supertest + BD de test (Docker) | Endpoints con base de datos real. `npm run test:e2e` usa solo `DATABASE_TEST_URL` y cada test crea y borra sus propios datos; antes, `DATABASE_URL=<la de test> npx prisma migrate deploy` |
 | Componentes front | Vitest + Testing Library + MSW | Formularios y componentes con lógica |
 | E2E | Playwright | Flujo completo (después del 9 de octubre, QA-01) |
 

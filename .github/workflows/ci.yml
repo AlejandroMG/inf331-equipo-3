@@ -65,6 +65,9 @@ jobs:
       - name: Unit tests y reporte de cobertura
         run: npm run test:cov
 
+      - name: Tests e2e (API con la BD de test)
+        run: npm run test:e2e
+
       - name: Publicar resumen de cobertura
         if: always()
         run: |
