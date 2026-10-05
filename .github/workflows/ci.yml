@@ -18,6 +18,27 @@ jobs:
       run:
         working-directory: rentsmart-back
 
+    # Base de datos de test, igual al servicio db-test de docker-compose.yml.
+    services:
+      db-test:
+        image: postgres:17
+        env:
+          POSTGRES_USER: testuser
+          POSTGRES_PASSWORD: testpassword
+          POSTGRES_DB: testdb
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U testuser -d testdb"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    # prisma.config.ts exige DATABASE_URL incluso para generar el cliente.
+    env:
+      DATABASE_URL: postgresql://testuser:testpassword@localhost:5433/testdb
+      DATABASE_TEST_URL: postgresql://testuser:testpassword@localhost:5433/testdb
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -31,6 +52,12 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Generar cliente de Prisma
+        run: npx prisma generate
+
+      - name: Aplicar migraciones a la BD de test
+        run: npx prisma migrate deploy
 
       - name: Lint (oxlint)
         run: npm run lint

@@ -253,3 +253,99 @@ Dejar una base de datos PostgreSQL de desarrollo y otra de test levantables con 
 - Al usar decoradores de `class-transformer` fuera de Nest (tests, scripts), importar `reflect-metadata` primero.
 
 ---
+
+### 2026-09-27 · A (AlejandroMG) · F-03 modelo de datos v1 con Prisma, migraciones y seed
+
+**Issues:** #3 (F-03)
+**Rama / PR:** `feat/F-03-prisma-schema-seed` (sale de `feat/F-04-postgres-docker`) · sin PR todavía
+**Duración aproximada:** 3 h
+**Herramientas:** Claude Code (ayuda en redacción de `schema.prisma` y revisión del seed y de `PrismaService`)
+
+#### Objetivo
+Modelo de datos de los tres dominios en Prisma, migraciones reproducibles, datos de prueba y un `PrismaService` inyectable.
+
+#### Qué se hizo
+- Prisma 7.10.0 con `@prisma/adapter-pg`; `prisma.config.ts` con schema, migraciones y seed.
+- `schema.prisma` con todos los modelos de `docs/arquitectura.md`.
+- Migraciones `init` y `booking_no_overlap` (restricción SQL contra reservas traslapadas).
+- `prisma/seed.ts`: 3 usuarios (admin, propietario, arrendatario), 8 tipos de espacio, RM con 5 comunas y 10 espacios activos con horario.
+- `PrismaModule` global con `PrismaService` y un test de conexión contra la BD de test.
+
+#### Decisiones y por qué
+| Decisión | Alternativas consideradas | Por qué se eligió |
+|---|---|---|
+| Prisma 7.10.0 fijo | 8.0.0-rc (lo que instala `latest`) | Un release candidate no es estable para la entrega |
+| Campos de `Space` casi todos opcionales | Obligatorios en la BD | ES-02 guarda borradores; ES-04 valida en el servicio |
+| Anti-traslape en migración SQL | Solo validar en el servicio | Prisma no lo soporta y protege contra solicitudes simultáneas |
+| Seed con `upsert` | `create` | Se puede correr varias veces sin duplicar |
+
+#### Archivos principales
+- `rentsmart-back/prisma/`: schema, migraciones y seed.
+- `rentsmart-back/src/prisma/`: módulo, servicio y test.
+- `rentsmart-back/jest.config.ts`: mapeo de imports `.js` para el cliente generado.
+
+#### Cómo probarlo
+`docker compose up -d`; en `rentsmart-back`: `npx prisma migrate dev`, `npm run seed`, `npm test`. Usuarios `admin@`, `propietario@` y `arrendatario@rentsmart.test`, contraseña `Password123`.
+
+#### Estado de verificación
+- Build: ✅
+- Lint: ✅
+- Tests: ✅ (3 suites, 6 pruebas; requiere `db-test` levantada)
+
+#### Pendientes y bloqueos
+- Revisar el ERD con B y C (criterio de aceptación).
+- PR con base en F-04 hasta que F-04 se mergee.
+
+#### Para el resto del equipo
+- Tras un `git pull` con migraciones: `npx prisma migrate dev`, o el back no compila.
+- Usen `PrismaService` inyectado; no actualicen a `prisma@latest`.
+- C: la BD rechaza reservas activas traslapadas; traducir ese error a 409. El CI necesita `db-test` y `prisma generate`.
+
+---
+
+### 2026-10-05 · B (xReNatS) · Resolver conflictos de los PR #86 (F-04) y #87 (F-03) y arreglar el CI de F-03
+
+**Issues:** #4 (F-04), #3 (F-03)
+**Rama / PR:** `feat/F-04-postgres-docker` (PR #86, mergeado) y `feat/F-03-prisma-schema-seed` (PR #87)
+**Duración aproximada:** 1 h
+**Herramientas:** Claude Code
+
+#### Objetivo
+Dejar los PR #86 y #87 sin conflictos con `main` y con el CI (F-06) en verde para poder mergearlos.
+
+#### Qué se hizo
+- Conflicto en `docs/memory.md` en ambos PR: los dos lados solo agregaban entradas al final. Se dejaron las de `main` (F-06 y F-11) y después las de F-04 y F-03, sin cambiar su contenido salvo el número de PR en "Rama / PR".
+- Al mergear el #86, GitHub retargeteó el #87 a `main` y reescribió su rama en un solo commit, con lo que se perdió el cambio al CI y falló el job del back (`Cannot find module '../generated/prisma/client'`). Se volvió a aplicar sobre la rama actual.
+- CI del back (`.github/workflows/ci.yml`): servicio PostgreSQL 17 `db-test` en el puerto 5433, variables `DATABASE_URL` y `DATABASE_TEST_URL`, y pasos `npx prisma generate` y `npx prisma migrate deploy` antes del lint. Sin esto el CI de F-03 falla: el cliente de Prisma no se versiona (`src/generated`), así que lint y build no lo encuentran, y el test de `PrismaService` necesita una base.
+
+#### Decisiones y por qué
+| Decisión | Alternativas consideradas | Por qué se eligió |
+|---|---|---|
+| Merge de `main` en las ramas (no rebase) | Rebase y force-push | No reescribe el historial de ramas de otro integrante con PR abierto. Igual GitHub reescribió el #87 al mergear el #86 |
+| Cambio del CI dentro del merge de F-03 | PR aparte de C | F-03 no puede pasar el CI sin él; el PR ya avisaba que el CI necesitaba `db-test` y `prisma generate` |
+| `DATABASE_URL` del CI apunta a la base de test | Una segunda base en el CI | `prisma.config.ts` exige `DATABASE_URL` hasta para `generate`; en el CI no hay datos de desarrollo que proteger |
+| `prisma migrate deploy` en el CI | Solo `generate` | Valida que las migraciones (incluida `booking_no_overlap`) se apliquen limpias en cada PR |
+
+#### Archivos principales
+- `docs/memory.md`: resolución de conflictos y esta entrada.
+- `.github/workflows/ci.yml`: base de test y pasos de Prisma en el job del back.
+
+#### Cómo probarlo
+Simulación local del job del back desde cero, con `db-test` levantada: `npm ci`, `npx prisma generate`, `npx prisma migrate deploy`, `npm run lint`, `npm run test:cov` (con Node 24) y `npm run build`.
+
+#### Estado de verificación
+- Build: ✅ (F-04 y F-03)
+- Lint: ✅ (F-04 y F-03)
+- Tests: ✅ F-04 2 suites, 5 pruebas; F-03 3 suites, 6 pruebas (con `db-test`). Seed probado contra la base de test.
+
+#### Pendientes y bloqueos
+- Ambos PR necesitan 1 aprobación (protección de `main`). El autor es A; puede aprobar B o C.
+- El #86 ya está mergeado; el #87 apunta a `main` y necesita 1 aprobación con el CI en verde.
+- C (@gonzzza-lol): revisar el cambio al CI; toca su dominio.
+- Las entradas de F-06 y F-11 en esta bitácora quedaron mezcladas al mergear el PR #90; conviene que C las ordene.
+
+#### Para el resto del equipo
+- El CI del back ahora levanta PostgreSQL y genera el cliente de Prisma. Los tests de integración deben usar `DATABASE_TEST_URL`.
+- En local hay que correr `npx prisma generate` (o `npx prisma migrate dev`) tras instalar dependencias, o el back no compila.
+
+---
