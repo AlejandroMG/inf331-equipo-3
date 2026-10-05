@@ -18,4 +18,17 @@ export const handlers = [
       { id: 8, name: 'Taller' },
     ]),
   ),
+
+  // CU-01: registro. "existe@rentsmart.test" simula un email ya usado.
+  http.post('*/api/auth/register', async ({ request }) => {
+    const body = (await request.json()) as { email: string; name: string }
+    const email = body.email.trim().toLowerCase()
+    if (email === 'existe@rentsmart.test') {
+      return HttpResponse.json({ message: 'Ya existe una cuenta con este email.' }, { status: 409 })
+    }
+    return HttpResponse.json(
+      { id: 'mock-user', email, name: body.name, role: 'USER', isHost: false, createdAt: new Date().toISOString() },
+      { status: 201 },
+    )
+  }),
 ]

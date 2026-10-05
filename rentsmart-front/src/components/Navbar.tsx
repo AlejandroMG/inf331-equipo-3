@@ -56,6 +56,9 @@ export function Navbar() {
           <LinkButton to={paths.login} variant="secondary" size="sm" className="ml-1">
             Ingresar
           </LinkButton>
+          <LinkButton to={paths.register} variant="primary" size="sm" className="ml-1">
+            Crear cuenta
+          </LinkButton>
         </nav>
 
         <button
@@ -82,6 +85,9 @@ export function Navbar() {
           </LinkButton>
           <LinkButton to={paths.login} onClick={closeMenu} variant="secondary" size="sm">
             Ingresar
+          </LinkButton>
+          <LinkButton to={paths.register} onClick={closeMenu} variant="primary" size="sm">
+            Crear cuenta
           </LinkButton>
         </nav>
       )}

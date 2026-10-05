@@ -21,6 +21,11 @@ class EnvironmentVariables {
   @IsInt()
   @Type(() => Number)
   PORT: number;
+
+  // Origen del front permitido por CORS. Si no se define, se usa el de Vite en local.
+  @IsString()
+  @IsOptional()
+  FRONTEND_URL: string;
 }
 
 function validate(config: Record<string, unknown>) {
