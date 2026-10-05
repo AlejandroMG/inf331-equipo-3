@@ -466,3 +466,93 @@ Desde `rentsmart-front`: `npm test`, `npm run lint` y `npm run build`.
 - Cualquier petición a la API sin handler hace fallar el test: es a propósito.
 
 ---
+
+### 2026-10-05 · B (xReNatS) · F-05 base de la API y ES-01 datos de referencia (back)
+
+**Issues:** #20 (ES-01); parte de B de #5 (F-05)
+**Rama / PR:** `feat/ES-01-space-types` · sin PR todavía
+**Duración aproximada:** 2 h
+**Herramientas:** Claude Code
+
+#### Objetivo
+Dejar la API con la configuración que prometen los docs (prefijo `/api`, validación global y Swagger) y publicar las listas de referencia que necesitan los formularios y filtros: tipos de espacio, equipamiento, regiones y comunas.
+
+#### Qué se hizo
+- `src/app.setup.ts`: prefijo `/api`, `ValidationPipe` global (`whitelist`, `forbidNonWhitelisted`, `transform`) y Swagger en `/docs` con `@nestjs/swagger`. Lo usan `main.ts` y los tests e2e, así se prueba la misma configuración que corre en producción. `main.ts` ahora crea la app con `rawBody: true` (lo necesita el webhook de Stripe).
+- Módulo `space-types` con `GET /api/space-types`, `/api/amenities`, `/api/regions` y `/api/regions/:id/communes` (404 si la región no existe, 400 si el id no es un número). Públicos y de solo lectura.
+- Pruebas: unitarias del servicio y e2e con Supertest contra la base de test. Cada e2e crea y borra sus propios datos, no depende del seed.
+- `test/utils/setup-env.ts`: los e2e usan `DATABASE_TEST_URL` y fallan si falta, para no tocar nunca la base de desarrollo. `jest-e2e.json` gana el mapeo de imports `.js` del cliente de Prisma.
+- CI: nuevo paso `npm run test:e2e` en el job del back (la BD de test y las migraciones ya estaban). Toca el CI de C.
+
+#### Decisiones y por qué
+| Decisión | Alternativas consideradas | Por qué se eligió |
+|---|---|---|
+| Un módulo `space-types` con tres controladores y un servicio | Módulos `amenities` y `regions` aparte | `docs/arquitectura.md` asigna al módulo `space-types` los cuatro catálogos |
+| Configuración común en `app.setup.ts` | Repetirla en `main.ts` y en cada e2e | Un test e2e que no usa el prefijo ni la validación real no prueba lo que corre |
+| e2e crean sus datos con un sufijo único | Depender del seed | Funciona igual con la base vacía del CI y con la sembrada en local |
+| Paso de e2e en el CI | Dejarlos solo locales | Sin él, el requisito de "un test de integración por endpoint" nunca se comprueba en los PR |
+| Swagger y `/api` van en esta rama, no en un PR aparte de F-05 | Un PR solo de infraestructura | Es poco código y ES-01 los necesita para tener sentido; el contrato completo (F-05) sigue abierto |
+
+#### Archivos principales
+- `rentsmart-back/src/app.setup.ts`, `src/main.ts`, `src/app.module.ts`.
+- `rentsmart-back/src/space-types/`: módulo, tres controladores, servicio, DTO y su prueba.
+- `rentsmart-back/test/`: `app.e2e-spec.ts`, `space-types.e2e-spec.ts`, `utils/` y `jest-e2e.json`.
+- `.github/workflows/ci.yml`, `docs/arquitectura.md`: paso de e2e y documentación de los endpoints.
+
+#### Cómo probarlo
+- Con `docker compose up -d db-test` y, en `rentsmart-back`: `DATABASE_URL=<la de test> npx prisma migrate deploy`, luego `npm run lint`, `npm run build`, `npm test` y `npm run test:e2e` (Node 24).
+- `npm run start:dev`: Swagger en http://localhost:3000/docs y `GET http://localhost:3000/api/space-types` (con `npm run seed` devuelve los 8 tipos).
+
+#### Estado de verificación
+- Build: ✅
+- Lint: ✅
+- Tests unitarios: ✅ (4 archivos, 12 pruebas; el de `PrismaService` usa la base de test)
+- Tests e2e: ✅ (2 archivos, 9 pruebas) contra la base de test, sin exportar `DATABASE_URL` (toma `DATABASE_TEST_URL` del `.env`). Al terminar no quedan filas de prueba en la base.
+
+#### Pendientes y bloqueos
+- A (@AlejandroMG): `main.ts` ya tiene el prefijo y el `ValidationPipe`; CU-05 solo necesita sumar helmet, CORS y `FRONTEND_URL`.
+- C (@gonzzza-lol): revisar el paso de e2e que se agregó al CI.
+
+#### Para el resto del equipo
+- Todas las rutas llevan el prefijo `/api`. Un controlador nuevo no debe repetirlo; solo Swagger vive fuera, en `/docs`.
+- Para un e2e nuevo: `createTestApp()` de `test/utils/` y datos propios con un sufijo único.
+
+---
+
+### 2026-10-05 · Agente (Antigravity) · Resolver conflicto de merge en PR #92
+
+**Issues:** PR #92
+**Rama / PR:** `feat/ES-01-space-types` · PR #92
+**Duración aproximada:** 15 min
+**Herramientas:** Antigravity
+
+#### Objetivo
+Resolver el conflicto de merge entre `main` y la rama `feat/ES-01-space-types`.
+
+#### Qué se hizo
+- Se hizo merge de `origin/main` en la rama `feat/ES-01-space-types`.
+- Se resolvió el conflicto en `docs/memory.md` conservando la entrada que venía de la rama y las de `main` en orden cronológico.
+
+#### Decisiones y por qué
+| Decisión | Alternativas consideradas | Por qué se eligió |
+|---|---|---|
+| Conservar ambas entradas en `docs/memory.md` | Sobrescribir una | Cumple la regla 4 de AGENTS.md |
+
+#### Archivos principales
+- `docs/memory.md`: archivo donde ocurrió el conflicto.
+
+#### Cómo probarlo
+N/A
+
+#### Estado de verificación
+- Build: ✅
+- Lint: ✅
+- Tests: ✅
+
+#### Pendientes y bloqueos
+- Merge y push a origin pendientes de aprobación manual.
+
+#### Para el resto del equipo
+- Conflicto de PR #92 resuelto localmente y listo para subir.
+
+---
