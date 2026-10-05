@@ -38,12 +38,12 @@ describe('rutas', () => {
     expect(router.state.location.state).toEqual({ from: path })
   })
 
-  it('con sesión, las rutas privadas abren', () => {
+  it('con sesión, las rutas privadas abren', async () => {
     setToken('abc')
 
     renderAt('/publish')
 
-    expect(screen.getByRole('heading', { level: 1, name: 'Publica tu espacio' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { level: 1, name: 'Publica tu espacio' })).toBeInTheDocument()
   })
 
   it('una ruta inexistente muestra el 404 con un enlace al inicio', () => {

@@ -571,3 +571,63 @@ Mostrar el detalle de un espacio según el prototipo aprobado: galería, descrip
 - `ApiError` trae `status`: un 404 se puede mostrar distinto de otros errores, como hace esta pantalla.
 
 ---
+
+### 2026-10-05 · B (xReNatS) · ES-02 formulario por pasos para publicar (front)
+
+**Issues:** #21 (ES-02), parte del front
+**Rama / PR:** `feat/ES-02-wizard`, apilada sobre `feat/BU-02-detalle` (que depende del PR #91) · sin PR todavía
+**Duración aproximada:** 3 h
+**Herramientas:** Claude Code
+
+#### Objetivo
+Construir el formulario por pasos de "Publica tu espacio" según el prototipo aprobado, que guarda un borrador en cada paso contra la API real (`POST` y `PATCH /api/spaces`).
+
+#### Qué se hizo
+- `PublishSpacePage` y `SpaceWizard` en `/publish` y `/publish/:spaceId` (continuar un borrador): 5 pasos (Información, Ubicación, Precio y horario, Fotos, Revisar), listas de tipos, equipamiento y comunas que vienen de la API, y la región fija (Metropolitana).
+- Se guarda el borrador al cambiar de paso (Siguiente, Atrás o el indicador de pasos): el primer guardado hace `POST`, crea la URL `/publish/<id>` y los siguientes hacen `PATCH`. Si el servidor rechaza el guardado, se muestra el mensaje y no se avanza.
+- Validación en el cliente: solo el nombre es obligatorio; capacidad y precios, si se escriben, deben ser enteros positivos dentro de los límites del back.
+- La lista "Para publicar necesitas" se completa con lo que se escribe. Fotos y horario siguen pendientes hasta ES-03 y DI-01; el último paso resume el borrador y deja el botón "Publicar" desactivado.
+- Componentes nuevos `Select` y `Textarea`, y la ruta `/login` de desarrollo (`DevLoginPage`: guarda un token y vuelve a donde se iba), solo en desarrollo.
+- `vite.config.ts`: proxy de `/api` hacia `localhost:3000`. Con `VITE_API_URL=http://localhost:5173` el navegador no necesita CORS (llega con CU-05); `.env.example` y `docs/arquitectura.md` actualizados.
+- Handlers de MSW de regiones, comunas, equipamiento y de los espacios (con borradores en memoria).
+- 45 pruebas nuevas (159 en total).
+- Probado de punta a punta en el navegador contra el back real (rama de integración local con ES-02 y el catálogo): login de desarrollo, los 4 pasos, el borrador queda en la base como `DRAFT` con todos sus campos y no aparece en el catálogo público.
+
+#### Decisiones y por qué
+| Decisión | Alternativas consideradas | Por qué se eligió |
+|---|---|---|
+| Guardar al cambiar de paso, no con un botón aparte | Botón "Guardar borrador" | Es lo que promete el prototipo y evita perder trabajo |
+| La URL pasa a `/publish/:id` con `state.created`, sin recargar | Redirigir y volver a cargar el borrador | Recargar reiniciaba el paso y mostraba un parpadeo; cualquier otra navegación a `/publish` sí empieza de cero |
+| Región fija con la primera que devuelve la API | Selector de región | El seed solo trae la Metropolitana y la regla es "una lista cerrada" |
+| Fotos, horario y publicar quedan como avisos | Esconder esos pasos | Se ven en el flujo completo y A y C saben dónde se enchufan sus piezas |
+| Proxy de Vite en vez de CORS en el back | Habilitar CORS ahora | CORS es de A (CU-05); el proxy desbloquea el desarrollo sin tocar su dominio |
+| `/login` de desarrollo | Pedir poner el token a mano en la consola | Cualquiera del equipo puede probar las rutas privadas con un clic; en producción sigue el placeholder |
+
+#### Archivos principales
+- `rentsmart-front/src/features/spaces/`: `PublishSpacePage`, `SpaceWizard`, `form`, `spaces-api`, `types` y pruebas.
+- `rentsmart-front/src/components/Select.tsx` y `Textarea.tsx`.
+- `rentsmart-front/src/features/dev/DevLoginPage.tsx`, `src/routes.tsx`, `vite.config.ts`.
+- `rentsmart-front/src/mocks/handlers.ts`.
+
+#### Cómo probarlo
+- Desde `rentsmart-front`: `npm run lint`, `npm run build` y `npm test`.
+- Con el back (ver más abajo) en `localhost:3000` y `cp .env.example rentsmart-front/.env`: `npm run dev`, abrir `/publish`, entrar con el login de desarrollo y recorrer los pasos.
+- Sin back: `VITE_USE_MOCKS=true npm run dev` en Chrome o Edge usa MSW.
+
+#### Estado de verificación
+- Build: ✅
+- Lint: ✅
+- Tests: ✅ (22 archivos, 159 pruebas)
+- Navegador contra el back real: ✅ (descrito arriba). No se probó con el guard JWT de A, que no existe todavía.
+
+#### Pendientes y bloqueos
+- Depende de los PR #91 y #92 y de las ramas apiladas de BU-01 y BU-02.
+- ES-03 (fotos), DI-01 de C (horario semanal) y ES-04 (publicar de verdad) completan los pasos 3, 4 y 5.
+- Cuando A entregue CU-02, reemplazar la ruta `login` de `routes.tsx` y quitar `DevLoginPage`.
+
+#### Para el resto del equipo
+- **Si `docker compose up` no te conecta a la base:** en esta máquina ya había un PostgreSQL nativo escuchando en el puerto 5432, que ocupa el puerto de `db-dev`. Para la demo se usó otro contenedor en el puerto 5435 (`DATABASE_URL=postgresql://devuser:devpassword@localhost:5435/devdb`). Si te pasa lo mismo, cambia el puerto publicado en `docker-compose.yml` (solo local) o detén el PostgreSQL nativo.
+- Para llamar a la API en desarrollo sin CORS, deja `VITE_API_URL=http://localhost:5173` (ya es el valor de `.env.example`).
+- A (@AlejandroMG): el formulario espera que el back valide con `ValidationPipe`; los mensajes de error 400 se muestran tal cual.
+
+---

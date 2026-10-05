@@ -3,6 +3,8 @@ export const paths = {
   home: '/',
   space: (id: string) => `/spaces/${id}`,
   publish: '/publish',
+  /** Continuar un borrador: /publish/<id>. */
+  publishDraft: (id: string) => `/publish/${id}`,
   ownerSpaces: '/owner/spaces',
   login: '/login',
 } as const
