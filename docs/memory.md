@@ -401,3 +401,56 @@ Dejar la API con la configuración que prometen los docs (prefijo `/api`, valida
 - Para un e2e nuevo: `createTestApp()` de `test/utils/` y datos propios con un sufijo único.
 
 ---
+
+### 2026-10-05 · B (xReNatS) · ES-02 espacios del propietario y autenticación temporal (back)
+
+**Issues:** #21 (ES-02), parte del back
+**Rama / PR:** `feat/ES-02-spaces-api`, apilada sobre `feat/ES-01-space-types` (PR #92) · sin PR todavía
+**Duración aproximada:** 2 h
+**Herramientas:** Claude Code
+
+#### Objetivo
+Adelantar el back de "publicar un espacio" sin esperar el login de A: crear y editar el borrador del espacio, con la autenticación mientras tanto resuelta con un guard temporal que se puede cambiar por el real sin tocar los controladores.
+
+#### Qué se hizo
+- Módulo `spaces`: `POST /api/spaces` (crea en `DRAFT`, solo el nombre es obligatorio), `PATCH /api/spaces/:id` (parcial; `null` borra un campo opcional; `amenityIds` reemplaza el equipamiento) y `GET /api/spaces/:id` (con el detalle privado de la dirección). Solo el dueño accede: 403 si es de otro, 404 si no existe.
+- Validación de referencias: tipo, región, comuna y equipamiento deben existir, y la comuna debe ser de la región; si solo llega la comuna se guarda su región. El estado y el dueño no se pueden mandar (400).
+- `src/common/auth/`: `DevAuthGuard` (usuario por `x-user-id` o el propietario del seed), `@CurrentUser()` y `AuthUser`. Con `NODE_ENV=production` el guard rechaza todo.
+- Pruebas: 17 unitarias nuevas (servicio y guard) y 30 e2e nuevos. Se rompió a propósito la comprobación de dueño para verificar que los tests de 403 la detectan (se restauró).
+- Documentación en `docs/arquitectura.md`.
+
+#### Decisiones y por qué
+| Decisión | Alternativas consideradas | Por qué se eligió |
+|---|---|---|
+| `DevAuthGuard` temporal con la forma del guard real | Esperar a A; o construir el login yo | Desbloquea ES-02 a ES-06 y PN-01 sin invadir el dominio de A; el cambio a JWT es reemplazar el guard en cada `@UseGuards` |
+| El guard no funciona en producción | Dejarlo y confiar en que se reemplace | Cualquiera podría hacerse pasar por otro usuario; un olvido no debe llegar a producción |
+| Casi todos los campos opcionales y `null` para borrar | Campos obligatorios por paso | El formulario guarda un borrador en cada paso; las reglas para publicar son de ES-04 |
+| Reemplazar todo el equipamiento en cada `PATCH` | Agregar y quitar por separado | El formulario manda la selección completa; es más simple y no hay estados intermedios |
+| 403 (y no 404) para el espacio de otro | 404 para no revelar que existe | Lo pide el AGENTS.md y los ids son uuid; no hay nada que adivinar |
+
+#### Archivos principales
+- `rentsmart-back/src/spaces/`: módulo, controlador, servicio, DTOs y prueba.
+- `rentsmart-back/src/common/auth/`: guard temporal, decorador y tipo.
+- `rentsmart-back/test/spaces.e2e-spec.ts`.
+- `docs/arquitectura.md`.
+
+#### Cómo probarlo
+- Con `docker compose up -d db-test`, en `rentsmart-back` (Node 24): `npm run lint`, `npm run build`, `npm test` y `npm run test:e2e`.
+- A mano: `npm run seed`, `npm run start:dev` y en Swagger (`/docs`) probar `POST /api/spaces` (sin `x-user-id` actúa el propietario del seed).
+
+#### Estado de verificación
+- Build: ✅
+- Lint: ✅
+- Tests unitarios: ✅ (6 archivos, 29 pruebas)
+- Tests e2e: ✅ (3 archivos, 39 pruebas)
+
+#### Pendientes y bloqueos
+- Depende de que se mergee el PR #92.
+- ES-03 (fotos), ES-04 (publicar), ES-05/06 (editar y activar) y `GET /api/spaces/me` (PN-01) siguen pendientes.
+- A (@AlejandroMG): cuando entregue CU-03, reemplazar `DevAuthGuard` por `JwtAuthGuard` en `SpacesController` y borrar `dev-auth.guard.ts`. `@CurrentUser()` y `AuthUser` pueden quedar si el guard real deja `request.user` con la misma forma.
+
+#### Para el resto del equipo
+- Para proteger un endpoint nuevo: `@UseGuards(DevAuthGuard)` y `@CurrentUser() user: AuthUser`. En los e2e, `set('x-user-id', id)` actúa como ese usuario.
+- Los permisos por dueño se comprueban en el servicio, no en el controlador.
+
+---

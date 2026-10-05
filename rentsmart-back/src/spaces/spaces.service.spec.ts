@@ -1,0 +1,165 @@
+import {
+  BadRequestException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
+import { Test } from '@nestjs/testing';
+import { PrismaService } from '../prisma/prisma.service';
+import { SpacesService } from './spaces.service';
+
+describe('SpacesService', () => {
+  let service: SpacesService;
+  const prisma = {
+    space: { create: jest.fn(), update: jest.fn(), findUnique: jest.fn() },
+    spaceType: { findUnique: jest.fn() },
+    amenity: { count: jest.fn() },
+    commune: { findUnique: jest.fn() },
+    region: { findUnique: jest.fn() },
+  };
+  const row = {
+    id: 's1',
+    status: 'DRAFT',
+    name: 'Sala',
+    amenities: [{ amenityId: 2 }, { amenityId: 5 }],
+  };
+
+  beforeEach(async () => {
+    jest.resetAllMocks();
+    const module = await Test.createTestingModule({
+      providers: [SpacesService, { provide: PrismaService, useValue: prisma }],
+    }).compile();
+    service = module.get(SpacesService);
+  });
+
+  describe('create', () => {
+    it('crea siempre en borrador y a nombre del usuario', async () => {
+      prisma.space.create.mockResolvedValue(row);
+
+      await service.create('u1', { name: 'Sala' });
+
+      expect(prisma.space.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            ownerId: 'u1',
+            status: 'DRAFT',
+            name: 'Sala',
+          }) as unknown,
+        }),
+      );
+    });
+
+    it('devuelve el equipamiento como lista de ids', async () => {
+      prisma.space.create.mockResolvedValue(row);
+
+      const space = await service.create('u1', { name: 'Sala' });
+
+      expect(space.amenityIds).toEqual([2, 5]);
+      expect(space).not.toHaveProperty('amenities');
+    });
+
+    it('guarda la región de la comuna cuando solo se manda la comuna', async () => {
+      prisma.commune.findUnique.mockResolvedValue({ regionId: 7 });
+      prisma.space.create.mockResolvedValue(row);
+
+      await service.create('u1', { name: 'Sala', communeId: 3 });
+
+      const { data } = prisma.space.create.mock.calls[0][0] as {
+        data: Record<string, unknown>;
+      };
+      expect(data.regionId).toBe(7);
+      expect(data.communeId).toBe(3);
+    });
+
+    it('rechaza una comuna que no es de la región', async () => {
+      prisma.commune.findUnique.mockResolvedValue({ regionId: 7 });
+
+      await expect(
+        service.create('u1', { name: 'Sala', regionId: 8, communeId: 3 }),
+      ).rejects.toThrow(BadRequestException);
+      expect(prisma.space.create).not.toHaveBeenCalled();
+    });
+
+    it('rechaza un tipo que no existe', async () => {
+      prisma.spaceType.findUnique.mockResolvedValue(null);
+
+      await expect(
+        service.create('u1', { name: 'Sala', typeId: 99 }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('rechaza equipamiento que no existe', async () => {
+      prisma.amenity.count.mockResolvedValue(1);
+
+      await expect(
+        service.create('u1', { name: 'Sala', amenityIds: [1, 2] }),
+      ).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('update', () => {
+    it('lanza 404 si el espacio no existe', async () => {
+      prisma.space.findUnique.mockResolvedValue(null);
+
+      await expect(service.update('u1', 'x', { name: 'N' })).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+
+    it('lanza 403 si el espacio es de otro y no modifica nada', async () => {
+      prisma.space.findUnique.mockResolvedValue({ ...row, ownerId: 'otro' });
+
+      await expect(service.update('u1', 's1', { name: 'N' })).rejects.toThrow(
+        ForbiddenException,
+      );
+      expect(prisma.space.update).not.toHaveBeenCalled();
+    });
+
+    it('no deja borrar el nombre', async () => {
+      prisma.space.findUnique.mockResolvedValue({ ...row, ownerId: 'u1' });
+
+      await expect(service.update('u1', 's1', { name: null })).rejects.toThrow(
+        BadRequestException,
+      );
+    });
+
+    it('reemplaza el equipamiento solo si viene en la petición', async () => {
+      prisma.space.findUnique.mockResolvedValue({ ...row, ownerId: 'u1' });
+      prisma.space.update.mockResolvedValue(row);
+
+      await service.update('u1', 's1', { description: 'Hola' });
+      const withoutAmenities = prisma.space.update.mock.calls[0][0] as {
+        data: Record<string, unknown>;
+      };
+      expect(withoutAmenities.data).not.toHaveProperty('amenities');
+
+      prisma.amenity.count.mockResolvedValue(1);
+      await service.update('u1', 's1', { amenityIds: [4] });
+      const withAmenities = prisma.space.update.mock.calls[1][0] as {
+        data: Record<string, unknown>;
+      };
+      expect(withAmenities.data.amenities).toEqual({
+        deleteMany: {},
+        create: [{ amenityId: 4 }],
+      });
+    });
+  });
+
+  describe('findOne', () => {
+    it('devuelve el espacio al dueño sin exponer ownerId', async () => {
+      prisma.space.findUnique.mockResolvedValue({ ...row, ownerId: 'u1' });
+
+      const space = await service.findOne('u1', 's1');
+
+      expect(space.id).toBe('s1');
+      expect(space).not.toHaveProperty('ownerId');
+    });
+
+    it('lanza 403 a otro usuario', async () => {
+      prisma.space.findUnique.mockResolvedValue({ ...row, ownerId: 'otro' });
+
+      await expect(service.findOne('u1', 's1')).rejects.toThrow(
+        ForbiddenException,
+      );
+    });
+  });
+});
