@@ -60,7 +60,7 @@ Antes de proponer un commit, corre build, lint y tests de la app que tocaste.
 
 - **Node.js 24.9 o superior.** NestJS 12 se publica solo como ES Modules y Jest necesita Node 24.9+ para cargarlo. Con Node 22 el back compila, pero `npm test` falla con "Must use import to load ES Module".
 - **Tailwind 4** se configura con el plugin `@tailwindcss/vite` en `vite.config.js` y con `@import "tailwindcss"` en el CSS. No hay `tailwind.config.js`.
-- **Front en TypeScript:** se decidió migrar (P-04, issue F-07). Hasta que esa migración esté en `main`, el front sigue en `.jsx`.
+- **Front en TypeScript** (P-04, F-07): el código nuevo va en `.ts`/`.tsx`. `npm run build` ejecuta `tsc -b` antes de Vite.
 - **Base de datos:** PostgreSQL + Prisma (P-03). Se agrega en F-03/F-04; revisa `docs/arquitectura.md` antes de modelar.
 - **Stripe** necesita el body sin parsear para verificar la firma del webhook: `NestFactory.create(AppModule, { rawBody: true })`.
 - El back no usa `@nestjs/observe`: se quitó de la plantilla porque traía credenciales de ejemplo.
