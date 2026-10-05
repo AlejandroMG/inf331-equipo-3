@@ -24,6 +24,7 @@ describe('PhotosService', () => {
   };
   const prisma = {
     $transaction: jest.fn(),
+    space: { findUnique: jest.fn() },
     spacePhoto: {
       findMany: jest.fn(),
       findFirst: jest.fn(),
@@ -47,6 +48,10 @@ describe('PhotosService', () => {
       url: `/api/uploads/${path}`,
     }));
     storage.remove.mockResolvedValue(undefined);
+    prisma.space.findUnique.mockResolvedValue({
+      status: 'DRAFT',
+      _count: { photos: 3 },
+    });
     spaces.ensureOwner.mockResolvedValue(undefined);
     const module = await Test.createTestingModule({
       providers: [
@@ -201,6 +206,38 @@ describe('PhotosService', () => {
         data: { position: { decrement: 1 } },
       });
       expect(storage.remove).toHaveBeenCalledWith('spaces/s1/b.png');
+    });
+
+    it('un espacio publicado no se queda sin fotos: 409 con missing y no borra nada', async () => {
+      prisma.spacePhoto.findFirst.mockResolvedValue({
+        id: 'p1',
+        position: 0,
+        storagePath: 'x.png',
+      });
+      prisma.space.findUnique.mockResolvedValue({
+        status: 'ACTIVE',
+        _count: { photos: 1 },
+      });
+
+      await expect(service.remove('u1', 's1', 'p1')).rejects.toMatchObject({
+        missing: ['photos'],
+      });
+      expect(prisma.spacePhoto.delete).not.toHaveBeenCalled();
+      expect(storage.remove).not.toHaveBeenCalled();
+    });
+
+    it('un espacio publicado con más de una foto sí puede borrar una', async () => {
+      prisma.spacePhoto.findFirst.mockResolvedValue({
+        id: 'p1',
+        position: 0,
+        storagePath: 'x.png',
+      });
+      prisma.space.findUnique.mockResolvedValue({
+        status: 'ACTIVE',
+        _count: { photos: 2 },
+      });
+
+      await expect(service.remove('u1', 's1', 'p1')).resolves.toBeUndefined();
     });
 
     it('si no se puede borrar el archivo, igual termina bien', async () => {

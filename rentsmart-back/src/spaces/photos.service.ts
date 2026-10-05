@@ -6,10 +6,12 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
+import { SpaceStatus } from '../generated/prisma/enums';
 import { PrismaService } from '../prisma/prisma.service';
 import { StorageService } from '../storage/storage.service';
 import { MAX_PHOTO_BYTES, MAX_PHOTOS, PhotoDto } from './dto/photo.dto';
 import { detectImageType } from './image-type';
+import { IncompleteSpaceException } from './incomplete-space.exception';
 import { SpacesService } from './spaces.service';
 
 const PHOTO_VIEW = { id: true, url: true, position: true } as const;
@@ -110,6 +112,18 @@ export class PhotosService {
       select: { id: true, position: true, storagePath: true },
     });
     if (!photo) throw new NotFoundException('La foto no existe');
+
+    // Un espacio publicado no se puede quedar sin fotos.
+    const space = await this.prisma.space.findUnique({
+      where: { id: spaceId },
+      select: { status: true, _count: { select: { photos: true } } },
+    });
+    if (space?.status === SpaceStatus.ACTIVE && space._count.photos <= 1) {
+      throw new IncompleteSpaceException(
+        ['photos'],
+        'Un espacio publicado necesita al menos una foto: desactívalo si quieres borrar la última',
+      );
+    }
 
     await this.prisma.$transaction([
       this.prisma.spacePhoto.delete({ where: { id: photo.id } }),

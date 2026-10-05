@@ -9,6 +9,8 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CreateSpaceDto } from './dto/create-space.dto';
 import { SpaceDto } from './dto/space.dto';
 import { UpdateSpaceDto } from './dto/update-space.dto';
+import { IncompleteSpaceException } from './incomplete-space.exception';
+import { missingFields } from './publish-rules';
 
 const OWNER_VIEW = {
   id: true,
@@ -37,7 +39,9 @@ type OwnerRow = {
   amenities: { amenityId: number }[];
 } & Omit<SpaceDto, 'amenityIds'>;
 
-function toDto({ amenities, ...space }: OwnerRow): SpaceDto {
+function toDto(row: OwnerRow & { _count?: unknown }): SpaceDto {
+  const { amenities, _count, ...space } = row;
+  void _count; // los conteos son para decidir, no se devuelven
   return { ...space, amenityIds: amenities.map((a) => a.amenityId) };
 }
 
@@ -69,11 +73,38 @@ export class SpacesService {
     id: string,
     dto: UpdateSpaceDto,
   ): Promise<SpaceDto> {
-    await this.findOwned(ownerId, id);
+    const current = await this.findOwned(ownerId, id);
     if (dto.name === null) throw new BadRequestException('El nombre es obligatorio');
 
     const { amenityIds, ...fields } = dto;
     const regionId = await this.checkReferences(dto);
+
+    // Un espacio publicado no puede quedar sin algo de lo necesario para publicar (un cambio de precio sí vale).
+    if (current.status === SpaceStatus.ACTIVE) {
+      const missing = missingFields({
+        typeId: dto.typeId !== undefined ? dto.typeId : current.typeId,
+        description:
+          dto.description !== undefined ? dto.description : current.description,
+        capacity: dto.capacity !== undefined ? dto.capacity : current.capacity,
+        communeId:
+          dto.communeId !== undefined ? dto.communeId : current.communeId,
+        pricePerHour:
+          dto.pricePerHour !== undefined
+            ? dto.pricePerHour
+            : current.pricePerHour,
+        pricePerDay:
+          dto.pricePerDay !== undefined ? dto.pricePerDay : current.pricePerDay,
+        photoCount: current._count.photos,
+        scheduleCount: current._count.rulesWeek,
+      });
+      if (missing.length > 0) {
+        throw new IncompleteSpaceException(
+          missing,
+          'Un espacio publicado debe seguir teniendo lo necesario para publicar: desactívalo si quieres dejarlo incompleto',
+        );
+      }
+    }
+
     const space = await this.prisma.space.update({
       where: { id },
       data: {
@@ -112,7 +143,11 @@ export class SpacesService {
   private async findOwned(ownerId: string, id: string) {
     const space = await this.prisma.space.findUnique({
       where: { id },
-      select: { ...OWNER_VIEW, ownerId: true },
+      select: {
+        ...OWNER_VIEW,
+        ownerId: true,
+        _count: { select: { photos: true, rulesWeek: true } },
+      },
     });
     if (!space) throw new NotFoundException('El espacio no existe');
     if (space.ownerId !== ownerId) {

@@ -144,6 +144,64 @@ describe('SpacesService', () => {
     });
   });
 
+  describe('update de un espacio publicado', () => {
+    const active = {
+      ...row,
+      ownerId: 'u1',
+      status: 'ACTIVE',
+      typeId: 1,
+      description: 'Sala',
+      capacity: 8,
+      communeId: 2,
+      pricePerHour: 9000,
+      pricePerDay: null,
+      _count: { photos: 2, rulesWeek: 5 },
+    };
+
+    beforeEach(() => {
+      prisma.space.findUnique.mockResolvedValue(active);
+      prisma.space.update.mockResolvedValue(row);
+      prisma.spaceType.findUnique.mockResolvedValue({ id: 1 });
+    });
+
+    it('deja cambiar el precio y otros datos sin perder lo necesario', async () => {
+      await service.update('u1', 's1', { pricePerHour: 12000, rules: null });
+
+      expect(prisma.space.update).toHaveBeenCalled();
+    });
+
+    it('deja cambiar de precio por hora a solo por día', async () => {
+      await service.update('u1', 's1', { pricePerHour: null, pricePerDay: 50000 });
+
+      expect(prisma.space.update).toHaveBeenCalled();
+    });
+
+    it.each([
+      ['price', { pricePerHour: null }],
+      ['description', { description: '  ' }],
+      ['description', { description: null }],
+      ['capacity', { capacity: null }],
+      ['type', { typeId: null }],
+      ['commune', { communeId: null }],
+    ])(
+      'rechaza con 409 dejar sin %s a un espacio publicado',
+      async (field, patch) => {
+        await expect(service.update('u1', 's1', patch)).rejects.toMatchObject({
+          missing: [field],
+        });
+        expect(prisma.space.update).not.toHaveBeenCalled();
+      },
+    );
+
+    it('un borrador sí puede quedar incompleto', async () => {
+      prisma.space.findUnique.mockResolvedValue({ ...active, status: 'DRAFT' });
+
+      await service.update('u1', 's1', { pricePerHour: null, description: null });
+
+      expect(prisma.space.update).toHaveBeenCalled();
+    });
+  });
+
   describe('findOne', () => {
     it('devuelve el espacio al dueño sin exponer ownerId', async () => {
       prisma.space.findUnique.mockResolvedValue({ ...row, ownerId: 'u1' });

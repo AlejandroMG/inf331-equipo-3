@@ -513,3 +513,62 @@ Permitir que el propietario suba de 1 a 10 fotos a su espacio, las ordene (la pr
 - El catálogo público (`GET /api/catalog/:id`) ya muestra las fotos por posición, con la portada primero.
 
 ---
+
+### 2026-10-05 · B (xReNatS) · ES-04 publicar con reglas y ES-06 activar y desactivar (back)
+
+**Issues:** #23 (ES-04), #25 (ES-06) y parte de #24 (ES-05), parte del back
+**Rama / PR:** `feat/ES-04-publish-api`, apilada sobre `feat/ES-03-photos-api` · sin PR todavía
+**Duración aproximada:** 2 h
+**Herramientas:** Claude Code
+
+#### Objetivo
+Cerrar el ciclo de vida del espacio en la API: publicar un borrador solo si está completo, y activar o desactivar un espacio publicado, sin que un espacio activo pueda quedar incompleto.
+
+#### Qué se hizo
+- `POST /api/spaces/:id/publish`: pasa un borrador a `ACTIVE` y marca la cuenta como propietaria (`isHost`, P-02). Si falta algo responde 409 con `missing` (`type`, `description`, `capacity`, `commune`, `price`, `photos`, `schedule`).
+- `PATCH /api/spaces/:id/status` (`ACTIVE` o `INACTIVE`): desactivar saca el espacio del catálogo; activar exige seguir cumpliendo lo necesario (el espacio pudo editarse mientras estaba desactivado). Pedir el estado que ya tiene no hace nada. Un borrador no se cambia por aquí (409) y uno `BLOCKED` por un admin no se toca (403).
+- Un espacio publicado no puede quedar incompleto: `PATCH /api/spaces/:id` y borrar su última foto responden 409 con `missing` (un cambio de precio, nombre o reglas sí vale). Esto adelanta parte de ES-05.
+- Las reglas viven en un solo lugar (`publish-rules.ts`) y las usan publicar, reactivar y editar.
+- Los cambios de estado son condicionales (`WHERE status = <anterior>`) dentro de una transacción: peticiones a la vez no se pisan.
+- Decisión de producto: tipo y comuna también son obligatorios para publicar (**P-18**, registrada en `docs/decisiones.md` y `docs/producto.md`).
+- Pruebas: 42 unitarias nuevas y 32 e2e nuevos (105 y 90 en esta rama). En una carpeta de integración con el catálogo, un e2e adicional comprueba el recorrido completo: el borrador no sale en el catálogo, publicado sí, desactivado ya no y reactivado vuelve, y el detalle público no muestra `addressDetail` (111 e2e en total).
+- Documentación en `docs/arquitectura.md`.
+
+#### Decisiones y por qué
+| Decisión | Alternativas consideradas | Por qué se eligió |
+|---|---|---|
+| Exigir también tipo y comuna (P-18) | Solo lo de `producto.md` | Sin ellos la tarjeta sale sin tipo ni comuna y el espacio no aparece en los filtros de BU-03; lo confirmó Renato |
+| 409 con `missing` | 400 | Es un conflicto con el estado del espacio (AGENTS.md); `missing` permite al front indicar exactamente qué completar |
+| Estado pedido igual al actual = 200 sin cambios | 409 | Un doble clic o un reintento no debe dar error |
+| Un espacio activo no puede quedar incompleto | Dejarlo y que el catálogo tolere vacíos | Si no, "publicado" dejaría de significar "completo" y el catálogo mostraría espacios sin precio ni fotos |
+| Publicar y cambiar estado en endpoints distintos | Un solo `PATCH status` | Publicar tiene efectos propios (`isHost`) y reglas de borrador; el cambio ACTIVE/INACTIVE es otra cosa |
+| El horario se valida contra `AvailabilityRule` | Esperar a DI-01 | Es lo que dice el plan; mientras C no entregue DI-01 un espacio nuevo no se puede publicar desde la app |
+
+#### Archivos principales
+- `rentsmart-back/src/spaces/`: `publication.service`, `publish-rules`, `incomplete-space.exception`, `dto/change-status.dto`, y cambios en `spaces.controller`, `spaces.service` y `photos.service`.
+- `rentsmart-back/test/publication.e2e-spec.ts` y las pruebas unitarias.
+- `docs/decisiones.md` (P-18), `docs/producto.md`, `docs/arquitectura.md`.
+
+#### Cómo probarlo
+- Con `docker compose up -d db-test`, en `rentsmart-back` (Node 24): `npm run lint`, `npm run build`, `npm test` y `npm run test:e2e`.
+- A mano: en Swagger, `POST /api/spaces/{id}/publish` sobre un borrador incompleto devuelve la lista de lo que falta.
+
+#### Estado de verificación
+- Build: ✅
+- Lint: ✅
+- Tests unitarios: ✅ (11 archivos, 105 pruebas)
+- Tests e2e: ✅ (5 archivos, 90 pruebas en esta rama; 111 con el catálogo integrado)
+- Nota: el e2e de "peticiones a la vez" detecta quitar la condición del estado solo a veces (la carga no siempre se cruza); la garantía real la dan la condición del `UPDATE` y su prueba unitaria.
+
+#### Pendientes y bloqueos
+- El horario semanal (DI-01, de C): sin él no se puede publicar un espacio nuevo desde la app.
+- Front: agregar tipo y comuna a la lista "Para publicar necesitas", conectar "Publicar espacio" y el interruptor activar/desactivar del panel (PN-01).
+- Cuando el catálogo y `spaces` estén en `main`, agregar el e2e de recorrido completo (publicar → catálogo) como prueba permanente; hoy vive solo en la carpeta de integración porque cada rama tiene un solo lado.
+- Admin: bloquear y desbloquear espacios (AD-02) pondrá `BLOCKED`.
+
+#### Para el resto del equipo
+- C (@gonzzza-lol): para que publicar funcione, DI-01 debe crear `AvailabilityRule` del espacio; con una regla basta para el chequeo.
+- A (@AlejandroMG): al reemplazar `DevAuthGuard` por el JWT, los endpoints nuevos usan el mismo patrón.
+- Las reservas confirmadas de un espacio desactivado se mantienen: C debe impedir reservas nuevas solo cuando `status !== 'ACTIVE'`.
+
+---
