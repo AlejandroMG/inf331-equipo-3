@@ -518,3 +518,56 @@ Mostrar el catálogo con tarjetas y paginación según el prototipo aprobado, tr
 - C: las tarjetas enlazan a `/spaces/:id`; ahí irá `<BookingWidget>` (BU-02).
 
 ---
+
+### 2026-10-05 · B (xReNatS) · BU-02 detalle del espacio (front)
+
+**Issues:** #28 (BU-02), parte del front
+**Rama / PR:** `feat/BU-02-detalle`, apilada sobre `feat/BU-01-catalogo` (que depende del PR #91) · sin PR todavía
+**Duración aproximada:** 1,5 h
+**Herramientas:** Claude Code
+
+#### Objetivo
+Mostrar el detalle de un espacio según el prototipo aprobado: galería, descripción, equipamiento, reglas, horario, ubicación, reseñas y una caja de reserva con el lugar para el widget de C.
+
+#### Qué se hizo
+- `SpaceDetailPage` (`/spaces/:spaceId`): estado de carga, 404 con aviso y enlace al catálogo, error con "Reintentar", y las secciones que el espacio tiene (las vacías se omiten).
+- `Gallery`: foto principal y miniaturas accesibles (botones con `aria-pressed`); sin fotos muestra un marcador.
+- `groupSchedule`: agrupa los días consecutivos con el mismo horario ("Lunes a viernes 09:00 – 21:00", "Sábado y domingo no disponible"); el domingo (0) va al final.
+- `BookingSlot`: lugar del widget de reserva. Hoy dice que la reserva estará disponible pronto; C lo reemplaza por `<BookingWidget spaceId={...} />`.
+- `useRequest` (`src/lib/useRequest.ts`): el hook de carga que antes estaba dentro de `useCatalog`, ahora genérico. `useCatalog` y `useSpace` lo usan.
+- Handler de MSW para `GET /api/catalog/:id` (404 si no existe) y tipos del detalle según el contrato del back.
+- 28 pruebas nuevas (114 en total).
+
+#### Decisiones y por qué
+| Decisión | Alternativas consideradas | Por qué se eligió |
+|---|---|---|
+| Extraer `useRequest` | Repetir el patrón en cada pantalla | Ya había dos pantallas con la misma lógica de cancelación y carga; las que vienen (panel, editar) también la necesitan |
+| Sin mapa en la ubicación | El marcador de mapa del prototipo | El mapa es el extra ES-07; un recuadro vacío para el usuario no aporta |
+| La caja de reserva muestra un aviso y no un recuadro de desarrollo | Dejar la anotación "lo construye el equipo C" | Es texto que vería un usuario real; el comentario para C queda en el código de `BookingSlot` |
+| Secciones sin datos se omiten | Mostrar títulos vacíos | Un espacio puede publicarse sin reglas o equipamiento |
+| La etiqueta "Nuevo · sin reseñas aún" es fija | Quitarla | Está en el prototipo aprobado; se saca en RS-02 |
+
+#### Archivos principales
+- `rentsmart-front/src/features/catalog/`: `SpaceDetailPage`, `Gallery`, `BookingSlot`, `schedule`, `useSpace`, `catalog-api` y `types`, con sus pruebas.
+- `rentsmart-front/src/lib/useRequest.ts` (y su prueba).
+- `rentsmart-front/src/mocks/handlers.ts`: detalle simulado.
+
+#### Cómo probarlo
+- Desde `rentsmart-front`: `npm run lint`, `npm run build` y `npm test`.
+- Visual: con el back (`/api/catalog/:id`) o un servidor de prueba con el contrato. Se probó así a 375 px y en escritorio: galería con miniaturas, secciones, horario agrupado, 404 y espacio sin fotos.
+
+#### Estado de verificación
+- Build: ✅
+- Lint: ✅
+- Tests: ✅ (18 archivos, 114 pruebas)
+
+#### Pendientes y bloqueos
+- Depende de que se mergee el PR #91 (y BU-01 front después). El back del detalle está en `feat/BU-01-catalog-api`.
+- C (@gonzzza-lol): reemplazar `BookingSlot` por `<BookingWidget spaceId={space.id} />` (RE-02).
+- Probar contra el back real cuando los dos PR del back estén en `main`.
+
+#### Para el resto del equipo
+- Para cargar datos en una pantalla: `useRequest(clave, (signal) => llamada(signal))`; devuelve `data`, `error`, `loading` y `retry`.
+- `ApiError` trae `status`: un 404 se puede mostrar distinto de otros errores, como hace esta pantalla.
+
+---

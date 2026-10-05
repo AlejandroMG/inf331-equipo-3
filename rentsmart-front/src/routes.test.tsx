@@ -24,10 +24,10 @@ describe('rutas', () => {
     expect(screen.getByRole('contentinfo')).toBeInTheDocument()
   })
 
-  it('el detalle de un espacio es público', () => {
+  it('el detalle de un espacio es público', async () => {
     renderAt('/spaces/seed-space-1')
 
-    expect(screen.getByRole('heading', { level: 1, name: 'Detalle del espacio' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { level: 1, name: 'Sala Alameda' })).toBeInTheDocument()
   })
 
   it.each(['/publish', '/owner/spaces'])('sin sesión, %s redirige a /login y recuerda la ruta pedida', async (path) => {

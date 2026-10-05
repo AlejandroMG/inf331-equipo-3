@@ -1,5 +1,20 @@
 import { http, HttpResponse } from 'msw'
+import type { SpaceDetail } from '../features/catalog/types'
 import { catalogData } from './catalog-data'
+
+/** Detalle de ejemplo a partir de un espacio de la lista: horario de lunes a viernes y datos genéricos. */
+function detailOf(item: (typeof catalogData)[number]): SpaceDetail {
+  return {
+    ...item,
+    description: 'Espacio de ejemplo para el catálogo simulado.',
+    regionName: 'Región Metropolitana',
+    address: 'Av. Libertador Bernardo O’Higgins 1234',
+    rules: 'No fumar.',
+    amenities: ['Aire acondicionado', 'Proyector', 'Wifi'],
+    photos: item.coverUrl ? [{ id: `${item.id}-0`, url: item.coverUrl, position: 0 }] : [],
+    schedule: [1, 2, 3, 4, 5].map((weekday) => ({ weekday, startTime: '09:00', endTime: '21:00' })),
+  }
+}
 
 /**
  * Respuestas simuladas de la API mientras el endpoint real no exista.
@@ -32,5 +47,14 @@ export const handlers = [
       page,
       pageSize,
     })
+  }),
+
+  // BU-02: detalle público; 404 si el espacio no existe.
+  http.get('*/api/catalog/:id', ({ params }) => {
+    const item = catalogData.find((space) => space.id === params.id)
+    if (!item) {
+      return HttpResponse.json({ message: 'El espacio no existe', error: 'Not Found', statusCode: 404 }, { status: 404 })
+    }
+    return HttpResponse.json(detailOf(item))
   }),
 ]

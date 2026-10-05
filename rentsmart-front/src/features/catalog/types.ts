@@ -21,3 +21,39 @@ export interface Paginated<T> {
 }
 
 export type CatalogPageData = Paginated<CatalogItem>
+
+export interface SpacePhoto {
+  id: string
+  url: string
+  /** 0 es la portada. */
+  position: number
+}
+
+export interface ScheduleRule {
+  /** 0 = domingo ... 6 = sábado. */
+  weekday: number
+  /** "HH:mm" */
+  startTime: string
+  endTime: string
+}
+
+/** Detalle público de un espacio (GET /api/catalog/:id). Nunca incluye `addressDetail`. */
+export interface SpaceDetail {
+  id: string
+  name: string
+  description: string | null
+  typeName: string
+  regionName: string
+  communeName: string
+  /** Dirección pública. */
+  address: string | null
+  capacity: number
+  pricePerHour: number | null
+  pricePerDay: number | null
+  rules: string | null
+  /** Nombres, por orden alfabético. */
+  amenities: string[]
+  /** Por posición; la primera es la portada. */
+  photos: SpacePhoto[]
+  schedule: ScheduleRule[]
+}
