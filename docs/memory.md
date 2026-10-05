@@ -349,3 +349,67 @@ Simulación local del job del back desde cero, con `db-test` levantada: `npm ci`
 - En local hay que correr `npx prisma generate` (o `npx prisma migrate dev`) tras instalar dependencias, o el back no compila.
 
 ---
+
+### 2026-10-05 · B (xReNatS) · F-07 base del front en TypeScript: rutas, layout y componentes
+
+**Issues:** #7 (F-07), #9 (F-09, prototipo)
+**Rama / PR:** `feat/F-07-base-front-ts` · sin PR todavía
+**Duración aproximada:** 3 h
+**Herramientas:** Claude Code
+
+#### Objetivo
+Dejar la base del front para que A y C construyan sus pantallas: TypeScript, rutas, layout responsive, cliente HTTP y componentes base, con la identidad visual aprobada.
+
+#### Qué se hizo
+- **Prototipo de diseño (F-09).** Antes de escribir código se hizo un prototipo navegable (catálogo, detalle, publicar por pasos, panel del propietario, móvil y escritorio) basado en Peerspace y Airbnb, con dos paletas. Se aprobó la paleta A (verde azulado). El prototipo está en https://claude.ai/artifact/MipjoPHn9NVH9yknSMy9LM, un enlace privado: hay que compartirlo desde su menú Share para que A y C lo vean.
+- **Migración a TypeScript (P-04).** `tsconfig` (app y node), `vite.config.ts`, `main.tsx` y `App.tsx`; ESLint con typescript-eslint; `npm run build` ahora corre `tsc -b` antes de Vite. Se quitó el código de la plantilla (`App.jsx`, `App.css`, imágenes).
+- **Marca.** Colores, tipografías (Bricolage Grotesque y Figtree) y radios como variables `@theme` de Tailwind 4 en `src/index.css`; favicon propio.
+- **Rutas.** `src/routes.tsx` con `AppLayout`, páginas provisorias (catálogo, detalle, publicar, mis espacios, login), 404 y `RequireAuth`, que redirige a `/login` guardando la ruta pedida.
+- **Layout.** `Navbar` (menú plegable en móvil) y `Footer`, con enlace para saltar al contenido.
+- **Cliente HTTP.** `src/lib/http.ts` (token Bearer, query string, JSON y FormData, `ApiError` con mensajes en español, 401 borra el token), más `token.ts`, `format.ts` (`formatClp`) y `paths.ts`.
+- **Componentes.** `Button` y `LinkButton`, `Input`, `Card`, `Modal` (`<dialog>` nativo) y `Toast` (`ToastProvider` y `useToast`).
+- **Guía de componentes** en `/dev/componentes`, solo en desarrollo.
+
+#### Decisiones y por qué
+| Decisión | Alternativas consideradas | Por qué se eligió |
+|---|---|---|
+| El cliente HTTP agrega `/api` a `VITE_API_URL` | Que `VITE_API_URL` ya incluya `/api` | `.env.example` ya definía `http://localhost:3000` y el back publicará todo bajo `/api`; así no cambia la variable |
+| `Modal` con `<dialog>` nativo | Librería de modales o un `div` propio | El navegador da gratis el foco atrapado, Esc y el fondo bloqueado, sin dependencias |
+| React Router 7 con `createBrowserRouter` y rutas como arreglo | Rutas JSX con `<Routes>` | El arreglo se puede reutilizar con `createMemoryRouter` en los tests de F-08 |
+| `RequireAuth` solo mira si hay token | Esperar el contexto de sesión de A | A todavía no entrega CU-02; cuando exista, solo hay que cambiar esta condición |
+| `/login` es un placeholder en `routes.tsx` | Crear `features/auth/` | Es dominio de A; reemplaza la ruta con su pantalla |
+| Íconos como SVG propios | Librería de íconos | Solo se usan cinco |
+
+#### Archivos principales
+- `rentsmart-front/src/routes.tsx`, `App.tsx`, `main.tsx`: arranque y rutas.
+- `rentsmart-front/src/components/`: componentes base, layout y `RequireAuth`.
+- `rentsmart-front/src/lib/`: `http.ts`, `token.ts`, `format.ts`, `paths.ts`, `cn.ts`.
+- `rentsmart-front/src/index.css`: tokens de la marca.
+- `rentsmart-front/eslint.config.js`, `tsconfig*.json`, `vite.config.ts`, `package.json`: toolchain TypeScript.
+- `docs/arquitectura.md`, `AGENTS.md`, `.env.example`, `rentsmart-front/README.md`: documentación al día.
+
+#### Cómo probarlo
+- Desde `rentsmart-front`: `npm run lint`, `npm run build` y `npm run dev`.
+- Abrir `/publish` sin sesión: debe redirigir a `/login`. Con `localStorage.setItem('rentsmart_token', 'dev')` en la consola, `/publish` y `/owner/spaces` abren.
+- `/dev/componentes`: probar el modal, los avisos y el botón con carga.
+- A 375 px el menú se pliega y no hay scroll horizontal.
+
+#### Estado de verificación
+- Build: ✅ (`tsc -b` y Vite)
+- Lint: ✅
+- Tests: no aplica todavía. F-08 agrega Vitest, Testing Library y MSW, y con ellos las pruebas del cliente HTTP, `RequireAuth` y los componentes. Se hizo así porque no hay un ejecutor de tests hasta F-08; hay que mergear F-08 antes de dar por cerrada la definición de terminado de F-07.
+- Comprobado a mano en el navegador: redirección de rutas privadas, modal (abre, cierra, título enlazado), avisos de éxito y error, y menú móvil a 375 px (sin scroll horizontal). No se revisó visualmente con capturas.
+
+#### Pendientes y bloqueos
+- F-08 (#8): Vitest, Testing Library y MSW, y los tests de lo de arriba.
+- F-09 (#9): adjuntar el enlace del prototipo al issue una vez compartido.
+- Falta abrir el PR con `Closes #7`; lo revisa C (@gonzzza-lol).
+
+#### Para el resto del equipo
+- Ahora el front es TypeScript: los archivos nuevos van en `.ts` o `.tsx`.
+- Usen las utilidades de la marca (`bg-primary`, `text-ink`, `border-line`, `font-display`, `rounded-card`) y los componentes de `src/components/`; en `/dev/componentes` están todos.
+- Para llamar a la API: `import { http } from '../../lib/http'` y `http.get<Tipo>('/spaces')`. El cliente agrega `/api` y el token.
+- A (@AlejandroMG): al implementar el login, usa `setToken` de `src/lib/token.ts`, cambia la condición de `RequireAuth` si necesitas el usuario, reemplaza la ruta `login` de `routes.tsx` y el botón "Ingresar" de `Navbar`.
+- C (@gonzzza-lol): el detalle del espacio (BU-02) tendrá un lugar para `<BookingWidget spaceId>`, y el formulario de publicar uno para `<HorarioSemanal>`.
+
+---

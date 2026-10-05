@@ -1,16 +1,16 @@
-# React + Vite
+# rentsmart-front
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+SPA de RentSmart: React 19, TypeScript, Vite 8, Tailwind 4 y React Router 7. La estructura y las convenciones están en [`docs/arquitectura.md`](../docs/arquitectura.md#frontend).
 
-Currently, two official plugins are available:
+## Comandos
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+| Comando | Para qué |
+|---|---|
+| `npm run dev` | Servidor de desarrollo en http://localhost:5173 |
+| `npm run build` | Revisa los tipos (`tsc -b`) y genera `dist/` |
+| `npm run lint` | ESLint con typescript-eslint |
+| `npm run preview` | Sirve `dist/` para probar el build |
 
-## React Compiler
+Antes, desde la raíz del repo: `cp .env.example rentsmart-front/.env`.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+En desarrollo, `/dev/componentes` muestra la guía de componentes base.
