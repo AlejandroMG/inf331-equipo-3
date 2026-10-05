@@ -466,3 +466,55 @@ Desde `rentsmart-front`: `npm test`, `npm run lint` y `npm run build`.
 - Cualquier petición a la API sin handler hace fallar el test: es a propósito.
 
 ---
+
+### 2026-10-05 · B (xReNatS) · BU-01 catálogo de espacios (front)
+
+**Issues:** #27 (BU-01), parte del front
+**Rama / PR:** `feat/BU-01-catalogo`, apilada sobre `feat/F-07-base-front-ts` (PR #91) · sin PR todavía
+**Duración aproximada:** 1,5 h
+**Herramientas:** Claude Code
+
+#### Objetivo
+Mostrar el catálogo con tarjetas y paginación según el prototipo aprobado, trabajando contra una API simulada mientras el endpoint real no exista.
+
+#### Qué se hizo
+- `CatalogPage` (`/`): estado de carga con esqueletos, error con botón "Reintentar", estado vacío, grilla de tarjetas y paginación. La página vive en la URL (`?page=2`); una página inválida vuelve a la 1.
+- `SpaceCard`: tipo, nombre, comuna, capacidad, precio por hora y/o por día, portada o marcador, y la etiqueta "Nuevo" (todos lo son hasta que existan reseñas, RS-02). Toda la tarjeta enlaza al detalle.
+- `Pagination` (componente compartido, con enlaces reales) y `pageItems` en `src/lib/pagination.ts`.
+- `useCatalog` y `catalog-api.ts`: la petición se cancela al cambiar de página o salir de la pantalla.
+- Contrato propuesto de `GET /api/catalog`, documentado en `docs/arquitectura.md`, y su simulación en `src/mocks` (14 espacios de ejemplo).
+- 26 pruebas nuevas (86 en total).
+
+#### Decisiones y por qué
+| Decisión | Alternativas consideradas | Por qué se eligió |
+|---|---|---|
+| El contrato del catálogo lo propone el front y el back lo sigue | Esperar a F-05 | F-05 sigue abierto y el plazo es corto; con MSW el front avanza y el back se ajusta a esta forma |
+| Estado de la petición derivado de un identificador (`request`) | `setState('loading')` dentro del efecto | La regla `react-hooks` de ESLint 7 prohíbe cambiar estado de forma síncrona en un efecto, y así nunca se ve la página anterior bajo un número nuevo |
+| Paginación con `<Link>` y no con botones | Botones con `setSearchParams` | Se puede abrir una página en otra pestaña y el estado ya está en la URL, lo que BU-03 necesita para los filtros |
+| Etiqueta "Nuevo" fija | Quitarla hasta que haya reseñas | Está en el prototipo aprobado; hay un comentario para sacarla en RS-02 |
+
+#### Archivos principales
+- `rentsmart-front/src/features/catalog/`: `CatalogPage`, `SpaceCard`, `useCatalog`, `catalog-api`, `types` y sus pruebas.
+- `rentsmart-front/src/components/Pagination.tsx` y `src/lib/pagination.ts`.
+- `rentsmart-front/src/mocks/`: `catalog-data.ts` y el handler de `/api/catalog`.
+
+#### Cómo probarlo
+- Desde `rentsmart-front`: `npm run lint`, `npm run build` y `npm test`.
+- Visual: `VITE_USE_MOCKS=true npm run dev` en Chrome o Edge, o un servidor que responda `/api/catalog` con la forma del contrato. Se probó así a 375 px y en escritorio.
+
+#### Estado de verificación
+- Build: ✅
+- Lint: ✅
+- Tests: ✅ (14 archivos, 86 pruebas)
+- Comprobado en el navegador contra un servidor de prueba que respondía el contrato: 12 tarjetas de igual alto en 3 columnas, página 2 con 2 tarjetas en 1 columna a 375 px y sin scroll horizontal.
+
+#### Pendientes y bloqueos
+- El endpoint real `GET /api/catalog` (lado back de BU-01) y el detalle (BU-02).
+- Los filtros llegan con BU-03; el diseño ya deja la URL como fuente de verdad.
+- Depende de que el PR #91 (F-07 y F-08) esté mergeado.
+
+#### Para el resto del equipo
+- Para listar con paginación, usa `Paginated<T>` de `src/features/catalog/types.ts` y el componente `Pagination`.
+- C: las tarjetas enlazan a `/spaces/:id`; ahí irá `<BookingWidget>` (BU-02).
+
+---

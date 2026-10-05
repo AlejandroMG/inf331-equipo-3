@@ -1,4 +1,5 @@
 import { http, HttpResponse } from 'msw'
+import { catalogData } from './catalog-data'
 
 /**
  * Respuestas simuladas de la API mientras el endpoint real no exista.
@@ -18,4 +19,18 @@ export const handlers = [
       { id: 8, name: 'Taller' },
     ]),
   ),
+
+  // BU-01: catálogo paginado, `{ items, total, page, pageSize }`.
+  http.get('*/api/catalog', ({ request }) => {
+    const url = new URL(request.url)
+    const page = Math.max(1, Number(url.searchParams.get('page')) || 1)
+    const pageSize = Math.max(1, Number(url.searchParams.get('pageSize')) || 12)
+    const start = (page - 1) * pageSize
+    return HttpResponse.json({
+      items: catalogData.slice(start, start + pageSize),
+      total: catalogData.length,
+      page,
+      pageSize,
+    })
+  }),
 ]
