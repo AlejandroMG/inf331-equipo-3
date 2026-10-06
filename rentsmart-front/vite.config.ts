@@ -15,5 +15,7 @@ export default defineConfig({
     setupFiles: './src/test/setup.ts',
     // Los estilos no importan en los tests y evitan procesar Tailwind.
     css: false,
+    // Los tests del formulario por pasos escriben y navegan con userEvent; en un runner lento superan los 5 s por defecto.
+    testTimeout: 15000,
   },
 })

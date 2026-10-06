@@ -823,3 +823,44 @@ Conectar el botón "Publicar espacio" del último paso con `POST /api/spaces/:id
 - Los códigos de `missing` (`type`, `description`, `capacity`, `commune`, `price`, `photos`, `schedule`) son parte del contrato con el back.
 
 ---
+
+### 2026-10-06 · B (xReNatS) · Revisión de #93 y #94 y subida de las ramas en 3 PR
+
+**Issues:** #27, #28 (BU-01, BU-02), #21, #22, #23, #25 (ES-02 a ES-06) y #48 (PN-01, solo la API)
+**Rama / PR:** `feat/BU-01-ES-04-front` (este PR, el del front), `feat/BU-01-catalog-api` y `feat/ES-02-ES-06-spaces-api` (los dos del back)
+**Duración aproximada:** 1 h
+**Herramientas:** Claude Code
+
+#### Objetivo
+Revisar los PR de A (#93 registro y #94 login) y subir mi trabajo, que estaba en 11 ramas apiladas, en tres PR para que C pueda revisarlo antes del viernes 9.
+
+#### Qué se hizo
+- Revisión de #93 (CU-01) y #94 (CU-02): aprobados. Observaciones en #94: el `JWT_SECRET` de `.env.example` es un valor válido, el token aún no se usa en la API (falta CU-03) y `RequireAuth` no reacciona al vencer el token.
+- Las 11 ramas apiladas se reunieron en tres PR contra `main`: back del catálogo (BU-01 y BU-02), back de espacios (ES-02 a ES-06 y la API de PN-01) y el front completo (catálogo, detalle, formulario con fotos y publicar).
+- Se trajo `main` (los merges de #91 y #92) a las tres ramas. Solo hubo conflicto en esta bitácora: se dejó la versión de `main` y se agregaron las entradas de cada rama.
+- Vitest: `testTimeout` de 15 s. Los tests del formulario por pasos usan `userEvent` y en un runner lento pasaban de los 5 s por defecto (falló una vez bajo carga).
+
+#### Decisiones y por qué
+| Decisión | Alternativas consideradas | Por qué se eligió |
+|---|---|---|
+| Tres PR grandes | Once PR chicos en cadena | El plazo es el 9 y cada PR en cadena espera la revisión del anterior; el CI solo corre sobre PR hacia `main`. Se pierde la regla de menos de 400 líneas, pero se conserva un commit por historia |
+| PR independientes entre sí | Apilar el de espacios sobre el del catálogo | Cada uno se puede mergear solo; el segundo en entrar resuelve un conflicto trivial en `app.module.ts` y en la bitácora |
+
+#### Cómo probarlo
+Back: `docker compose up -d db-test`, `npx prisma migrate deploy`, y en `rentsmart-back` (Node 24) `npm run lint`, `npm test`, `npm run test:e2e` y `npm run build`. Front: en `rentsmart-front`, `npm run lint`, `npm test` y `npm run build`.
+
+#### Estado de verificación
+- Back catálogo: lint ✅ · 20 unitarias ✅ · 29 e2e ✅ · build ✅
+- Back espacios: lint ✅ · 109 unitarias ✅ · 97 e2e ✅ · build ✅
+- Front: lint ✅ · 218 tests (24 archivos) ✅ · build ✅
+
+#### Pendientes y bloqueos
+- Cuando entren #93 y #94: usar el login de A y retirar `DevLoginPage`, y agregar `JWT_SECRET` al `.env` local. El guard temporal se cambia por `JwtAuthGuard` con CU-03.
+- Sin `<HorarioSemanal>` (DI-01, de C) no se puede publicar un espacio nuevo desde la app: el horario se carga a mano en la BD.
+- Falta el front del panel "Mis espacios" (PN-01), BU-03 (filtros) y probar el almacenamiento en Supabase con credenciales reales.
+
+#### Para el resto del equipo
+- C (@gonzzza-lol): son tres PR grandes; el orden sugerido de revisión es catálogo (back), espacios (back) y front. El front reserva el espacio de `<BookingWidget>` en el detalle y el del horario en el formulario.
+- A (@AlejandroMG): con #94 el back exige `JWT_SECRET`, así que los `.env` locales dejan de arrancar hasta agregarlo.
+
+---
