@@ -22,6 +22,7 @@ describe('Navbar', () => {
     expect(within(nav).getByRole('link', { name: 'Mis espacios' })).toHaveAttribute('href', '/owner/spaces')
     expect(within(nav).getByRole('link', { name: 'Publicar tu espacio' })).toHaveAttribute('href', '/publish')
     expect(within(nav).getByRole('link', { name: 'Ingresar' })).toHaveAttribute('href', '/login')
+    expect(within(nav).getByRole('link', { name: 'Crear cuenta' })).toHaveAttribute('href', '/register')
   })
 
   it('marca la página actual', () => {

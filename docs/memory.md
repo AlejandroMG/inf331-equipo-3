@@ -556,3 +556,56 @@ N/A
 - Conflicto de PR #92 resuelto localmente y listo para subir.
 
 ---
+
+### 2026-10-05 · A (AlejandroMG) · CU-01 registro con email y contraseña
+
+**Issues:** #12 (CU-01)
+**Rama / PR:** `feat/CU-01-registro` · sin PR todavía
+**Duración aproximada:** 2 h
+**Herramientas:** Claude Code
+
+#### Objetivo
+Que un visitante cree su cuenta con email y contraseña, con errores de validación claros en la API y en el formulario.
+
+#### Qué se hizo
+- Módulo `auth` en el back: `POST /api/auth/register` (201), con `RegisterDto` y `PublicUserDto` documentados en Swagger.
+- Contraseña hasheada con bcrypt; la respuesta nunca incluye `passwordHash`. Email repetido → 409; datos inválidos → 400 con mensajes en español.
+- Pantalla `/register` en el front con validación previa al envío, el 409 junto al campo email y redirección al login con el email.
+- CORS en `app.setup.ts` (archivo de B) con la variable `FRONTEND_URL` (por defecto `http://localhost:5173`): sin él, el navegador bloqueaba las peticiones del front a la API y el formulario mostraba "No pudimos conectar con el servidor".
+- Botón "Crear cuenta" en el `Navbar` (componente de B), en escritorio y en el menú móvil.
+- Handler de MSW para `POST /api/auth/register` (`existe@rentsmart.test` simula un email usado).
+
+#### Decisiones y por qué
+| Decisión | Alternativas consideradas | Por qué se eligió |
+|---|---|---|
+| Email en minúsculas y sin espacios | Guardarlo como viene | "Ana@Mail.com" y "ana@mail.com" deben ser la misma cuenta |
+| 409 también ante el error P2002 del índice único | Solo revisar antes de crear | Dos registros simultáneos pasarían la revisión; la BD rechaza el segundo |
+| Contraseña de 8 a 72 caracteres | Sin máximo | bcrypt solo considera los primeros 72 bytes |
+| CORS solo para `FRONTEND_URL` | Permitir cualquier origen | Solo el front de RentSmart debe poder llamar a la API desde el navegador |
+| Rechazar campos extra (`role`, etc.) | Ignorarlos | Nadie puede registrarse como ADMIN; lo cubre un test |
+
+#### Archivos principales
+- `rentsmart-back/src/auth/`: módulo, servicio, controlador, DTOs y test unitario.
+- `rentsmart-back/test/auth-register.e2e-spec.ts`: integración contra la BD de test.
+- `rentsmart-front/src/features/auth/`: `RegisterPage`, validación, cliente y tests.
+- `rentsmart-front/src/routes.tsx`, `lib/paths.ts`, `mocks/handlers.ts`, `components/Navbar.tsx`.
+- `rentsmart-back/src/app.setup.ts`, `config/env.validation.ts`, `.env.example`, `docs/arquitectura.md`: CORS y `FRONTEND_URL`.
+
+#### Cómo probarlo
+`docker compose up -d`; en `rentsmart-back`: `npm test` y `npm run test:e2e`; en `rentsmart-front`: `npm test`. A mano: `npm run start:dev` en ambos, abrir `/register` y ver el endpoint en http://localhost:3000/docs.
+
+#### Estado de verificación
+- Build: ✅ back y front
+- Lint: ✅ back y front
+- Tests: ✅ back 17 unitarios y 18 e2e; front 67 (7 nuevos)
+
+#### Pendientes y bloqueos
+- CU-02 (login con JWT) sale de esta rama; ahí se agrega el link "Crear cuenta" en la pantalla de login.
+
+#### Para el resto del equipo
+- Antes de `npm run test:e2e` en local hay que migrar la BD de test una vez: `DATABASE_URL` apuntando a 5433 y `npx prisma migrate deploy`.
+- B: toqué `app.setup.ts` (CORS) y `Navbar.tsx` (botón "Crear cuenta"); revisen esos cambios en el PR.
+- Si el front corre en otro puerto u origen, definan `FRONTEND_URL` en `rentsmart-back/.env`.
+- Los usuarios se crean con `role: USER` e `isHost: false`; `isHost` se activa al publicar el primer espacio (CU-04).
+
+---
