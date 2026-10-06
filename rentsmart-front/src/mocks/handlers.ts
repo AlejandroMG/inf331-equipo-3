@@ -155,9 +155,10 @@ export const handlers = [
   http.post('*/api/spaces/:id/photos', async ({ params, request }) => {
     const space = drafts.get(String(params.id))
     if (!space) return notFound('El espacio no existe')
-    const { file } = Object.fromEntries(await request.formData())
-    // No se usa `instanceof File`: en los tests el File del formulario (jsdom) y el que lee MSW (Node) son clases distintas.
-    if (!file || typeof file === 'string') {
+    // No se usa `request.formData()`: en los tests el File del formulario es el de jsdom y el parser de Node 24
+    // (undici) exige el suyo, así que falla. Basta con comprobar que el cuerpo trae una parte `file` con nombre de archivo.
+    const hasFile = /name="file"; filename="[^"]*"/.test(await request.text())
+    if (!hasFile) {
       return HttpResponse.json({ message: 'Falta la foto', statusCode: 400 }, { status: 400 })
     }
     if (space.photos.length >= 10) {
