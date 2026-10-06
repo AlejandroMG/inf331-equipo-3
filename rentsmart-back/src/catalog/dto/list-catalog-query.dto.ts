@@ -1,6 +1,6 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
-import { IsInt, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator';
+import { IsIn, IsInt, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator';
 
 export const DEFAULT_PAGE_SIZE = 12;
 export const MAX_PAGE_SIZE = 50;
@@ -8,6 +8,9 @@ export const MAX_PAGE_SIZE = 50;
 export const MAX_PRICE = 10_000_000;
 export const MAX_CAPACITY = 1000;
 export const MAX_SEARCH_LENGTH = 100;
+/** La unidad a la que se aplica el filtro de precio: el precio por hora o el precio por día. */
+export const PRICE_UNITS = ['hour', 'day'] as const;
+export type PriceUnit = (typeof PRICE_UNITS)[number];
 // Los ids son Int de Postgres; sin tope, un número enorme haría fallar la consulta con un 500.
 const MAX_ID = 2_147_483_647;
 
@@ -55,10 +58,19 @@ export class ListCatalogQueryDto {
   communeId?: number;
 
   @ApiPropertyOptional({
+    enum: PRICE_UNITS,
+    default: 'hour',
+    description:
+      'Unidad a la que se aplican minPrice y maxPrice: el precio por hora (por defecto) o por día. Un espacio que no se arrienda en esa unidad no cumple un filtro de precio. Sin minPrice ni maxPrice no tiene efecto',
+  })
+  @IsOptional()
+  @IsIn(PRICE_UNITS)
+  priceUnit: PriceUnit = 'hour';
+
+  @ApiPropertyOptional({
     minimum: 0,
     maximum: MAX_PRICE,
-    description:
-      'Precio por hora mínimo, en CLP. Deja fuera los espacios que no se arriendan por hora',
+    description: 'Precio mínimo en CLP, en la unidad de priceUnit',
   })
   @IsOptional()
   @Type(() => Number)
@@ -70,8 +82,7 @@ export class ListCatalogQueryDto {
   @ApiPropertyOptional({
     minimum: 0,
     maximum: MAX_PRICE,
-    description:
-      'Precio por hora máximo, en CLP. Deja fuera los espacios que no se arriendan por hora',
+    description: 'Precio máximo en CLP, en la unidad de priceUnit',
   })
   @IsOptional()
   @Type(() => Number)

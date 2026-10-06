@@ -725,17 +725,18 @@ Implementar los endpoints públicos que consume el front del catálogo, con la f
 Que `GET /api/catalog` filtre por tipo, comuna, capacidad mínima, rango de precio y texto libre, para que el front deje la búsqueda en la URL.
 
 #### Qué se hizo
-- Parámetros opcionales y combinables de `GET /api/catalog`: `typeId`, `communeId`, `minCapacity`, `minPrice`, `maxPrice` y `q`. Todos deben cumplirse y `total` cuenta solo los que cumplen, así la paginación sigue bien.
+- Parámetros opcionales y combinables de `GET /api/catalog`: `typeId`, `communeId`, `minCapacity`, `minPrice`, `maxPrice`, `priceUnit` y `q`. Todos deben cumplirse y `total` cuenta solo los que cumplen, así la paginación sigue bien.
 - Validan con `class-validator` y topes (los mismos que al publicar): un valor inválido o enorme da 400, no un 500 por desbordar el `Int` de Postgres. Un precio mínimo mayor que el máximo da 400 con mensaje.
 - `q` usa hasta 5 palabras y cada una debe aparecer en el nombre, la descripción, el tipo o la comuna, sin distinguir mayúsculas. **No busca en la dirección ni en su detalle**: así la búsqueda no sirve para averiguar el detalle privado (P-09). Hay un e2e que lo comprueba.
 - `contains` de Prisma no escapa los comodines de LIKE: buscar `%` listaba todo. Ahora se escapan `%`, `_` y la barra invertida (lo descubrió el e2e).
 - Swagger describe cada parámetro y la respuesta 400. `docs/arquitectura.md` documenta el contrato.
-- Pruebas: 12 unitarias y 28 e2e nuevas (en esta rama: 32 y 66, todas con Node 24).
+- `priceUnit` (`hour` por defecto o `day`) elige si `minPrice` y `maxPrice` se aplican al precio por hora o por día (decidido con Renato el 06-10).
+- Pruebas nuevas unitarias y e2e. En esta rama, con Node 24, hay 54 unitarias y 88 e2e en total.
 
 #### Decisiones y por qué
 | Decisión | Alternativas consideradas | Por qué se eligió |
 |---|---|---|
-| `minPrice` y `maxPrice` son el **precio por hora** | Aceptar el precio por hora o por día, o dar un parámetro para elegir | Los dos precios están en escalas distintas (miles contra decenas de miles) y mezclarlos confunde. El prototipo aprobado ya dice "Hasta $20.000 / hora". Un espacio que solo se arrienda por día queda fuera de cualquier filtro de precio |
+| `priceUnit` (`hour` o `day`) elige a qué precio se aplican `minPrice` y `maxPrice` | Aceptar cualquiera de los dos precios, o filtrar solo por hora | Los dos precios están en escalas distintas (miles contra decenas de miles) y mezclarlos confunde. Un espacio que no se arrienda en esa unidad queda fuera de un filtro de precio. Lo decidió Renato el 06-10 |
 | Cada palabra de `q` en cualquiera de cuatro campos | Una sola frase exacta, o también buscar en la dirección | Con "sala providencia" se encuentra una sala en Providencia. La dirección y su detalle quedan fuera por privacidad |
 | No ignora las tildes ("camara" no encuentra "Cámara") | Extensión `unaccent` de Postgres | Exigiría una migración, y el esquema es de A. Se puede ver después |
 
@@ -749,8 +750,8 @@ Con una BD de test migrada, en `rentsmart-back` (Node 24): `npm run lint`, `npm 
 
 #### Estado de verificación
 - Lint: ✅
-- Tests unitarios: ✅ (5 archivos, 32 pruebas)
-- Tests e2e: ✅ (4 archivos, 66 pruebas)
+- Tests unitarios: ✅ (6 archivos, 54 pruebas)
+- Tests e2e: ✅ (6 archivos, 88 pruebas)
 - Build: ✅
 
 #### Pendientes y bloqueos

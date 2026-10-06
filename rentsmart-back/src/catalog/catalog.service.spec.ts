@@ -168,6 +168,33 @@ describe('CatalogService', () => {
         expect(second[0].where.pricePerHour).toEqual({ lte: 15000 });
       });
 
+      it('con priceUnit=day el rango se aplica al precio por día', async () => {
+        await search({ priceUnit: 'day', minPrice: 40000, maxPrice: 90000 });
+
+        expect(whereOf()).toEqual({
+          status: 'ACTIVE',
+          pricePerDay: { gte: 40000, lte: 90000 },
+        });
+      });
+
+      it('con priceUnit=hour, o sin indicarla, el rango es del precio por hora', async () => {
+        await search({ priceUnit: 'hour', maxPrice: 15000 });
+        await search({ maxPrice: 15000 });
+
+        const [explicit, byDefault] = prisma.space.findMany.mock.calls as Array<
+          [{ where: unknown }]
+        >;
+        const expected = { status: 'ACTIVE', pricePerHour: { lte: 15000 } };
+        expect(explicit[0].where).toEqual(expected);
+        expect(byDefault[0].where).toEqual(expected);
+      });
+
+      it('la unidad sin un rango de precio no agrega ninguna condición', async () => {
+        await search({ priceUnit: 'day' });
+
+        expect(whereOf()).toEqual({ status: 'ACTIVE' });
+      });
+
       it('el precio mínimo 0 también es un filtro', async () => {
         await search({ minPrice: 0 });
 

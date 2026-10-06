@@ -59,6 +59,7 @@ export class CatalogService {
     communeId,
     minPrice,
     maxPrice,
+    priceUnit,
     minCapacity,
     q,
   }: ListCatalogQueryDto): Promise<CatalogPageDto> {
@@ -68,15 +69,18 @@ export class CatalogService {
       );
     }
     const words = searchFilter(q);
-    // El precio es por hora: un espacio que solo se arrienda por día no cumple un filtro de precio.
+    // El rango se aplica al precio por hora o por día, según priceUnit: un espacio que no se arrienda en esa
+    // unidad (precio null) no cumple un filtro de precio.
+    const range = { gte: minPrice, lte: maxPrice };
     const where: Prisma.SpaceWhereInput = {
       ...PUBLIC,
       ...(typeId !== undefined && { typeId }),
       ...(communeId !== undefined && { communeId }),
       ...(minCapacity !== undefined && { capacity: { gte: minCapacity } }),
-      ...((minPrice !== undefined || maxPrice !== undefined) && {
-        pricePerHour: { gte: minPrice, lte: maxPrice },
-      }),
+      ...((minPrice !== undefined || maxPrice !== undefined) &&
+        (priceUnit === 'day'
+          ? { pricePerDay: range }
+          : { pricePerHour: range })),
       ...(words.length > 0 && { AND: words }),
     };
 

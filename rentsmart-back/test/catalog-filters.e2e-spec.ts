@@ -146,6 +146,30 @@ describe('Filtros y búsqueda del catálogo (e2e)', () => {
     });
   });
 
+  describe('rango de precio por día', () => {
+    it('con priceUnit=day el rango es el del precio por día, con los extremos incluidos', async () => {
+      expect(await found('priceUnit=day&minPrice=50000&maxPrice=60000')).toEqual(['Estudio Cámara', 'Taller Norte']);
+      expect(await found('priceUnit=day&minPrice=60000')).toEqual(['Estudio Cámara', 'Sala Bellavista']);
+      expect(await found('priceUnit=day&maxPrice=55000')).toEqual(['Taller Norte']);
+    });
+
+    it('deja fuera los espacios que no se arriendan por día, incluso con mínimo 0', async () => {
+      expect(await found('priceUnit=day&minPrice=0')).toEqual(['Estudio Cámara', 'Sala Bellavista', 'Taller Norte']);
+    });
+
+    it('con priceUnit=hour el rango es el del precio por hora, igual que sin indicarla', async () => {
+      expect(await found('priceUnit=hour&minPrice=15000&maxPrice=20000')).toEqual(['Estudio Cámara', 'Sala Bellavista']);
+    });
+
+    it('la unidad sola, sin un rango de precio, no filtra nada', async () => {
+      expect(await found('priceUnit=day')).toEqual(['Estudio Cámara', 'Sala Alameda', 'Sala Bellavista', 'Taller Norte']);
+    });
+
+    it('el rango por día se combina con los otros filtros', async () => {
+      expect(await found(`priceUnit=day&maxPrice=60000&communeId=${communes.lindo}`)).toEqual(['Estudio Cámara']);
+    });
+  });
+
   describe('rango de precio por hora', () => {
     it('incluye los extremos', async () => {
       expect(await found('minPrice=15000&maxPrice=20000')).toEqual(['Estudio Cámara', 'Sala Bellavista']);
@@ -248,6 +272,8 @@ describe('Filtros y búsqueda del catálogo (e2e)', () => {
       'typeId=99999999999',
       'communeId=-1',
       'communeId=abc',
+      'priceUnit=week',
+      'priceUnit=',
       'minPrice=-1',
       'minPrice=abc',
       'maxPrice=1.5',
