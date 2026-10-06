@@ -609,3 +609,54 @@ Que un visitante cree su cuenta con email y contraseña, con errores de validaci
 - Los usuarios se crean con `role: USER` e `isHost: false`; `isHost` se activa al publicar el primer espacio (CU-04).
 
 ---
+
+### 2026-10-06 · A (AlejandroMG) · CU-02 iniciar y cerrar sesión con JWT
+
+**Issues:** #13 (CU-02)
+**Rama / PR:** `feat/CU-02-login` (sale de `feat/CU-01-registro`) · sin PR todavía
+**Duración aproximada:** 2 h
+**Herramientas:** Claude Code
+
+#### Objetivo
+Iniciar sesión con email y contraseña, recibir un token con expiración, bloquear cuentas suspendidas y poder cerrar sesión desde el front.
+
+#### Qué se hizo
+- `POST /api/auth/login` → `{ accessToken, user }`. El JWT lleva `sub` (id) y `role` y expira según `JWT_EXPIRES_IN` (por defecto `1d`).
+- 401 con el mismo mensaje si el email no existe o la contraseña es incorrecta; 403 si la cuenta está `SUSPENDED`.
+- Variables `JWT_SECRET` (obligatoria, mínimo 32 caracteres) y `JWT_EXPIRES_IN` validadas al arrancar, en `.env.example`, `arquitectura.md` y el CI.
+- Front: pantalla `/login` (precarga el email del registro, vuelve a la ruta privada pedida), botón "Salir" en el `Navbar` con sesión y `useToken()` en `lib/token.ts` para que la interfaz reaccione al iniciar o cerrar sesión.
+
+#### Decisiones y por qué
+| Decisión | Alternativas consideradas | Por qué se eligió |
+|---|---|---|
+| Mismo mensaje y mismo tiempo de respuesta para email inexistente y contraseña incorrecta (hash de relleno) | Decir cuál falló | No se puede averiguar qué emails tienen cuenta |
+| 403 de suspensión solo si la contraseña es correcta | Revisar el estado antes | Quien no sabe la contraseña no se entera de que la cuenta existe |
+| `JWT_SECRET` obligatoria, sin valor por defecto | Un secreto por defecto en el código | Un secreto conocido permitiría fabricar tokens |
+| Cerrar sesión solo en el front (borrar el token) | Endpoint de logout con lista negra | El JWT no guarda estado en el servidor; alcanza para el MVP |
+| Guard propio con `@nestjs/jwt` en CU-03, sin Passport | Passport | Menos piezas y más fácil de revisar |
+
+#### Archivos principales
+- `rentsmart-back/src/auth/`: login en servicio y controlador, `LoginDto`, `LoginResponseDto`, `JwtPayload`, `JwtModule`.
+- `rentsmart-back/src/config/env.validation.ts` y su spec: `JWT_SECRET` y `JWT_EXPIRES_IN`.
+- `rentsmart-back/test/auth-login.e2e-spec.ts`.
+- `rentsmart-front/src/features/auth/LoginPage.tsx`, `lib/token.ts`, `components/Navbar.tsx` y sus tests.
+- `.github/workflows/ci.yml` (de C): `JWT_SECRET` de prueba.
+
+#### Cómo probarlo
+Agregar `JWT_SECRET` a `rentsmart-back/.env`, `docker compose up -d`; en `rentsmart-back`: `npm test` y `npm run test:e2e`; en `rentsmart-front`: `npm test`. A mano: entrar con `arrendatario@rentsmart.test` / `Password123` (seed).
+
+#### Estado de verificación
+- Build: ✅ back y front
+- Lint: ✅ back y front
+- Tests: ✅ back 31 unitarios y 24 e2e; front 78
+
+#### Pendientes y bloqueos
+- CU-03: `JwtAuthGuard`, `RolesGuard`, `@CurrentUser()` y `GET /api/auth/me` (B y C los esperan).
+- PR con base `feat/CU-01-registro` hasta que CU-01 se mergee.
+
+#### Para el resto del equipo
+- **Todos:** agreguen `JWT_SECRET` (32+ caracteres) a `rentsmart-back/.env` o la API no arranca y fallan los e2e. Ver `.env.example`.
+- B: toqué `Navbar.tsx` (botón "Salir") y `lib/token.ts` (`useToken()` y `subscribeToken()`); revísenlos.
+- C: agregué `JWT_SECRET` al `env` del job del back en `ci.yml`.
+
+---

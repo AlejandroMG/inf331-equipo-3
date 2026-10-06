@@ -1,8 +1,9 @@
 import { useState } from 'react'
-import { Link, NavLink } from 'react-router'
+import { Link, NavLink, useNavigate } from 'react-router'
 import { cn } from '../lib/cn'
 import { paths } from '../lib/paths'
-import { LinkButton } from './Button'
+import { clearToken, useToken } from '../lib/token'
+import { Button, LinkButton } from './Button'
 import { CloseIcon, MenuIcon } from './icons'
 
 const links = [
@@ -35,6 +36,14 @@ function Logo() {
 export function Navbar() {
   const [menuOpen, setMenuOpen] = useState(false)
   const closeMenu = () => setMenuOpen(false)
+  const navigate = useNavigate()
+  const loggedIn = useToken() !== null
+
+  const logout = () => {
+    closeMenu()
+    clearToken()
+    navigate(paths.home)
+  }
 
   return (
     <header className="border-b border-line bg-white">
@@ -53,12 +62,20 @@ export function Navbar() {
           <LinkButton to={paths.publish} variant="outline" size="sm" className="ml-2">
             Publicar tu espacio
           </LinkButton>
-          <LinkButton to={paths.login} variant="secondary" size="sm" className="ml-1">
-            Ingresar
-          </LinkButton>
-          <LinkButton to={paths.register} variant="primary" size="sm" className="ml-1">
-            Crear cuenta
-          </LinkButton>
+          {loggedIn ? (
+            <Button onClick={logout} variant="secondary" size="sm" className="ml-1">
+              Salir
+            </Button>
+          ) : (
+            <>
+              <LinkButton to={paths.login} variant="secondary" size="sm" className="ml-1">
+                Ingresar
+              </LinkButton>
+              <LinkButton to={paths.register} variant="primary" size="sm" className="ml-1">
+                Crear cuenta
+              </LinkButton>
+            </>
+          )}
         </nav>
 
         <button
@@ -83,12 +100,20 @@ export function Navbar() {
           <LinkButton to={paths.publish} onClick={closeMenu} variant="outline" size="sm" className="mt-2">
             Publicar tu espacio
           </LinkButton>
-          <LinkButton to={paths.login} onClick={closeMenu} variant="secondary" size="sm">
-            Ingresar
-          </LinkButton>
-          <LinkButton to={paths.register} onClick={closeMenu} variant="primary" size="sm">
-            Crear cuenta
-          </LinkButton>
+          {loggedIn ? (
+            <Button onClick={logout} variant="secondary" size="sm">
+              Salir
+            </Button>
+          ) : (
+            <>
+              <LinkButton to={paths.login} onClick={closeMenu} variant="secondary" size="sm">
+                Ingresar
+              </LinkButton>
+              <LinkButton to={paths.register} onClick={closeMenu} variant="primary" size="sm">
+                Crear cuenta
+              </LinkButton>
+            </>
+          )}
         </nav>
       )}
     </header>

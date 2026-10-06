@@ -38,6 +38,8 @@ jobs:
     env:
       DATABASE_URL: postgresql://testuser:testpassword@localhost:5433/testdb
       DATABASE_TEST_URL: postgresql://testuser:testpassword@localhost:5433/testdb
+      # Solo para los tests del CI; no es un secreto real.
+      JWT_SECRET: ci-test-secret-de-al-menos-32-caracteres
 
     steps:
       - name: Checkout repository
