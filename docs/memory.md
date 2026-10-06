@@ -572,3 +572,49 @@ Cerrar el ciclo de vida del espacio en la API: publicar un borrador solo si est�
 - Las reservas confirmadas de un espacio desactivado se mantienen: C debe impedir reservas nuevas solo cuando `status !== 'ACTIVE'`.
 
 ---
+
+### 2026-10-05 · B (xReNatS) · PN-01 mis espacios (back)
+
+**Issues:** #48 (PN-01), parte del back
+**Rama / PR:** `feat/PN-01-owner-spaces-api`, apilada sobre `feat/ES-04-publish-api` · sin PR todavía
+**Duración aproximada:** 45 min
+**Herramientas:** Claude Code
+
+#### Objetivo
+Dar al panel "Mis espacios" los datos que necesita: la lista de los espacios del usuario con su estado y lo que le falta a cada uno.
+
+#### Qué se hizo
+- `GET /api/spaces/me`: los espacios del usuario, de cualquier estado, los modificados más recientemente primero. Cada uno trae `{ id, status, name, typeName, communeName, pricePerHour, pricePerDay, coverUrl, missing, updatedAt }`. `missing` usa las mismas reglas que publicar, así el panel puede decir "Falta: foto y horario" sin repetir la lógica.
+- La ruta `me` va antes de `:id` y hay un test que comprueba que no se confunde con un id.
+- Sin datos privados: no devuelve `addressDetail` ni `ownerId` (hay test).
+- Pruebas: 4 unitarias y 7 e2e nuevas (109 y 97 en esta rama).
+
+#### Decisiones y por qué
+| Decisión | Alternativas consideradas | Por qué se eligió |
+|---|---|---|
+| `missing` calculado en el back | Que el front lo deduzca | Una sola regla (`publish-rules.ts`) para publicar, editar y listar |
+| Lista sin paginar | `?page=&pageSize=` | Un propietario tendrá pocos espacios en el MVP; se pagina si hace falta |
+| Sin "próximas reservas" todavía | Consultar `Booking` ahora | Las reservas son del equipo de C (RE-02 a RE-04) y hoy no existen; el panel las mostrará cuando haya datos |
+
+#### Archivos principales
+- `rentsmart-back/src/spaces/`: `spaces.controller`, `spaces.service`, `dto/owner-space-summary.dto` y pruebas.
+- `rentsmart-back/test/my-spaces.e2e-spec.ts`.
+- `docs/arquitectura.md`.
+
+#### Cómo probarlo
+Con `docker compose up -d db-test`, en `rentsmart-back` (Node 24): `npm run lint`, `npm run build`, `npm test` y `npm run test:e2e`.
+
+#### Estado de verificación
+- Build: ✅
+- Lint: ✅
+- Tests unitarios: ✅ (11 archivos, 109 pruebas)
+- Tests e2e: ✅ (6 archivos, 97 pruebas)
+
+#### Pendientes y bloqueos
+- Próximas reservas del propietario (PN-01) y reservas por estado (PN-02): dependen de C.
+- El front del panel.
+
+#### Para el resto del equipo
+- C (@gonzzza-lol): cuando existan las reservas, el panel necesitará `GET /api/spaces/me` con las próximas reservas de cada espacio; avísame el contrato.
+
+---

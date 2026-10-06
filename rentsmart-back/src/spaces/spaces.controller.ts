@@ -25,6 +25,7 @@ import { CurrentUser } from '../common/auth/current-user.decorator';
 import { DevAuthGuard } from '../common/auth/dev-auth.guard';
 import { CreateSpaceDto } from './dto/create-space.dto';
 import { ChangeStatusDto } from './dto/change-status.dto';
+import { OwnerSpaceSummaryDto } from './dto/owner-space-summary.dto';
 import { SpaceDto } from './dto/space.dto';
 import { UpdateSpaceDto } from './dto/update-space.dto';
 import { PublicationService } from './publication.service';
@@ -55,6 +56,17 @@ export class SpacesController {
   @ApiBadRequestResponse({ description: 'Datos inválidos o referencias que no existen' })
   create(@CurrentUser() user: AuthUser, @Body() dto: CreateSpaceDto): Promise<SpaceDto> {
     return this.service.create(user.id, dto);
+  }
+
+  // Va antes que ':id' para que "me" no se tome por un id.
+  @Get('me')
+  @ApiOperation({
+    summary: 'Mis espacios',
+    description: 'Los espacios del usuario, de cualquier estado, con lo que le falta a cada uno. Los modificados más recientemente primero.',
+  })
+  @ApiOkResponse({ type: [OwnerSpaceSummaryDto] })
+  findMine(@CurrentUser() user: AuthUser): Promise<OwnerSpaceSummaryDto[]> {
+    return this.service.findMine(user.id);
   }
 
   @Get(':id')

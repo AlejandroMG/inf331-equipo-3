@@ -7,6 +7,7 @@ import {
 import { SpaceStatus } from '../generated/prisma/enums';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateSpaceDto } from './dto/create-space.dto';
+import { OwnerSpaceSummaryDto } from './dto/owner-space-summary.dto';
 import { SpaceDto } from './dto/space.dto';
 import { UpdateSpaceDto } from './dto/update-space.dto';
 import { IncompleteSpaceException } from './incomplete-space.exception';
@@ -121,6 +122,47 @@ export class SpacesService {
       select: OWNER_VIEW,
     });
     return toDto(space);
+  }
+
+  /** Los espacios del usuario, los modificados más recientemente primero, con lo que le falta a cada uno. */
+  async findMine(ownerId: string): Promise<OwnerSpaceSummaryDto[]> {
+    const spaces = await this.prisma.space.findMany({
+      where: { ownerId },
+      orderBy: [{ updatedAt: 'desc' }, { id: 'asc' }],
+      select: {
+        id: true,
+        status: true,
+        name: true,
+        typeId: true,
+        description: true,
+        capacity: true,
+        communeId: true,
+        pricePerHour: true,
+        pricePerDay: true,
+        updatedAt: true,
+        type: { select: { name: true } },
+        commune: { select: { name: true } },
+        photos: { select: { url: true }, orderBy: { position: 'asc' }, take: 1 },
+        _count: { select: { photos: true, rulesWeek: true } },
+      },
+    });
+
+    return spaces.map((space) => ({
+      id: space.id,
+      status: space.status,
+      name: space.name,
+      typeName: space.type?.name ?? null,
+      communeName: space.commune?.name ?? null,
+      pricePerHour: space.pricePerHour,
+      pricePerDay: space.pricePerDay,
+      coverUrl: space.photos[0]?.url ?? null,
+      missing: missingFields({
+        ...space,
+        photoCount: space._count.photos,
+        scheduleCount: space._count.rulesWeek,
+      }),
+      updatedAt: space.updatedAt,
+    }));
   }
 
   async findOne(ownerId: string, id: string): Promise<SpaceDto> {

@@ -10,7 +10,12 @@ import { SpacesService } from './spaces.service';
 describe('SpacesService', () => {
   let service: SpacesService;
   const prisma = {
-    space: { create: jest.fn(), update: jest.fn(), findUnique: jest.fn() },
+    space: {
+      create: jest.fn(),
+      update: jest.fn(),
+      findUnique: jest.fn(),
+      findMany: jest.fn(),
+    },
     spaceType: { findUnique: jest.fn() },
     amenity: { count: jest.fn() },
     commune: { findUnique: jest.fn() },
@@ -199,6 +204,89 @@ describe('SpacesService', () => {
       await service.update('u1', 's1', { pricePerHour: null, description: null });
 
       expect(prisma.space.update).toHaveBeenCalled();
+    });
+  });
+
+  describe('findMine', () => {
+    const base = {
+      id: 's1',
+      status: 'DRAFT',
+      name: 'Sala',
+      typeId: 1,
+      description: 'x',
+      capacity: 4,
+      communeId: 2,
+      pricePerHour: 5000,
+      pricePerDay: null,
+      updatedAt: new Date('2026-10-05T12:00:00Z'),
+      type: { name: 'Sala de reuniones' },
+      commune: { name: 'Santiago' },
+      photos: [{ url: '/api/uploads/a.png' }],
+      _count: { photos: 1, rulesWeek: 5 },
+    };
+
+    it('pide solo los espacios del usuario, los más recientes primero', async () => {
+      prisma.space.findMany.mockResolvedValue([]);
+
+      await expect(service.findMine('u1')).resolves.toEqual([]);
+
+      expect(prisma.space.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { ownerId: 'u1' },
+          orderBy: [{ updatedAt: 'desc' }, { id: 'asc' }],
+        }),
+      );
+    });
+
+    it('arma el resumen con la portada y sin lo que falta si está completo', async () => {
+      prisma.space.findMany.mockResolvedValue([base]);
+
+      await expect(service.findMine('u1')).resolves.toEqual([
+        {
+          id: 's1',
+          status: 'DRAFT',
+          name: 'Sala',
+          typeName: 'Sala de reuniones',
+          communeName: 'Santiago',
+          pricePerHour: 5000,
+          pricePerDay: null,
+          coverUrl: '/api/uploads/a.png',
+          missing: [],
+          updatedAt: base.updatedAt,
+        },
+      ]);
+    });
+
+    it('con datos sin completar deja los nombres y la portada en null y lista lo que falta', async () => {
+      prisma.space.findMany.mockResolvedValue([
+        {
+          ...base,
+          typeId: null,
+          type: null,
+          communeId: null,
+          commune: null,
+          photos: [],
+          pricePerHour: null,
+          _count: { photos: 0, rulesWeek: 0 },
+        },
+      ]);
+
+      const [space] = await service.findMine('u1');
+
+      expect(space.typeName).toBeNull();
+      expect(space.communeName).toBeNull();
+      expect(space.coverUrl).toBeNull();
+      expect(space.missing).toEqual(['type', 'commune', 'price', 'photos', 'schedule']);
+    });
+
+    it('no devuelve datos internos ni privados', async () => {
+      prisma.space.findMany.mockResolvedValue([{ ...base, ownerId: 'u1', addressDetail: 'secreto' }]);
+
+      const [space] = await service.findMine('u1');
+
+      expect(space).not.toHaveProperty('ownerId');
+      expect(space).not.toHaveProperty('addressDetail');
+      expect(space).not.toHaveProperty('_count');
     });
   });
 

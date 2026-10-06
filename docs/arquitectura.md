@@ -82,6 +82,7 @@ Módulo `spaces`. Requieren sesión y solo el dueño accede a su espacio (403 si
 |---|---|
 | `POST /api/spaces` | Crea un espacio en `DRAFT`. Solo el nombre es obligatorio |
 | `PATCH /api/spaces/:id` | Actualización parcial: lo que no se manda no cambia y `null` borra un campo opcional. `amenityIds` reemplaza el equipamiento completo. No cambia el estado |
+| `GET /api/spaces/me` | Mis espacios (PN-01): los del usuario, de cualquier estado, los modificados más recientemente primero. Cada uno trae `{ id, status, name, typeName, communeName, pricePerHour, pricePerDay, coverUrl, missing, updatedAt }`, donde `missing` es lo que le falta para publicarse o mantenerse publicado |
 | `GET /api/spaces/:id` | El espacio con su estado y el detalle privado de la dirección (`addressDetail`) |
 
 - El formulario por pasos guarda un borrador en cada paso: por eso casi todos los campos son opcionales. Las reglas para publicar (foto, precio, capacidad, descripción y horario) las valida ES-04 al publicar.
