@@ -1,5 +1,7 @@
 import { http, HttpResponse } from 'msw'
 import type { SpaceDetail } from '../features/catalog/types'
+import type { OwnerSpaceSummary } from '../features/owner/types'
+import type { MissingField } from '../features/spaces/form'
 import type { OwnerPhoto, OwnerSpace, SpacePayload } from '../features/spaces/types'
 import { catalogData } from './catalog-data'
 
@@ -16,6 +18,27 @@ function detailOf(item: (typeof catalogData)[number]): SpaceDetail {
     schedule: [1, 2, 3, 4, 5].map((weekday) => ({ weekday, startTime: '09:00', endTime: '21:00' })),
   }
 }
+
+/** Los 8 tipos del seed. */
+const SPACE_TYPES = [
+  { id: 1, name: 'Sala de reuniones' },
+  { id: 2, name: 'Oficina o cowork' },
+  { id: 3, name: 'Estudio fotográfico o audiovisual' },
+  { id: 4, name: 'Sala de ensayo' },
+  { id: 5, name: 'Cocina equipada' },
+  { id: 6, name: 'Cancha' },
+  { id: 7, name: 'Salón de eventos' },
+  { id: 8, name: 'Taller' },
+]
+
+/** Las 5 comunas del seed. */
+const COMMUNES = [
+  { id: 4, name: 'Las Condes' },
+  { id: 3, name: 'Ñuñoa' },
+  { id: 2, name: 'Providencia' },
+  { id: 1, name: 'Santiago' },
+  { id: 5, name: 'San Miguel' },
+]
 
 /** Borradores creados con el POST simulado; permiten volver a abrirlos con GET y PATCH. */
 const drafts = new Map<string, OwnerSpace>()
@@ -56,6 +79,22 @@ function missingToPublish(space: OwnerSpace): string[] {
   return missing
 }
 
+/** El resumen de un espacio para el panel, con la forma de GET /api/spaces/me (PN-01). */
+function summaryOf(space: OwnerSpace): OwnerSpaceSummary {
+  return {
+    id: space.id,
+    status: space.status,
+    name: space.name,
+    typeName: SPACE_TYPES.find((type) => type.id === space.typeId)?.name ?? null,
+    communeName: COMMUNES.find((commune) => commune.id === space.communeId)?.name ?? null,
+    pricePerHour: space.pricePerHour,
+    pricePerDay: space.pricePerDay,
+    coverUrl: space.photos[0]?.url ?? null,
+    missing: missingToPublish(space) as MissingField[],
+    updatedAt: space.updatedAt,
+  }
+}
+
 const conflict = (message: string, extra: object = {}) =>
   HttpResponse.json({ statusCode: 409, error: 'Conflict', message, ...extra }, { status: 409 })
 
@@ -68,18 +107,7 @@ const notFound = (message: string) =>
  */
 export const handlers = [
   // ES-01: tipos de espacio (los 8 del seed).
-  http.get('*/api/space-types', () =>
-    HttpResponse.json([
-      { id: 1, name: 'Sala de reuniones' },
-      { id: 2, name: 'Oficina o cowork' },
-      { id: 3, name: 'Estudio fotográfico o audiovisual' },
-      { id: 4, name: 'Sala de ensayo' },
-      { id: 5, name: 'Cocina equipada' },
-      { id: 6, name: 'Cancha' },
-      { id: 7, name: 'Salón de eventos' },
-      { id: 8, name: 'Taller' },
-    ]),
-  ),
+  http.get('*/api/space-types', () => HttpResponse.json(SPACE_TYPES)),
 
   // ES-01: equipamiento, regiones y comunas (las del seed).
   http.get('*/api/amenities', () =>
@@ -92,15 +120,7 @@ export const handlers = [
     ]),
   ),
   http.get('*/api/regions', () => HttpResponse.json([{ id: 1, name: 'Región Metropolitana' }])),
-  http.get('*/api/regions/:id/communes', () =>
-    HttpResponse.json([
-      { id: 4, name: 'Las Condes' },
-      { id: 3, name: 'Ñuñoa' },
-      { id: 2, name: 'Providencia' },
-      { id: 1, name: 'Santiago' },
-      { id: 5, name: 'San Miguel' },
-    ]),
-  ),
+  http.get('*/api/regions/:id/communes', () => HttpResponse.json(COMMUNES)),
 
   // ES-02: espacios del propietario (borradores).
   http.post('*/api/spaces', async ({ request }) => {
@@ -109,6 +129,15 @@ export const handlers = [
     drafts.set(space.id, space)
     return HttpResponse.json(space, { status: 201 })
   }),
+  // PN-01: mis espacios. Va antes que ':id' para que "me" no se tome por un id. Los modificados más recientemente primero.
+  http.get('*/api/spaces/me', () =>
+    HttpResponse.json(
+      [...drafts.values()]
+        .reverse()
+        .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+        .map(summaryOf),
+    ),
+  ),
   http.get('*/api/spaces/:id', ({ params }) => {
     const space = drafts.get(String(params.id))
     return space
