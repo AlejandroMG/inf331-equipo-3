@@ -1,5 +1,7 @@
 import { http, HttpResponse } from 'msw'
 import type { SpaceDetail } from '../features/catalog/types'
+import type { OwnerSpaceSummary } from '../features/owner/types'
+import type { MissingField } from '../features/spaces/form'
 import type { OwnerPhoto, OwnerSpace, SpacePayload } from '../features/spaces/types'
 import { catalogData } from './catalog-data'
 
@@ -77,6 +79,22 @@ function missingToPublish(space: OwnerSpace): string[] {
   return missing
 }
 
+/** El resumen de un espacio para el panel, con la forma de GET /api/spaces/me (PN-01). */
+function summaryOf(space: OwnerSpace): OwnerSpaceSummary {
+  return {
+    id: space.id,
+    status: space.status,
+    name: space.name,
+    typeName: SPACE_TYPES.find((type) => type.id === space.typeId)?.name ?? null,
+    communeName: COMMUNES.find((commune) => commune.id === space.communeId)?.name ?? null,
+    pricePerHour: space.pricePerHour,
+    pricePerDay: space.pricePerDay,
+    coverUrl: space.photos[0]?.url ?? null,
+    missing: missingToPublish(space) as MissingField[],
+    updatedAt: space.updatedAt,
+  }
+}
+
 const conflict = (message: string, extra: object = {}) =>
   HttpResponse.json({ statusCode: 409, error: 'Conflict', message, ...extra }, { status: 409 })
 
@@ -142,6 +160,15 @@ export const handlers = [
     drafts.set(space.id, space)
     return HttpResponse.json(space, { status: 201 })
   }),
+  // PN-01: mis espacios. Va antes que ':id' para que "me" no se tome por un id. Los modificados más recientemente primero.
+  http.get('*/api/spaces/me', () =>
+    HttpResponse.json(
+      [...drafts.values()]
+        .reverse()
+        .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+        .map(summaryOf),
+    ),
+  ),
   http.get('*/api/spaces/:id', ({ params }) => {
     const space = drafts.get(String(params.id))
     return space
@@ -244,5 +271,31 @@ export const handlers = [
       return HttpResponse.json({ message: 'El espacio no existe', error: 'Not Found', statusCode: 404 }, { status: 404 })
     }
     return HttpResponse.json(detailOf(item))
+  }),
+
+  // CU-01: registro. "existe@rentsmart.test" simula un email ya usado.
+  http.post('*/api/auth/register', async ({ request }) => {
+    const body = (await request.json()) as { email: string; name: string }
+    const email = body.email.trim().toLowerCase()
+    if (email === 'existe@rentsmart.test') {
+      return HttpResponse.json({ message: 'Ya existe una cuenta con este email.' }, { status: 409 })
+    }
+    return HttpResponse.json(
+      { id: 'mock-user', email, name: body.name, role: 'USER', isHost: false, createdAt: new Date().toISOString() },
+      { status: 201 },
+    )
+  }),
+
+  // CU-02: login. Cualquier email con la contraseña "Password123" entra; otra contraseña da 401.
+  http.post('*/api/auth/login', async ({ request }) => {
+    const body = (await request.json()) as { email: string; password: string }
+    if (body.password !== 'Password123') {
+      return HttpResponse.json({ message: 'Email o contraseña incorrectos.' }, { status: 401 })
+    }
+    const email = body.email.trim().toLowerCase()
+    return HttpResponse.json({
+      accessToken: 'mock-token',
+      user: { id: 'mock-user', email, name: 'Usuario de prueba', role: 'USER', isHost: false, createdAt: new Date().toISOString() },
+    })
   }),
 ]

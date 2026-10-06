@@ -1,12 +1,12 @@
 import type { RouteObject } from 'react-router'
 import { AppLayout } from './components/AppLayout'
 import { NotFoundPage } from './components/NotFoundPage'
-import { PlaceholderPage } from './components/PlaceholderPage'
 import { RequireAuth } from './components/RequireAuth'
 import { CatalogPage } from './features/catalog/CatalogPage'
 import { SpaceDetailPage } from './features/catalog/SpaceDetailPage'
+import { LoginPage } from './features/auth/LoginPage'
+import { RegisterPage } from './features/auth/RegisterPage'
 import { ComponentsPage } from './features/dev/ComponentsPage'
-import { DevLoginPage } from './features/dev/DevLoginPage'
 import { OwnerSpacesPage } from './features/owner/OwnerSpacesPage'
 import { PublishSpacePage } from './features/spaces/PublishSpacePage'
 
@@ -20,9 +20,8 @@ export const routes: RouteObject[] = [
     children: [
       { index: true, element: <CatalogPage /> },
       { path: 'spaces/:spaceId', element: <SpaceDetailPage /> },
-      // Lo reemplaza A con la pantalla real de inicio de sesión (CU-02).
-      // En desarrollo hay un login de prueba; en producción queda el placeholder hasta que A entregue CU-02.
-      { path: 'login', element: import.meta.env.DEV ? <DevLoginPage /> : <PlaceholderPage title="Iniciar sesión" story="CU-02" /> },
+      { path: 'login', element: <LoginPage /> },
+      { path: 'register', element: <RegisterPage /> },
       {
         element: <RequireAuth />,
         children: [

@@ -7,4 +7,5 @@ export const paths = {
   publishDraft: (id: string) => `/publish/${id}`,
   ownerSpaces: '/owner/spaces',
   login: '/login',
+  register: '/register',
 } as const
