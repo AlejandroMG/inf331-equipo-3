@@ -864,3 +864,52 @@ Back: `docker compose up -d db-test`, `npx prisma migrate deploy`, y en `rentsma
 - A (@AlejandroMG): con #94 el back exige `JWT_SECRET`, así que los `.env` locales dejan de arrancar hasta agregarlo.
 
 ---
+
+### 2026-10-06 · B (xReNatS) · PN-01 y ES-06 panel "Mis espacios" (front)
+
+**Issues:** #48 (PN-01, parte del front), #25 (ES-06, el interruptor), #24 (ES-05, el acceso a editar)
+**Rama / PR:** `feat/PN-01-mis-espacios`, apilada sobre `feat/BU-01-ES-04-front` (#98) · sin PR todavía
+**Duración aproximada:** 1 h
+**Herramientas:** Claude Code
+
+#### Objetivo
+Que el propietario vea sus espacios con el estado de cada uno y lo que le falta, y pueda editarlos y activarlos o desactivarlos, según el panel del prototipo aprobado.
+
+#### Qué se hizo
+- `/owner/spaces` deja de ser un placeholder: lee `GET /api/spaces/me` y muestra, por espacio, la portada, el estado (Activo, Inactivo, Borrador o Bloqueado), tipo, comuna, precio y "Falta: foto, precio y horario". Arriba, tres contadores por estado (un cuarto, de bloqueados, solo si hay).
+- Interruptor activar o desactivar con `PATCH /api/spaces/:id/status`. **Desactivar pide confirmación** (sale del catálogo y no recibe nuevas reservas; las confirmadas se mantienen, como dice `producto.md`); activar no. Si el back rechaza la activación con `missing[]`, el aviso dice qué falta. El estado se actualiza con lo que responde el servidor, sin recargar la lista.
+- Accesos a editar: "Editar" (publicados e inactivos) y "Completar" (borradores) abren el formulario `/publish/:id`. Los borradores no tienen interruptor (se publican desde el formulario) y los bloqueados por el administrador no tienen ningún acceso.
+- Estados de carga, error con reintento y vacío (invita a publicar el primero). A 375 px los contadores van en una fila y no hay scroll horizontal.
+- Mock de MSW para `GET /api/spaces/me` con la misma forma que el contrato. Las listas de tipos y comunas de los mocks se extrajeron a constantes para reutilizarlas.
+- Pruebas: 28 nuevas (helpers de texto, la página con sus estados y flujos, y el mock). Quedan 246 en 26 archivos.
+
+#### Decisiones y por qué
+| Decisión | Alternativas consideradas | Por qué se eligió |
+|---|---|---|
+| Confirmar al desactivar, no al activar | Confirmar siempre, o nunca | Desactivar saca la publicación del catálogo; activar es reversible y no tiene riesgo |
+| El interruptor tiene nombre fijo ("Publicación de X") y el estado va en `aria-checked` | Cambiar el nombre a "Activar X" o "Desactivar X" | Es la práctica de accesibilidad para `role="switch"`; el estado no debe cambiar su nombre |
+| "Próximas reservas" como aviso fijo | Mostrar datos de ejemplo | Las reservas son del equipo de C (RE-02 a RE-04) y hoy no existen; el prototipo lo marcaba para después del 9 |
+| Actualizar la lista con la respuesta del `PATCH` | Recargar `GET /api/spaces/me` | Evita el parpadeo y que la fila cambie de lugar al modificarse |
+
+#### Archivos principales
+- `rentsmart-front/src/features/owner/`: `OwnerSpacesPage`, `OwnerSpaceRow`, `owner-api`, `summary`, `types` y sus pruebas.
+- `rentsmart-front/src/mocks/handlers.ts` y `handlers.test.ts`.
+
+#### Cómo probarlo
+En `rentsmart-front`: `npm run lint`, `npm test` y `npm run build`. A mano, con el back (tras mergear #96 y #97) y el seed: entrar por `/login` y abrir `/owner/spaces`; desactivar un espacio, volver a activarlo, e intentar activar uno del seed (sin foto) para ver el aviso de lo que falta.
+
+#### Estado de verificación
+- Lint: ✅
+- Tests: ✅ (26 archivos, 246 pruebas)
+- Build: ✅
+- A mano, contra el back real con el seed: lista, borrador, desactivar con confirmación, reactivar y rechazo por falta de foto ✅. A 375 px y en escritorio ✅
+
+#### Pendientes y bloqueos
+- Próximas reservas de cada espacio (PN-01) y reservas por estado (PN-02): dependen de C.
+- ES-05: falta el test de que un cambio de precio no altera las reservas existentes; depende de las reservas de C.
+- Los espacios del seed están `ACTIVE` sin foto, así que desactivarlos y reactivarlos da el aviso de que falta la foto.
+
+#### Para el resto del equipo
+- C (@gonzzza-lol): el panel deja un bloque "Próximas reservas" para listar las de los espacios del usuario cuando existan; avísame el contrato.
+
+---
