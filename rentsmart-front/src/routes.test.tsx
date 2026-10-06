@@ -19,7 +19,7 @@ describe('rutas', () => {
   it('la raíz muestra el catálogo con el layout', () => {
     renderAt('/')
 
-    expect(screen.getByRole('heading', { level: 1, name: 'Espacios disponibles' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 1, name: 'Encuentra el espacio justo, por hora o por día' })).toBeInTheDocument()
     expect(screen.getByRole('banner')).toBeInTheDocument()
     expect(screen.getByRole('contentinfo')).toBeInTheDocument()
   })

@@ -17,6 +17,27 @@ function detailOf(item: (typeof catalogData)[number]): SpaceDetail {
   }
 }
 
+/** Los 8 tipos del seed. */
+const SPACE_TYPES = [
+  { id: 1, name: 'Sala de reuniones' },
+  { id: 2, name: 'Oficina o cowork' },
+  { id: 3, name: 'Estudio fotográfico o audiovisual' },
+  { id: 4, name: 'Sala de ensayo' },
+  { id: 5, name: 'Cocina equipada' },
+  { id: 6, name: 'Cancha' },
+  { id: 7, name: 'Salón de eventos' },
+  { id: 8, name: 'Taller' },
+]
+
+/** Las 5 comunas del seed. */
+const COMMUNES = [
+  { id: 4, name: 'Las Condes' },
+  { id: 3, name: 'Ñuñoa' },
+  { id: 2, name: 'Providencia' },
+  { id: 1, name: 'Santiago' },
+  { id: 5, name: 'San Miguel' },
+]
+
 /** Borradores creados con el POST simulado; permiten volver a abrirlos con GET y PATCH. */
 const drafts = new Map<string, OwnerSpace>()
 
@@ -62,24 +83,44 @@ const conflict = (message: string, extra: object = {}) =>
 const notFound = (message: string) =>
   HttpResponse.json({ message, error: 'Not Found', statusCode: 404 }, { status: 404 })
 
+/** Un nombre que ningún espacio tiene: un id que no existe no debe filtrar "por nada". */
+const NO_MATCH = '\u0000'
+
+/**
+ * Los filtros de GET /api/catalog (BU-03) sobre los datos de ejemplo, con las mismas reglas que el back: todos deben
+ * cumplirse, el precio es el de la hora y cada palabra del texto debe estar en el nombre, el tipo o la comuna.
+ */
+function filterCatalog(params: URLSearchParams) {
+  const nameOf = (list: Array<{ id: number; name: string }>, id: string | null) =>
+    id === null ? null : (list.find((item) => String(item.id) === id)?.name ?? NO_MATCH)
+  const typeName = nameOf(SPACE_TYPES, params.get('typeId'))
+  const communeName = nameOf(COMMUNES, params.get('communeId'))
+  const minCapacity = Number(params.get('minCapacity') ?? 0)
+  const minPrice = params.get('minPrice') === null ? null : Number(params.get('minPrice'))
+  const maxPrice = params.get('maxPrice') === null ? null : Number(params.get('maxPrice'))
+  const words = (params.get('q') ?? '').toLowerCase().split(/\s+/).filter(Boolean)
+
+  return catalogData.filter((space) => {
+    const text = `${space.name} ${space.typeName} ${space.communeName}`.toLowerCase()
+    const hourly = space.pricePerHour
+    return (
+      (typeName === null || space.typeName === typeName) &&
+      (communeName === null || space.communeName === communeName) &&
+      space.capacity >= minCapacity &&
+      (minPrice === null || (hourly !== null && hourly >= minPrice)) &&
+      (maxPrice === null || (hourly !== null && hourly <= maxPrice)) &&
+      words.every((word) => text.includes(word))
+    )
+  })
+}
+
 /**
  * Respuestas simuladas de la API mientras el endpoint real no exista.
  * Cada dominio agrega aquí los handlers de sus endpoints, con la forma que quedó en el contrato (F-05).
  */
 export const handlers = [
   // ES-01: tipos de espacio (los 8 del seed).
-  http.get('*/api/space-types', () =>
-    HttpResponse.json([
-      { id: 1, name: 'Sala de reuniones' },
-      { id: 2, name: 'Oficina o cowork' },
-      { id: 3, name: 'Estudio fotográfico o audiovisual' },
-      { id: 4, name: 'Sala de ensayo' },
-      { id: 5, name: 'Cocina equipada' },
-      { id: 6, name: 'Cancha' },
-      { id: 7, name: 'Salón de eventos' },
-      { id: 8, name: 'Taller' },
-    ]),
-  ),
+  http.get('*/api/space-types', () => HttpResponse.json(SPACE_TYPES)),
 
   // ES-01: equipamiento, regiones y comunas (las del seed).
   http.get('*/api/amenities', () =>
@@ -92,15 +133,7 @@ export const handlers = [
     ]),
   ),
   http.get('*/api/regions', () => HttpResponse.json([{ id: 1, name: 'Región Metropolitana' }])),
-  http.get('*/api/regions/:id/communes', () =>
-    HttpResponse.json([
-      { id: 4, name: 'Las Condes' },
-      { id: 3, name: 'Ñuñoa' },
-      { id: 2, name: 'Providencia' },
-      { id: 1, name: 'Santiago' },
-      { id: 5, name: 'San Miguel' },
-    ]),
-  ),
+  http.get('*/api/regions/:id/communes', () => HttpResponse.json(COMMUNES)),
 
   // ES-02: espacios del propietario (borradores).
   http.post('*/api/spaces', async ({ request }) => {
@@ -189,15 +222,16 @@ export const handlers = [
     return new HttpResponse(null, { status: 204 })
   }),
 
-  // BU-01: catálogo paginado, `{ items, total, page, pageSize }`.
+  // BU-01 y BU-03: catálogo paginado y filtrado, `{ items, total, page, pageSize }`.
   http.get('*/api/catalog', ({ request }) => {
     const url = new URL(request.url)
     const page = Math.max(1, Number(url.searchParams.get('page')) || 1)
     const pageSize = Math.max(1, Number(url.searchParams.get('pageSize')) || 12)
     const start = (page - 1) * pageSize
+    const matches = filterCatalog(url.searchParams)
     return HttpResponse.json({
-      items: catalogData.slice(start, start + pageSize),
-      total: catalogData.length,
+      items: matches.slice(start, start + pageSize),
+      total: matches.length,
       page,
       pageSize,
     })
