@@ -2,6 +2,7 @@ import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router'
 import { describe, expect, it } from 'vitest'
+import { getToken, setToken } from '../lib/token'
 import { Navbar } from './Navbar'
 
 function renderNavbar(path = '/') {
@@ -58,5 +59,27 @@ describe('Navbar', () => {
     await userEvent.click(within(menu).getByRole('link', { name: 'Ingresar' }))
 
     expect(document.getElementById('menu-movil')).toBeNull()
+  })
+
+  it('con sesión muestra Salir en vez de Ingresar y Crear cuenta', () => {
+    setToken('abc')
+    renderNavbar()
+
+    const nav = screen.getByRole('navigation', { name: 'Principal' })
+
+    expect(within(nav).getByRole('button', { name: 'Salir' })).toBeInTheDocument()
+    expect(within(nav).queryByRole('link', { name: 'Ingresar' })).toBeNull()
+    expect(within(nav).queryByRole('link', { name: 'Crear cuenta' })).toBeNull()
+  })
+
+  it('Salir cierra la sesión y vuelve a mostrar Ingresar', async () => {
+    setToken('abc')
+    renderNavbar('/owner/spaces')
+
+    const nav = screen.getByRole('navigation', { name: 'Principal' })
+    await userEvent.click(within(nav).getByRole('button', { name: 'Salir' }))
+
+    expect(getToken()).toBeNull()
+    expect(within(nav).getByRole('link', { name: 'Ingresar' })).toBeInTheDocument()
   })
 })

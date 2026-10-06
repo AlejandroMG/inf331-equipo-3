@@ -1,12 +1,28 @@
-import { ConflictException, Injectable } from '@nestjs/common';
+import {
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  UnauthorizedException,
+} from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { Prisma } from '../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
+import { JwtPayload } from './jwt-payload';
 
 const BCRYPT_ROUNDS = 10;
 
 const EMAIL_TAKEN = 'Ya existe una cuenta con este email.';
+// El mismo mensaje si el email no existe o si la contraseña es incorrecta:
+// así no se puede averiguar qué emails tienen cuenta.
+export const INVALID_CREDENTIALS = 'Email o contraseña incorrectos.';
+export const ACCOUNT_SUSPENDED =
+  'Tu cuenta está suspendida. Escríbenos si crees que es un error.';
+
+// Hash de relleno para comparar cuando el email no existe, así la respuesta tarda lo mismo.
+const DUMMY_HASH = bcrypt.hashSync('rentsmart-dummy-password', BCRYPT_ROUNDS);
 
 // Datos del usuario que se pueden devolver al cliente: nunca el passwordHash.
 const publicUserSelect = {
@@ -22,9 +38,17 @@ export type PublicUser = Prisma.UserGetPayload<{
   select: typeof publicUserSelect;
 }>;
 
+export interface LoginResult {
+  accessToken: string;
+  user: PublicUser;
+}
+
 @Injectable()
 export class AuthService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly jwt: JwtService,
+  ) {}
 
   async register(dto: RegisterDto): Promise<PublicUser> {
     const existing = await this.prisma.user.findUnique({
@@ -50,5 +74,29 @@ export class AuthService {
       }
       throw error;
     }
+  }
+
+  async login(dto: LoginDto): Promise<LoginResult> {
+    const found = await this.prisma.user.findUnique({
+      where: { email: dto.email },
+      select: { ...publicUserSelect, passwordHash: true, status: true },
+    });
+
+    const passwordOk = await bcrypt.compare(
+      dto.password,
+      found?.passwordHash ?? DUMMY_HASH,
+    );
+    if (!found || !passwordOk) {
+      throw new UnauthorizedException(INVALID_CREDENTIALS);
+    }
+
+    // Solo se avisa de la suspensión a quien demostró conocer la contraseña.
+    if (found.status === 'SUSPENDED') {
+      throw new ForbiddenException(ACCOUNT_SUSPENDED);
+    }
+
+    const { passwordHash: _hash, status: _status, ...user } = found;
+    const payload: JwtPayload = { sub: user.id, role: user.role };
+    return { accessToken: await this.jwt.signAsync(payload), user };
   }
 }
