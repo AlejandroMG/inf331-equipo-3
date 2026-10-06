@@ -101,6 +101,39 @@ const conflict = (message: string, extra: object = {}) =>
 const notFound = (message: string) =>
   HttpResponse.json({ message, error: 'Not Found', statusCode: 404 }, { status: 404 })
 
+/** Un nombre que ningún espacio tiene: un id que no existe no debe filtrar "por nada". */
+const NO_MATCH = '\u0000'
+
+/**
+ * Los filtros de GET /api/catalog (BU-03) sobre los datos de ejemplo, con las mismas reglas que el back: todos deben
+ * cumplirse, el rango de precio es el de la hora o el del día (`priceUnit`) y cada palabra del texto debe estar en el
+ * nombre, el tipo o la comuna.
+ */
+function filterCatalog(params: URLSearchParams) {
+  const nameOf = (list: Array<{ id: number; name: string }>, id: string | null) =>
+    id === null ? null : (list.find((item) => String(item.id) === id)?.name ?? NO_MATCH)
+  const typeName = nameOf(SPACE_TYPES, params.get('typeId'))
+  const communeName = nameOf(COMMUNES, params.get('communeId'))
+  const minCapacity = Number(params.get('minCapacity') ?? 0)
+  const minPrice = params.get('minPrice') === null ? null : Number(params.get('minPrice'))
+  const maxPrice = params.get('maxPrice') === null ? null : Number(params.get('maxPrice'))
+  const priceKey = params.get('priceUnit') === 'day' ? 'pricePerDay' : 'pricePerHour'
+  const words = (params.get('q') ?? '').toLowerCase().split(/\s+/).filter(Boolean)
+
+  return catalogData.filter((space) => {
+    const text = `${space.name} ${space.typeName} ${space.communeName}`.toLowerCase()
+    const price = space[priceKey]
+    return (
+      (typeName === null || space.typeName === typeName) &&
+      (communeName === null || space.communeName === communeName) &&
+      space.capacity >= minCapacity &&
+      (minPrice === null || (price !== null && price >= minPrice)) &&
+      (maxPrice === null || (price !== null && price <= maxPrice)) &&
+      words.every((word) => text.includes(word))
+    )
+  })
+}
+
 /**
  * Respuestas simuladas de la API mientras el endpoint real no exista.
  * Cada dominio agrega aquí los handlers de sus endpoints, con la forma que quedó en el contrato (F-05).
@@ -218,15 +251,16 @@ export const handlers = [
     return new HttpResponse(null, { status: 204 })
   }),
 
-  // BU-01: catálogo paginado, `{ items, total, page, pageSize }`.
+  // BU-01 y BU-03: catálogo paginado y filtrado, `{ items, total, page, pageSize }`.
   http.get('*/api/catalog', ({ request }) => {
     const url = new URL(request.url)
     const page = Math.max(1, Number(url.searchParams.get('page')) || 1)
     const pageSize = Math.max(1, Number(url.searchParams.get('pageSize')) || 12)
     const start = (page - 1) * pageSize
+    const matches = filterCatalog(url.searchParams)
     return HttpResponse.json({
-      items: catalogData.slice(start, start + pageSize),
-      total: catalogData.length,
+      items: matches.slice(start, start + pageSize),
+      total: matches.length,
       page,
       pageSize,
     })

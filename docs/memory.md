@@ -1017,3 +1017,51 @@ En `rentsmart-front`: `npm run lint`, `npm test` y `npm run build`. A mano, con 
 - C (@gonzzza-lol): el panel deja un bloque "Próximas reservas" para listar las de los espacios del usuario cuando existan; avísame el contrato.
 
 ---
+
+### 2026-10-06 · B (xReNatS) · BU-03 filtros y búsqueda del catálogo (front)
+
+**Issues:** #29 (BU-03), parte del front
+**Rama / PR:** `feat/BU-03-catalog-filters`, apilada sobre `feat/BU-01-ES-04-front` (#98) · sin PR todavía
+**Duración aproximada:** 1,5 h
+**Herramientas:** Claude Code
+
+#### Objetivo
+Dar al catálogo el buscador y los filtros del prototipo aprobado, con la búsqueda guardada en la URL para poder compartirla.
+
+#### Qué se hizo
+- Franja superior del prototipo con el buscador por texto ("Busca por nombre, tipo o comuna"). La búsqueda se aplica al enviar (Enter o "Buscar"), no en cada tecla.
+- Un chip por tipo de espacio (con "Todos") y selectores de comuna y capacidad mínima. El precio tiene un selector "Por hora / Por día" y los selectores "Precio mínimo" y "Precio máximo", cada unidad con sus propias opciones. Las opciones que dejarían el rango al revés están deshabilitadas y, al cambiar de unidad, el precio se reinicia (las escalas no se parecen). Cada cambio se aplica al instante. "Limpiar filtros" aparece cuando hay alguno; la unidad sola no cuenta como filtro.
+- **La URL es la fuente de verdad**: `?q=sala&typeId=3&communeId=2&minCapacity=8&priceUnit=day&minPrice=30000&maxPrice=80000&page=2`. Se puede recargar, compartir y volver atrás. Un valor inválido o fuera de rango se ignora en vez de provocar un 400 de la API; si el valor de la URL no es una de las opciones del selector, igual se muestra. Cambiar un filtro vuelve a la página 1 y los enlaces de la paginación conservan los filtros.
+- Sin resultados: "No encontramos espacios con esos filtros" con un botón para limpiarlos. Si no cargan los tipos y las comunas, el catálogo y el buscador siguen funcionando.
+- El mock del catálogo filtra con las mismas reglas que el back. `SPACE_TYPES` y `COMMUNES` se extraen a constantes (igual que en el PR del panel, #99).
+- A 375 px el buscador ocupa todo el ancho con el botón debajo, y los chips y selectores se envuelven sin scroll horizontal.
+- Pruebas nuevas de la lógica de la URL y de la página con todos sus flujos. En esta rama, con Node 24, hay 324 en 28 archivos (incluye el panel y el login de A).
+
+#### Decisiones y por qué
+| Decisión | Alternativas consideradas | Por qué se eligió |
+|---|---|---|
+| Precio con unidad (por hora o por día) y selectores desde y hasta | Solo "Hasta $X / hora", como en el prototipo | Lo decidió Renato el 06-10: cumple "rango de precio" y deja encontrar los espacios que solo se arriendan por día. Se aparta un poco del prototipo, que traía solo el máximo por hora |
+| El texto se envía al apretar Enter o "Buscar" | Buscar mientras se escribe | Evita pedir resultados a medias y no llena el historial con una entrada por tecla |
+| Los tipos y las comunas se leen de la API que ya usa el formulario | Listas fijas en el código | Si el administrador agrega un tipo, aparece solo |
+
+#### Archivos principales
+- `rentsmart-front/src/features/catalog/`: `CatalogPage`, `FilterBar`, `SearchBox`, `filters`, `catalog-api`, `useCatalog` y sus pruebas.
+- `rentsmart-front/src/mocks/handlers.ts`, `src/components/icons.tsx` y `src/routes.test.tsx`.
+
+#### Cómo probarlo
+En `rentsmart-front` (Node 24): `npm run lint`, `npm test` y `npm run build`. A mano, con el back de #96 y la rama de filtros del back: abrir `/`, elegir un tipo, una comuna, buscar un texto, y recargar o copiar la URL.
+
+#### Estado de verificación
+- Lint: ✅
+- Tests: ✅ (28 archivos, 324 pruebas, con Node 24)
+- Build: ✅
+- A mano, contra el back real con el seed: chips, selectores, búsqueda con tildes, enlace compartido y 375 px ✅
+
+#### Pendientes y bloqueos
+- El orden de los resultados (BU-04) y el filtro por disponibilidad (BU-05) quedan para después del 9 de octubre.
+- Las opciones de precio son fijas por unidad (por hora hasta $30.000, por día hasta $200.000). Si el catálogo crece con otros precios habrá que revisarlas.
+
+#### Para el resto del equipo
+- C (@gonzzza-lol): cuando exista la disponibilidad, el filtro BU-05 irá junto a estos en `FilterBar`.
+
+---
