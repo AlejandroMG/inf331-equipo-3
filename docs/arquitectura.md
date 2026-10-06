@@ -105,9 +105,13 @@ rentsmart-front/src/
 └── routes.tsx
 ```
 
-- Rutas con React Router. Las rutas privadas redirigen a `/login`.
-- El cliente HTTP lee la URL base desde `VITE_API_URL` y adjunta el token.
-- Tailwind 4 se carga con el plugin `@tailwindcss/vite`; no hay `tailwind.config.js`.
+- Rutas con React Router (`src/routes.tsx`, un arreglo de `RouteObject`). Cada dominio agrega las suyas. Las rutas dentro de `<RequireAuth />` exigen token y, sin él, redirigen a `/login` guardando la ruta pedida en `state.from`.
+- El cliente HTTP (`src/lib/http.ts`) lee la URL base desde `VITE_API_URL` (sin `/api`: el cliente lo agrega), adjunta `Authorization: Bearer <token>` y convierte las respuestas con error en `ApiError` (`status`, `message` en español, `data`). Ante un 401 borra el token. El token vive en `localStorage` (`src/lib/token.ts`).
+- Tailwind 4 se carga con el plugin `@tailwindcss/vite`; no hay `tailwind.config.js`. Los colores, tipografías y radios de la marca son variables `@theme` en `src/index.css` y dan utilidades como `bg-primary`, `text-ink`, `border-line`, `font-display` y `rounded-card`.
+- Componentes base en `src/components/`: `Button` y `LinkButton`, `Input`, `Card`, `Modal` (`<dialog>` nativo) y `Toast` (`ToastProvider` más el hook `useToast`).
+- En desarrollo, `/dev/componentes` muestra una guía de esos componentes. No existe en producción.
+- Pruebas: `npm test` ejecuta Vitest con jsdom, Testing Library y MSW. Los handlers de la API simulada están en `src/mocks/handlers.ts` y los usan tanto los tests (`src/mocks/server.ts`) como el navegador (`src/mocks/browser.ts`, con `VITE_USE_MOCKS=true`). El setup (`src/test/setup.ts`) falla cualquier petición sin handler y simula `<dialog>`, que jsdom no implementa. Los tests viven junto al código (`*.test.ts` y `*.test.tsx`).
+- Mientras A no entregue el login (CU-02), para entrar a una ruta privada en local: `localStorage.setItem('rentsmart_token', 'dev')` en la consola del navegador.
 
 ## Modelo de datos
 
@@ -243,12 +247,13 @@ Como una `PENDING` vencida sigue contando para la restricción, antes de inserta
 
 ## Variables de entorno
 
-Solo `PORT` y `VITE_API_URL` existen hoy. Las demás se agregan a `.env.example` en la historia que las introduce.
+Solo `PORT`, `VITE_API_URL` y `VITE_USE_MOCKS` existen hoy. Las demás se agregan a `.env.example` en la historia que las introduce.
 
 | Variable | App | Para qué | Historia |
 |---|---|---|---|
 | `PORT` | back | Puerto de la API (3000 por defecto) | — |
 | `VITE_API_URL` | front | URL base de la API | F-07 |
+| `VITE_USE_MOCKS` | front | `true` activa MSW en el navegador para simular la API (solo desarrollo; opcional) | F-08 |
 | `DATABASE_URL`, `DATABASE_TEST_URL` | back | Conexión a PostgreSQL | F-04, F-03 |
 | `JWT_SECRET`, `JWT_EXPIRES_IN` | back | Firma y duración del token | CU-02 |
 | `FRONTEND_URL` | back | Origen permitido por CORS y URLs de retorno de Stripe | CU-05 |
