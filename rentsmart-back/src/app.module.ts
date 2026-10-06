@@ -5,6 +5,7 @@ import { validate } from './config/env.validation';
 import { ConfigModule } from '@nestjs/config';
 import { PrismaModule } from './prisma/prisma.module';
 import { SpaceTypesModule } from './space-types/space-types.module';
+import { AuthModule } from './auth/auth.module';
 import { CatalogModule } from './catalog/catalog.module';
 
 @Module({
@@ -12,6 +13,7 @@ import { CatalogModule } from './catalog/catalog.module';
     ConfigModule.forRoot({ isGlobal: true, validate }),
     PrismaModule,
     SpaceTypesModule,
+    AuthModule,
     CatalogModule,
   ],
   controllers: [AppController],
