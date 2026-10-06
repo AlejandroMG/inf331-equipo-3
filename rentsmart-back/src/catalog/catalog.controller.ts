@@ -1,5 +1,6 @@
 import { Controller, Get, Param, Query } from '@nestjs/common';
 import {
+  ApiBadRequestResponse,
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
@@ -17,10 +18,15 @@ export class CatalogController {
 
   @Get()
   @ApiOperation({
-    summary: 'Lista los espacios activos, paginados',
-    description: 'Público: no requiere sesión. Los más recientes primero.',
+    summary: 'Lista los espacios activos, paginados y filtrados',
+    description:
+      'Público: no requiere sesión. Los más recientes primero. Los filtros se combinan (todos deben cumplirse); sin filtros lista todos los activos.',
   })
   @ApiOkResponse({ type: CatalogPageDto })
+  @ApiBadRequestResponse({
+    description:
+      'Un parámetro inválido o desconocido, o un precio mínimo mayor que el máximo',
+  })
   findPage(@Query() query: ListCatalogQueryDto): Promise<CatalogPageDto> {
     return this.service.findPage(query);
   }

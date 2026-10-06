@@ -609,3 +609,51 @@ Implementar los endpoints públicos que consume el front del catálogo, con la f
 - Cualquier endpoint público nuevo debe usar `select` explícito y tener un test que compruebe que no filtra `addressDetail`.
 
 ---
+
+### 2026-10-06 · B (xReNatS) · BU-03 filtros y búsqueda del catálogo (back)
+
+**Issues:** #29 (BU-03), parte del back
+**Rama / PR:** `feat/BU-03-catalog-filters-api`, apilada sobre `feat/BU-01-catalog-api` (#96) · sin PR todavía
+**Duración aproximada:** 1 h
+**Herramientas:** Claude Code
+
+#### Objetivo
+Que `GET /api/catalog` filtre por tipo, comuna, capacidad mínima, rango de precio y texto libre, para que el front deje la búsqueda en la URL.
+
+#### Qué se hizo
+- Parámetros opcionales y combinables de `GET /api/catalog`: `typeId`, `communeId`, `minCapacity`, `minPrice`, `maxPrice` y `q`. Todos deben cumplirse y `total` cuenta solo los que cumplen, así la paginación sigue bien.
+- Validan con `class-validator` y topes (los mismos que al publicar): un valor inválido o enorme da 400, no un 500 por desbordar el `Int` de Postgres. Un precio mínimo mayor que el máximo da 400 con mensaje.
+- `q` usa hasta 5 palabras y cada una debe aparecer en el nombre, la descripción, el tipo o la comuna, sin distinguir mayúsculas. **No busca en la dirección ni en su detalle**: así la búsqueda no sirve para averiguar el detalle privado (P-09). Hay un e2e que lo comprueba.
+- `contains` de Prisma no escapa los comodines de LIKE: buscar `%` listaba todo. Ahora se escapan `%`, `_` y la barra invertida (lo descubrió el e2e).
+- Swagger describe cada parámetro y la respuesta 400. `docs/arquitectura.md` documenta el contrato.
+- Pruebas: 12 unitarias y 28 e2e nuevas (en esta rama: 32 y 66, todas con Node 24).
+
+#### Decisiones y por qué
+| Decisión | Alternativas consideradas | Por qué se eligió |
+|---|---|---|
+| `minPrice` y `maxPrice` son el **precio por hora** | Aceptar el precio por hora o por día, o dar un parámetro para elegir | Los dos precios están en escalas distintas (miles contra decenas de miles) y mezclarlos confunde. El prototipo aprobado ya dice "Hasta $20.000 / hora". Un espacio que solo se arrienda por día queda fuera de cualquier filtro de precio |
+| Cada palabra de `q` en cualquiera de cuatro campos | Una sola frase exacta, o también buscar en la dirección | Con "sala providencia" se encuentra una sala en Providencia. La dirección y su detalle quedan fuera por privacidad |
+| No ignora las tildes ("camara" no encuentra "Cámara") | Extensión `unaccent` de Postgres | Exigiría una migración, y el esquema es de A. Se puede ver después |
+
+#### Archivos principales
+- `rentsmart-back/src/catalog/`: `dto/list-catalog-query.dto`, `catalog.service`, `catalog.controller` y `catalog.service.spec`.
+- `rentsmart-back/test/catalog-filters.e2e-spec.ts`.
+- `docs/arquitectura.md`.
+
+#### Cómo probarlo
+Con una BD de test migrada, en `rentsmart-back` (Node 24): `npm run lint`, `npm test`, `npm run test:e2e` y `npm run build`. A mano, con el seed: `GET /api/catalog?typeId=1&maxPrice=14000&q=sala` en Swagger (http://localhost:3000/docs).
+
+#### Estado de verificación
+- Lint: ✅
+- Tests unitarios: ✅ (5 archivos, 32 pruebas)
+- Tests e2e: ✅ (4 archivos, 66 pruebas)
+- Build: ✅
+
+#### Pendientes y bloqueos
+- El orden de los resultados (BU-04) queda para después del 9 de octubre.
+- Filtrar por disponibilidad (BU-05) depende de las reservas de C.
+
+#### Para el resto del equipo
+- A (@AlejandroMG): no toca `schema.prisma`. Una búsqueda sin tildes (`unaccent`) requeriría una migración suya, si se quiere.
+
+---
