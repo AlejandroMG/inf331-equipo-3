@@ -28,7 +28,7 @@ export function resetMockDrafts() {
 
 function ownerSpace(id: string, payload: SpacePayload, previous?: OwnerSpace): OwnerSpace {
   const now = new Date().toISOString()
-  return { ...payload, id, status: 'DRAFT', photos: previous?.photos ?? [], createdAt: previous?.createdAt ?? now, updatedAt: now }
+  return { ...payload, id, status: previous?.status ?? 'DRAFT', photos: previous?.photos ?? [], createdAt: previous?.createdAt ?? now, updatedAt: now }
 }
 
 let photoCounter = 0
@@ -40,6 +40,24 @@ function mockPhoto(position: number): OwnerPhoto {
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="600" height="400"><rect width="600" height="400" fill="hsl(${hue} 45% 80%)"/><text x="300" y="215" font-size="40" text-anchor="middle" fill="hsl(${hue} 45% 25%)" font-family="sans-serif">Foto ${photoCounter}</text></svg>`
   return { id: `photo-${photoCounter}`, url: `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`, position }
 }
+
+/**
+ * Lo que falta para publicar (P-18), con los mismos códigos que el back. El horario semanal (DI-01) se da por
+ * cargado: así el flujo se puede recorrer completo sin el equipo de reservas.
+ */
+function missingToPublish(space: OwnerSpace): string[] {
+  const missing: string[] = []
+  if (space.typeId === null) missing.push('type')
+  if (!space.description?.trim()) missing.push('description')
+  if (!space.capacity) missing.push('capacity')
+  if (space.communeId === null) missing.push('commune')
+  if (!space.pricePerHour && !space.pricePerDay) missing.push('price')
+  if (space.photos.length === 0) missing.push('photos')
+  return missing
+}
+
+const conflict = (message: string, extra: object = {}) =>
+  HttpResponse.json({ statusCode: 409, error: 'Conflict', message, ...extra }, { status: 409 })
 
 const notFound = (message: string) =>
   HttpResponse.json({ message, error: 'Not Found', statusCode: 404 }, { status: 404 })
@@ -106,6 +124,31 @@ export const handlers = [
     const space = ownerSpace(id, (await request.json()) as SpacePayload, previous)
     drafts.set(id, space)
     return HttpResponse.json(space)
+  }),
+
+  // ES-04 y ES-06: publicar y activar o desactivar.
+  http.post('*/api/spaces/:id/publish', ({ params }) => {
+    const space = drafts.get(String(params.id))
+    if (!space) return notFound('El espacio no existe')
+    if (space.status !== 'DRAFT') return conflict('El espacio ya está publicado')
+    const missing = missingToPublish(space)
+    if (missing.length > 0) return conflict('Faltan datos para publicar el espacio', { missing })
+    const published: OwnerSpace = { ...space, status: 'ACTIVE' }
+    drafts.set(space.id, published)
+    return HttpResponse.json(published)
+  }),
+  http.patch('*/api/spaces/:id/status', async ({ params, request }) => {
+    const space = drafts.get(String(params.id))
+    if (!space) return notFound('El espacio no existe')
+    const { status } = (await request.json()) as { status: 'ACTIVE' | 'INACTIVE' }
+    if (space.status === 'DRAFT') return conflict('Un borrador no se activa ni se desactiva: publícalo primero')
+    if (status === 'ACTIVE') {
+      const missing = missingToPublish(space)
+      if (missing.length > 0) return conflict('Faltan datos para publicar el espacio', { missing })
+    }
+    const next: OwnerSpace = { ...space, status }
+    drafts.set(space.id, next)
+    return HttpResponse.json(next)
   }),
 
   // ES-03: fotos del espacio (hasta 10; la de posición 0 es la portada).

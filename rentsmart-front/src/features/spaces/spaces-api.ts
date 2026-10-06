@@ -31,3 +31,10 @@ export const reorderPhotos = (spaceId: string, photoIds: string[]) =>
 
 export const deletePhoto = (spaceId: string, photoId: string) =>
   http.delete<void>(`/spaces/${encodeURIComponent(spaceId)}/photos/${encodeURIComponent(photoId)}`)
+
+/** Publica un borrador. Responde 409 con `missing` si falta algo (ver `missingFromError`). */
+export const publishSpace = (id: string) => http.post<OwnerSpace>(`/spaces/${encodeURIComponent(id)}/publish`)
+
+/** Desactiva un espacio publicado (INACTIVE) o lo vuelve a activar (ACTIVE). */
+export const changeSpaceStatus = (id: string, status: 'ACTIVE' | 'INACTIVE') =>
+  http.patch<OwnerSpace>(`/spaces/${encodeURIComponent(id)}/status`, { status })

@@ -1,3 +1,4 @@
+import { ApiError } from '../../lib/http'
 import type { OwnerSpace, SpaceForm, SpacePayload } from './types'
 
 export const MAX_NAME = 100
@@ -89,21 +90,47 @@ export function toPayload(form: SpaceForm, regionId: number | null): SpacePayloa
   }
 }
 
+/** Lo que el back puede decir que falta para publicar (`missing` de la respuesta 409). */
+export type MissingField = 'type' | 'description' | 'capacity' | 'commune' | 'price' | 'photos' | 'schedule'
+
+/** Cada requisito para publicar, con su nombre y el paso del formulario donde se completa (P-18). */
+export const REQUIREMENTS: Record<MissingField, { label: string; step: number }> = {
+  type: { label: 'Tipo de espacio', step: 1 },
+  description: { label: 'Descripción', step: 1 },
+  capacity: { label: 'Capacidad', step: 1 },
+  commune: { label: 'Comuna', step: 2 },
+  price: { label: 'Precio por hora o por día', step: 3 },
+  photos: { label: 'Al menos una foto', step: 4 },
+  schedule: { label: 'Horario semanal', step: 3 },
+}
+
 export interface ChecklistItem {
+  code: MissingField
   label: string
+  step: number
   done: boolean
 }
 
 /**
- * Lo que se exige para publicar (ES-04). El horario semanal (DI-01, del equipo de reservas) todavía no
- * se puede cargar desde esta pantalla, por eso queda pendiente.
+ * Qué requisitos para publicar ya cumple el formulario. El horario semanal (DI-01, del equipo de reservas)
+ * todavía no se puede cargar desde esta pantalla, por eso queda siempre pendiente.
  */
 export function publishChecklist(form: SpaceForm, photoCount: number): ChecklistItem[] {
-  return [
-    { label: 'Al menos una foto', done: photoCount > 0 },
-    { label: 'Precio por hora o por día', done: Number(form.pricePerHour) > 0 || Number(form.pricePerDay) > 0 },
-    { label: 'Capacidad', done: Number(form.capacity) > 0 },
-    { label: 'Descripción', done: form.description.trim() !== '' },
-    { label: 'Horario semanal', done: false },
-  ]
+  const done: Record<MissingField, boolean> = {
+    type: form.typeId !== '',
+    description: form.description.trim() !== '',
+    capacity: Number(form.capacity) > 0,
+    commune: form.communeId !== '',
+    price: Number(form.pricePerHour) > 0 || Number(form.pricePerDay) > 0,
+    photos: photoCount > 0,
+    schedule: false,
+  }
+  return (Object.keys(REQUIREMENTS) as MissingField[]).map((code) => ({ code, ...REQUIREMENTS[code], done: done[code] }))
+}
+
+/** Lo que falta según un error 409 del back (`{ missing: [...] }`), o null si el error es de otra cosa. */
+export function missingFromError(error: unknown): MissingField[] | null {
+  const data = error instanceof ApiError ? error.data : null
+  if (typeof data !== 'object' || data === null || !('missing' in data) || !Array.isArray(data.missing)) return null
+  return data.missing.filter((code): code is MissingField => typeof code === 'string' && code in REQUIREMENTS)
 }

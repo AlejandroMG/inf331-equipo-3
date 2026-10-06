@@ -18,7 +18,15 @@ function spyOnSaves() {
   const calls: Array<{ method: string; url: string; body: Record<string, unknown> }> = []
   server.events.on('request:start', async ({ request }) => {
     if (['POST', 'PATCH'].includes(request.method) && new URL(request.url).pathname.startsWith('/api/spaces')) {
-      calls.push({ method: request.method, url: new URL(request.url).pathname, body: await request.clone().json() })
+      // Publicar no manda cuerpo y las fotos mandan un formulario: solo los JSON se leen.
+      const text = await request.clone().text()
+      let body: Record<string, unknown> = {}
+      try {
+        body = JSON.parse(text)
+      } catch {
+        // sin cuerpo o no JSON
+      }
+      calls.push({ method: request.method, url: new URL(request.url).pathname, body })
     }
   })
   return calls
@@ -139,7 +147,7 @@ describe('PublishSpacePage', () => {
     expect(item('Al menos una foto')).toHaveTextContent('Pendiente')
   })
 
-  it('el último paso resume el borrador y todavía no deja publicar', async () => {
+  it('el último paso resume el borrador y ofrece publicarlo', async () => {
     await openForm()
     await userEvent.type(screen.getByLabelText('Nombre del espacio'), 'Sala Alameda')
     await userEvent.type(screen.getByLabelText('Capacidad (personas)'), '10')
@@ -149,9 +157,138 @@ describe('PublishSpacePage', () => {
     expect(screen.getByText('Sala Alameda')).toBeInTheDocument()
     expect(screen.getByText('10 personas')).toBeInTheDocument()
     expect(screen.getAllByText('Falta').length).toBeGreaterThan(0)
-    expect(screen.getByRole('button', { name: 'Publicar espacio' })).toBeDisabled()
-    expect(screen.getByText(/falta el horario semanal/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Publicar espacio' })).toBeEnabled()
     expect(screen.queryByRole('button', { name: 'Siguiente' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  describe('publicar', () => {
+    /** Llena un borrador con lo necesario (menos fotos) y llega al último paso. */
+    async function fillAndReview({ withPhoto = true, price = '12000' }: { withPhoto?: boolean; price?: string } = {}) {
+      const router = await openForm()
+      await userEvent.type(screen.getByLabelText('Nombre del espacio'), 'Sala Alameda')
+      await userEvent.selectOptions(screen.getByLabelText('Tipo de espacio'), 'Sala de reuniones')
+      await userEvent.type(screen.getByLabelText('Descripción'), 'Luminosa')
+      await userEvent.type(screen.getByLabelText('Capacidad (personas)'), '10')
+      await next()
+      await screen.findByText('Paso 2 de 5 · Ubicación')
+      await userEvent.selectOptions(screen.getByLabelText('Comuna'), 'Providencia')
+      await next()
+      await screen.findByText('Paso 3 de 5 · Precio y horario')
+      if (price) await userEvent.type(screen.getByLabelText('Precio por hora (CLP)'), price)
+      await next()
+      await screen.findByText('Paso 4 de 5 · Fotos')
+      if (withPhoto) {
+        await userEvent.upload(screen.getByLabelText('Elegir fotos'), new File(['x'], 'sala.png', { type: 'image/png' }))
+        await screen.findByRole('img', { name: 'Foto 1' })
+      }
+      await userEvent.click(screen.getByRole('button', { name: /Revisar/ }))
+      await screen.findByText('Paso 5 de 5 · Revisar')
+      return router
+    }
+
+    it('con todo completo publica y muestra el espacio con enlaces al catálogo y a Mis espacios', async () => {
+      await fillAndReview()
+
+      await userEvent.click(screen.getByRole('button', { name: 'Publicar espacio' }))
+
+      expect(await screen.findByRole('status')).toHaveTextContent('¡Tu espacio está publicado!')
+      expect(screen.getByText(/“Sala Alameda” ya aparece en el catálogo/)).toBeInTheDocument()
+      expect(screen.getByRole('link', { name: 'Ver en el catálogo' })).toHaveAttribute('href', '/spaces/draft-1')
+      expect(screen.getByRole('link', { name: 'Ir a mis espacios' })).toHaveAttribute('href', '/owner/spaces')
+      expect(screen.getByRole('link', { name: 'Publicar otro espacio' })).toHaveAttribute('href', '/publish')
+      expect(screen.queryByLabelText('Nombre del espacio')).not.toBeInTheDocument()
+    })
+
+    it('publica el borrador ya guardado sin volver a guardarlo', async () => {
+      await fillAndReview()
+      const saves = spyOnSaves()
+
+      await userEvent.click(screen.getByRole('button', { name: 'Publicar espacio' }))
+
+      await screen.findByRole('status')
+      // Cada cambio de paso ya guardó el borrador: al publicar solo se pide publicar.
+      expect(saves.map((c) => `${c.method} ${c.url}`)).toEqual(['POST /api/spaces/draft-1/publish'])
+    })
+
+    it('si falta algo muestra qué y lleva al paso donde se completa', async () => {
+      await fillAndReview({ withPhoto: false, price: '' })
+
+      await userEvent.click(screen.getByRole('button', { name: 'Publicar espacio' }))
+
+      const alert = await screen.findByRole('alert')
+      expect(alert).toHaveTextContent('Aún no puedes publicar. Te falta:')
+      expect(within(alert).getByText(/Precio por hora o por día/)).toBeInTheDocument()
+      expect(within(alert).getByText(/Al menos una foto/)).toBeInTheDocument()
+      expect(screen.getByText('Paso 5 de 5 · Revisar')).toBeInTheDocument()
+
+      await userEvent.click(within(alert).getByRole('button', { name: 'Ir al paso 3' }))
+
+      expect(await screen.findByText('Paso 3 de 5 · Precio y horario')).toBeInTheDocument()
+    })
+
+    it('el horario semanal faltante se avisa sin enlace, porque todavía no se puede cargar', async () => {
+      server.use(
+        mswHttp.post('*/api/spaces/:id/publish', () =>
+          HttpResponse.json({ statusCode: 409, message: 'Faltan datos', missing: ['schedule'] }, { status: 409 }),
+        ),
+      )
+      await fillAndReview()
+
+      await userEvent.click(screen.getByRole('button', { name: 'Publicar espacio' }))
+
+      const alert = await screen.findByRole('alert')
+      expect(alert).toHaveTextContent('Horario semanal (se podrá cargar pronto)')
+      expect(within(alert).queryByRole('button')).not.toBeInTheDocument()
+    })
+
+    it('el aviso de lo que falta se va al volver a guardar', async () => {
+      await fillAndReview({ withPhoto: false })
+      await userEvent.click(screen.getByRole('button', { name: 'Publicar espacio' }))
+      await screen.findByRole('alert')
+
+      await userEvent.click(screen.getByRole('button', { name: /Información/ }))
+      await screen.findByText('Paso 1 de 5 · Información')
+      await userEvent.type(screen.getByLabelText('Reglas del espacio (opcional)'), 'x')
+      await userEvent.click(screen.getByRole('button', { name: /Revisar/ }))
+      await screen.findByText('Paso 5 de 5 · Revisar')
+
+      expect(screen.queryByText('Aún no puedes publicar. Te falta:')).not.toBeInTheDocument()
+    })
+
+    it('un error que no es de datos faltantes se muestra tal cual', async () => {
+      server.use(mswHttp.post('*/api/spaces/:id/publish', () => HttpResponse.json({ message: 'Servicio caído' }, { status: 500 })))
+      await fillAndReview()
+
+      await userEvent.click(screen.getByRole('button', { name: 'Publicar espacio' }))
+
+      expect(await screen.findByRole('alert')).toHaveTextContent('Servicio caído')
+      expect(screen.getByRole('button', { name: 'Publicar espacio' })).toBeEnabled()
+    })
+
+    it.each([
+      ['ACTIVE', 'Este espacio ya está publicado'],
+      ['INACTIVE', 'Este espacio está desactivado'],
+      ['BLOCKED', 'Un administrador bloqueó esta publicación'],
+    ])('un espacio %s se edita, no se publica', async (status, message) => {
+      server.use(
+        mswHttp.get('*/api/spaces/draft-7', () =>
+          HttpResponse.json({
+            id: 'draft-7', status, name: 'Publicado', typeId: 1, description: 'x', capacity: 5, pricePerHour: 5000, pricePerDay: null,
+            regionId: 1, communeId: 1, address: null, addressDetail: null, rules: null, amenityIds: [], photos: [],
+            createdAt: '2026-10-05T00:00:00.000Z', updatedAt: '2026-10-05T00:00:00.000Z',
+          }),
+        ),
+      )
+      renderPublish('/publish/draft-7')
+      expect(await screen.findByRole('heading', { level: 1, name: 'Edita tu espacio' })).toBeInTheDocument()
+      expect(screen.getByText('Cambios guardados')).toBeInTheDocument()
+
+      await userEvent.click(screen.getByRole('button', { name: /Revisar/ }))
+
+      expect(await screen.findByText(new RegExp(message))).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Publicar espacio' })).not.toBeInTheDocument()
+    })
   })
 
   it('si el servidor rechaza el guardado muestra el mensaje y no avanza', async () => {

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { emptyForm, publishChecklist, toForm, toPayload, validate } from './form'
+import { ApiError } from '../../lib/http'
+import { emptyForm, missingFromError, publishChecklist, REQUIREMENTS, toForm, toPayload, validate } from './form'
 import type { OwnerSpace, SpaceForm } from './types'
 
 const filled: SpaceForm = {
@@ -165,5 +166,55 @@ describe('publishChecklist', () => {
 
   it('el horario sigue pendiente hasta que se pueda cargar (DI-01)', () => {
     expect(done(filled, 3)['Horario semanal']).toBe(false)
+  })
+})
+
+describe('publishChecklist: tipo y comuna (P-18)', () => {
+  const byCode = (form: SpaceForm) => Object.fromEntries(publishChecklist(form, 0).map((i) => [i.code, i.done]))
+
+  it('incluye todos los requisitos en el orden del formulario', () => {
+    expect(publishChecklist(emptyForm, 0).map((i) => i.code)).toEqual([
+      'type', 'description', 'capacity', 'commune', 'price', 'photos', 'schedule',
+    ])
+  })
+
+  it('el tipo y la comuna cuentan cuando están elegidos', () => {
+    expect(byCode(emptyForm)).toMatchObject({ type: false, commune: false })
+    expect(byCode(filled)).toMatchObject({ type: true, commune: true })
+  })
+
+  it('cada requisito apunta al paso donde se completa', () => {
+    expect(Object.fromEntries(publishChecklist(emptyForm, 0).map((i) => [i.code, i.step]))).toEqual({
+      type: 1, description: 1, capacity: 1, commune: 2, price: 3, photos: 4, schedule: 3,
+    })
+  })
+})
+
+describe('missingFromError', () => {
+  const conflict = (data: unknown) => new ApiError(409, 'Faltan datos', data)
+
+  it('lee la lista de lo que falta de un 409 del back', () => {
+    expect(missingFromError(conflict({ message: 'x', missing: ['price', 'photos'] }))).toEqual(['price', 'photos'])
+  })
+
+  it('ignora códigos que no conoce', () => {
+    expect(missingFromError(conflict({ missing: ['price', 'algo-nuevo', 7] }))).toEqual(['price'])
+  })
+
+  it.each([
+    ['un error sin cuerpo', new ApiError(500, 'caída')],
+    ['un cuerpo sin missing', conflict({ message: 'x' })],
+    ['un missing que no es lista', conflict({ missing: 'price' })],
+    ['un cuerpo de texto', conflict('texto')],
+    ['un error que no es de la API', new Error('x')],
+    ['algo que no es un error', null],
+  ])('devuelve null con %s', (_caso, error) => {
+    expect(missingFromError(error)).toBeNull()
+  })
+
+  it('todos los códigos conocidos tienen nombre y paso', () => {
+    for (const code of Object.keys(REQUIREMENTS)) {
+      expect(REQUIREMENTS[code as keyof typeof REQUIREMENTS].label).not.toBe('')
+    }
   })
 })

@@ -683,3 +683,53 @@ Completar el paso "Fotos" del formulario de publicar: subir de 1 a 10 fotos, ord
 - Las fotos locales se ven bajo `/api/uploads`; con Supabase la `url` ya viene absoluta.
 
 ---
+
+### 2026-10-05 · B (xReNatS) · ES-04 publicar desde el formulario (front)
+
+**Issues:** #23 (ES-04), parte del front
+**Rama / PR:** `feat/ES-04-publish-ui`, apilada sobre `feat/ES-03-photos-ui` · sin PR todavía
+**Duración aproximada:** 1,5 h
+**Herramientas:** Claude Code
+
+#### Objetivo
+Conectar el botón "Publicar espacio" del último paso con `POST /api/spaces/:id/publish`, mostrar exactamente qué falta cuando el back responde 409 y reflejar la regla nueva P-18 (tipo y comuna obligatorios).
+
+#### Qué se hizo
+- La lista "Para publicar necesitas" ahora tiene los 7 requisitos con los mismos códigos que el back (tipo, descripción, capacidad, comuna, precio, foto y horario), cada uno con el paso donde se completa (`REQUIREMENTS` en `form.ts`).
+- "Publicar espacio" guarda lo pendiente y pide publicar. Si el back responde 409 con `missing`, se muestra "Aún no puedes publicar. Te falta:" con un enlace "Ir al paso N" por cada cosa; el horario semanal se avisa "(se podrá cargar pronto)" sin enlace, porque DI-01 todavía no existe. El aviso desaparece al volver a guardar.
+- Si se publica, la pantalla cambia a "¡Tu espacio está publicado!" con enlaces a la ficha en el catálogo, a Mis espacios y a publicar otro.
+- Un borrador abierto que ya está publicado, desactivado o bloqueado se edita ("Edita tu espacio", "Cambios guardados") y no ofrece publicar: explica en qué estado está.
+- `missingFromError` lee `missing` de un `ApiError`; `publishSpace` y `changeSpaceStatus` en `spaces-api.ts` (el segundo lo usará el panel PN-01).
+- Handlers de MSW de publicar y cambiar estado, con las mismas reglas del back (el horario se da por cargado en la simulación).
+- 21 pruebas nuevas (218 en total).
+- Probado de punta a punta en el navegador contra el back real: con todo completo menos el horario, el back responde 409 y la pantalla dice "Horario semanal (se podrá cargar pronto)"; al insertar un horario a mano en la base, publica, el espacio sale primero en el catálogo público con su portada y horario, y la cuenta queda como propietaria.
+
+#### Decisiones y por qué
+| Decisión | Alternativas consideradas | Por qué se eligió |
+|---|---|---|
+| El botón está siempre disponible y el back dice qué falta | Desactivarlo hasta que la lista esté completa | La lista del cliente no conoce el horario; confiar en la respuesta del back evita duplicar la regla y muestra lo que realmente falta |
+| Sin enlace para el horario | Enlazar al paso 3 | Ese paso solo tiene un aviso hasta que DI-01 exista; un enlace que no lleva a nada confunde |
+| Los espacios publicados se editan en el mismo formulario | Pantalla de edición aparte (ES-05) | Es el mismo formulario; el back ya impide dejar incompleto un espacio activo |
+
+#### Archivos principales
+- `rentsmart-front/src/features/spaces/`: `SpaceWizard`, `form`, `spaces-api` y pruebas.
+- `rentsmart-front/src/mocks/handlers.ts`.
+
+#### Cómo probarlo
+- Desde `rentsmart-front`: `npm run lint`, `npm run build` y `npm test`.
+- Con el back de ES-04 en `localhost:3000`: completar un borrador hasta el último paso y pulsar "Publicar espacio".
+
+#### Estado de verificación
+- Build: ✅
+- Lint: ✅
+- Tests: ✅ (24 archivos, 218 pruebas)
+- Navegador contra el back real: ✅ (descrito arriba).
+
+#### Pendientes y bloqueos
+- Sin el horario semanal (DI-01 de C) un espacio nuevo no se puede publicar de verdad.
+- Panel "Mis espacios" con el interruptor activar/desactivar (PN-01 y ES-06 front).
+
+#### Para el resto del equipo
+- Los códigos de `missing` (`type`, `description`, `capacity`, `commune`, `price`, `photos`, `schedule`) son parte del contrato con el back.
+
+---

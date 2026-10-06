@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router'
-import { Button } from '../../components/Button'
+import { Button, LinkButton } from '../../components/Button'
 import { Card } from '../../components/Card'
 import { CheckIcon } from '../../components/icons'
 import { Input } from '../../components/Input'
@@ -9,9 +9,9 @@ import { Textarea } from '../../components/Textarea'
 import { cn } from '../../lib/cn'
 import { formatClp } from '../../lib/format'
 import { paths } from '../../lib/paths'
-import { emptyForm, publishChecklist, toForm, toPayload, validate, type FormErrors } from './form'
+import { emptyForm, missingFromError, publishChecklist, REQUIREMENTS, toForm, toPayload, validate, type FormErrors, type MissingField } from './form'
 import { PhotosStep } from './PhotosStep'
-import { createSpace, updateSpace } from './spaces-api'
+import { createSpace, publishSpace, updateSpace } from './spaces-api'
 import type { OwnerPhoto, OwnerSpace, ReferenceItem, SpaceForm } from './types'
 
 const STEPS = ['Información', 'Ubicación', 'Precio y horario', 'Fotos', 'Revisar'] as const
@@ -41,6 +41,11 @@ export function SpaceWizard({ types, amenities, region, communes, initialSpace }
   const [saveError, setSaveError] = useState<string | null>(null)
   const [saved, setSaved] = useState(initialSpace !== null)
   const [dirty, setDirty] = useState(false)
+  const [publishing, setPublishing] = useState(false)
+  // Lo que el servidor dijo que falta al intentar publicar; null si no se ha intentado.
+  const [missing, setMissing] = useState<MissingField[] | null>(null)
+  const [published, setPublished] = useState<OwnerSpace | null>(null)
+  const status = published?.status ?? initialSpace?.status ?? 'DRAFT'
 
   function change<K extends keyof SpaceForm>(key: K, value: SpaceForm[K]) {
     setForm((current) => ({ ...current, [key]: value }))
@@ -51,30 +56,33 @@ export function SpaceWizard({ types, amenities, region, communes, initialSpace }
     change('amenityIds', form.amenityIds.includes(id) ? form.amenityIds.filter((x) => x !== id) : [...form.amenityIds, id])
   }
 
-  /** Guarda el borrador. Devuelve false si hay datos inválidos o si el servidor lo rechaza. */
-  async function save(): Promise<boolean> {
+  /** Guarda el borrador. Devuelve el id del espacio, o null si hay datos inválidos o el servidor lo rechaza. */
+  async function save(): Promise<string | null> {
     const found = validate(form)
     setErrors(found)
-    if (Object.keys(found).length > 0) return false
+    if (Object.keys(found).length > 0) return null
 
     setSaving(true)
     setSaveError(null)
     try {
       const payload = toPayload(form, region?.id ?? null)
-      if (spaceId) {
-        await updateSpace(spaceId, payload)
+      let id = spaceId
+      if (id) {
+        await updateSpace(id, payload)
       } else {
         const created = await createSpace(payload)
+        id = created.id
         setSpaceId(created.id)
         // Misma ruta con parámetro opcional: la URL guarda el borrador sin recargar el formulario.
         navigate(paths.publishDraft(created.id), { replace: true, state: { created: true } })
       }
       setDirty(false)
       setSaved(true)
-      return true
+      setMissing(null)
+      return id
     } catch (error) {
       setSaveError(error instanceof Error ? error.message : 'No pudimos guardar el borrador.')
-      return false
+      return null
     } finally {
       setSaving(false)
     }
@@ -85,6 +93,25 @@ export function SpaceWizard({ types, amenities, region, communes, initialSpace }
     // Hasta que el nombre no esté, no hay borrador que guardar ni a dónde avanzar.
     if ((dirty || spaceId === null) && !(await save())) return
     setStep(next)
+  }
+
+  /** Publica el borrador: primero guarda lo pendiente y después pide publicar; si falta algo, lo muestra. */
+  async function publish() {
+    setSaveError(null)
+    const id = dirty || !spaceId ? await save() : spaceId
+    if (!id) return
+
+    setPublishing(true)
+    try {
+      setPublished(await publishSpace(id))
+      setMissing(null)
+    } catch (error) {
+      const found = missingFromError(error)
+      if (found) setMissing(found)
+      else setSaveError(error instanceof Error ? error.message : 'No pudimos publicar el espacio.')
+    } finally {
+      setPublishing(false)
+    }
   }
 
   const checklist = publishChecklist(form, photos.length)
@@ -107,16 +134,45 @@ export function SpaceWizard({ types, amenities, region, communes, initialSpace }
     ['Fotos', photos.length > 0 ? `${photos.length} ${photos.length === 1 ? 'foto' : 'fotos'}` : ''],
   ]
 
+  if (published) {
+    return (
+      <div className="mx-auto max-w-[1100px] px-4 py-6 sm:px-6 sm:py-10">
+        <Card className="flex flex-col items-start gap-4 sm:p-8">
+          <span className="inline-flex size-[52px] items-center justify-center rounded-full bg-primary-soft text-primary">
+            <CheckIcon width={28} height={28} strokeWidth={2.4} />
+          </span>
+          <h1 role="status" className="font-display text-3xl font-bold">
+            ¡Tu espacio está publicado!
+          </h1>
+          <p className="max-w-xl text-base leading-relaxed text-muted">
+            “{published.name}” ya aparece en el catálogo y puede recibir reservas. Puedes desactivarlo cuando quieras desde Mis espacios; las reservas confirmadas se mantienen.
+          </p>
+          <div className="flex flex-wrap gap-2.5">
+            <LinkButton to={paths.space(published.id)}>Ver en el catálogo</LinkButton>
+            <LinkButton to={paths.ownerSpaces} variant="secondary">
+              Ir a mis espacios
+            </LinkButton>
+            <LinkButton to={paths.publish} variant="secondary">
+              Publicar otro espacio
+            </LinkButton>
+          </div>
+        </Card>
+      </div>
+    )
+  }
+
   return (
     <div className="mx-auto max-w-[1100px] px-4 py-6 sm:px-6 sm:py-10">
-      <h1 className="font-display text-3xl font-bold leading-tight sm:text-[40px]">Publica tu espacio</h1>
+      <h1 className="font-display text-3xl font-bold leading-tight sm:text-[40px]">
+        {status === 'DRAFT' ? 'Publica tu espacio' : 'Edita tu espacio'}
+      </h1>
       <p className="mt-2 flex items-center gap-2 text-[15px] text-muted" aria-live="polite">
         {saving ? (
           'Guardando…'
         ) : saved ? (
           <>
             <CheckIcon width={18} height={18} className="text-primary" />
-            Borrador guardado
+            {status === 'DRAFT' ? 'Borrador guardado' : 'Cambios guardados'}
           </>
         ) : (
           'Tu avance se guarda como borrador en cada paso.'
@@ -308,12 +364,44 @@ export function SpaceWizard({ types, amenities, region, communes, initialSpace }
                   </div>
                 ))}
               </dl>
-              <div className="rounded-card bg-accent-soft p-4 text-[15px] text-accent-ink">
-                Todavía no puedes publicar: falta el horario semanal, que llega pronto. Tu borrador queda guardado.
-              </div>
-              <div>
-                <Button disabled>Publicar espacio</Button>
-              </div>
+              {missing && missing.length > 0 && (
+                <div role="alert" className="rounded-card bg-accent-soft p-4 text-[15px] text-accent-ink">
+                  <strong className="mb-2 block">Aún no puedes publicar. Te falta:</strong>
+                  <ul className="flex flex-col gap-1 pl-5">
+                    {missing.map((code) => (
+                      <li key={code} className="list-disc">
+                        {REQUIREMENTS[code].label}
+                        {code === 'schedule' ? (
+                          <span> (se podrá cargar pronto)</span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => void goTo(REQUIREMENTS[code].step)}
+                            className="ml-2 font-bold underline"
+                          >
+                            Ir al paso {REQUIREMENTS[code].step}
+                          </button>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {status === 'DRAFT' ? (
+                <div>
+                  <Button onClick={() => void publish()} loading={publishing}>
+                    Publicar espacio
+                  </Button>
+                </div>
+              ) : (
+                <div className="rounded-card bg-primary-soft p-4 text-[15px] text-primary-dark">
+                  {status === 'ACTIVE'
+                    ? 'Este espacio ya está publicado. Tus cambios se guardan al pasar de paso.'
+                    : status === 'INACTIVE'
+                      ? 'Este espacio está desactivado: actívalo desde Mis espacios para que vuelva al catálogo.'
+                      : 'Un administrador bloqueó esta publicación.'}
+                </div>
+              )}
             </>
           )}
 
