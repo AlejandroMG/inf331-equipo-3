@@ -2,14 +2,23 @@ import { useId } from 'react'
 import { cn } from '../../lib/cn'
 import { formatClp } from '../../lib/format'
 import type { ReferenceItem } from '../spaces/types'
-import { hasFilters, type CatalogFilters } from './filters'
+import { hasFilters, type CatalogFilters, type PriceUnit } from './filters'
 
 const CAPACITIES = [4, 8, 15, 40]
-const PRICES = [10000, 20000, 30000]
+// Los precios por día están en otra escala que los de la hora, así que cada unidad tiene sus propias opciones.
+const PRICES: Record<PriceUnit, number[]> = {
+  hour: [5000, 10000, 15000, 20000, 30000],
+  day: [30000, 50000, 80000, 120000, 200000],
+}
+const UNITS: Array<{ value: PriceUnit; label: string; per: string }> = [
+  { value: 'hour', label: 'Por hora', per: 'hora' },
+  { value: 'day', label: 'Por día', per: 'día' },
+]
 
-/** Las opciones fijas más el valor de la URL si no es una de ellas, para que el selector lo muestre. */
-function withCurrent(base: number[], current: number | null): number[] {
-  return current === null || base.includes(current) ? base : [...base, current].sort((a, b) => a - b)
+/** Las opciones fijas más los valores de la URL que no sean una de ellas, para que el selector los muestre. */
+function withCurrent(base: number[], ...current: Array<number | null>): number[] {
+  const extra = current.filter((n): n is number => n !== null && !base.includes(n))
+  return extra.length === 0 ? base : [...base, ...extra].sort((a, b) => a - b)
 }
 
 function Chip({ pressed, onClick, children }: { pressed: boolean; onClick: () => void; children: string }) {
@@ -32,7 +41,7 @@ interface FilterSelectProps {
   label: string
   placeholder: string
   value: number | null
-  options: Array<{ value: number; label: string }>
+  options: Array<{ value: number; label: string; disabled?: boolean }>
   onChange: (value: number | null) => void
 }
 
@@ -52,7 +61,7 @@ function FilterSelect({ label, placeholder, value, options, onChange }: FilterSe
       >
         <option value="">{placeholder}</option>
         {options.map((option) => (
-          <option key={option.value} value={option.value}>
+          <option key={option.value} value={option.value} disabled={option.disabled}>
             {option.label}
           </option>
         ))}
@@ -69,8 +78,14 @@ interface FilterBarProps {
   onClear: () => void
 }
 
-/** Chips de tipo y selectores de comuna, capacidad y precio máximo por hora. Cada cambio se aplica al instante. */
+/**
+ * Chips de tipo y selectores de comuna, capacidad y precio (por hora o por día, desde y hasta).
+ * Cada cambio se aplica al instante.
+ */
 export function FilterBar({ options, filters, onChange, onClear }: FilterBarProps) {
+  const unit = UNITS.find((u) => u.value === filters.priceUnit) ?? UNITS[0]
+  const prices = withCurrent(PRICES[filters.priceUnit], filters.minPrice, filters.maxPrice)
+
   return (
     <div>
       {options && options.types.length > 0 && (
@@ -103,13 +118,50 @@ export function FilterBar({ options, filters, onChange, onClear }: FilterBarProp
           options={withCurrent(CAPACITIES, filters.minCapacity).map((n) => ({ value: n, label: `${n} o más personas` }))}
           onChange={(minCapacity) => onChange({ minCapacity })}
         />
-        <FilterSelect
-          label="Precio máximo por hora"
-          placeholder="Cualquier precio"
-          value={filters.maxPrice}
-          options={withCurrent(PRICES, filters.maxPrice).map((n) => ({ value: n, label: `Hasta ${formatClp(n)} / hora` }))}
-          onChange={(maxPrice) => onChange({ maxPrice })}
-        />
+
+        <div role="group" aria-label="Precio" className="flex flex-wrap items-center gap-3">
+          <div role="group" aria-label="Unidad del precio" className="inline-flex overflow-hidden rounded-control border border-line">
+            {UNITS.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                aria-pressed={filters.priceUnit === option.value}
+                // Los precios por hora y por día no se parecen: al cambiar de unidad se empieza de nuevo.
+                onClick={() => option.value !== filters.priceUnit && onChange({ priceUnit: option.value, minPrice: null, maxPrice: null })}
+                className={cn(
+                  'min-h-11 px-3.5 text-[15px] font-semibold',
+                  filters.priceUnit === option.value ? 'bg-primary text-white' : 'bg-white text-ink',
+                )}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+          {/* Una opción que dejaría el rango al revés (mínimo sobre el máximo) no se puede elegir. */}
+          <FilterSelect
+            label="Precio mínimo"
+            placeholder="Precio mínimo"
+            value={filters.minPrice}
+            options={prices.map((n) => ({
+              value: n,
+              label: `Desde ${formatClp(n)} / ${unit.per}`,
+              disabled: filters.maxPrice !== null && n > filters.maxPrice,
+            }))}
+            onChange={(minPrice) => onChange({ minPrice })}
+          />
+          <FilterSelect
+            label="Precio máximo"
+            placeholder="Precio máximo"
+            value={filters.maxPrice}
+            options={prices.map((n) => ({
+              value: n,
+              label: `Hasta ${formatClp(n)} / ${unit.per}`,
+              disabled: filters.minPrice !== null && n < filters.minPrice,
+            }))}
+            onChange={(maxPrice) => onChange({ maxPrice })}
+          />
+        </div>
+
         {hasFilters(filters) && (
           <button type="button" onClick={onClear} className="min-h-11 px-2 text-[15px] font-semibold text-primary underline">
             Limpiar filtros

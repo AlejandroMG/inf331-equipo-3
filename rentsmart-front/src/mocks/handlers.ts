@@ -106,7 +106,8 @@ const NO_MATCH = '\u0000'
 
 /**
  * Los filtros de GET /api/catalog (BU-03) sobre los datos de ejemplo, con las mismas reglas que el back: todos deben
- * cumplirse, el precio es el de la hora y cada palabra del texto debe estar en el nombre, el tipo o la comuna.
+ * cumplirse, el rango de precio es el de la hora o el del día (`priceUnit`) y cada palabra del texto debe estar en el
+ * nombre, el tipo o la comuna.
  */
 function filterCatalog(params: URLSearchParams) {
   const nameOf = (list: Array<{ id: number; name: string }>, id: string | null) =>
@@ -116,17 +117,18 @@ function filterCatalog(params: URLSearchParams) {
   const minCapacity = Number(params.get('minCapacity') ?? 0)
   const minPrice = params.get('minPrice') === null ? null : Number(params.get('minPrice'))
   const maxPrice = params.get('maxPrice') === null ? null : Number(params.get('maxPrice'))
+  const priceKey = params.get('priceUnit') === 'day' ? 'pricePerDay' : 'pricePerHour'
   const words = (params.get('q') ?? '').toLowerCase().split(/\s+/).filter(Boolean)
 
   return catalogData.filter((space) => {
     const text = `${space.name} ${space.typeName} ${space.communeName}`.toLowerCase()
-    const hourly = space.pricePerHour
+    const price = space[priceKey]
     return (
       (typeName === null || space.typeName === typeName) &&
       (communeName === null || space.communeName === communeName) &&
       space.capacity >= minCapacity &&
-      (minPrice === null || (hourly !== null && hourly >= minPrice)) &&
-      (maxPrice === null || (hourly !== null && hourly <= maxPrice)) &&
+      (minPrice === null || (price !== null && price >= minPrice)) &&
+      (maxPrice === null || (price !== null && price <= maxPrice)) &&
       words.every((word) => text.includes(word))
     )
   })

@@ -132,9 +132,21 @@ describe('CatalogPage: filtros y búsqueda (BU-03)', () => {
       '15 o más personas',
       '40 o más personas',
     ])
-    expect(within(select('Precio máximo por hora')).getAllByRole('option').map((o) => o.textContent)).toEqual([
-      'Cualquier precio',
+    expect(screen.getByRole('button', { name: 'Por hora', pressed: true })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Por día', pressed: false })).toBeInTheDocument()
+    expect(within(select('Precio mínimo')).getAllByRole('option').map((o) => o.textContent)).toEqual([
+      'Precio mínimo',
+      'Desde $5.000 / hora',
+      'Desde $10.000 / hora',
+      'Desde $15.000 / hora',
+      'Desde $20.000 / hora',
+      'Desde $30.000 / hora',
+    ])
+    expect(within(select('Precio máximo')).getAllByRole('option').map((o) => o.textContent)).toEqual([
+      'Precio máximo',
+      'Hasta $5.000 / hora',
       'Hasta $10.000 / hora',
+      'Hasta $15.000 / hora',
       'Hasta $20.000 / hora',
       'Hasta $30.000 / hora',
     ])
@@ -190,12 +202,98 @@ describe('CatalogPage: filtros y búsqueda (BU-03)', () => {
     it('filtra por precio máximo por hora y deja fuera los que no se arriendan por hora', async () => {
       const router = await openCatalog()
 
-      await userEvent.selectOptions(select('Precio máximo por hora'), 'Hasta $10.000 / hora')
+      await userEvent.selectOptions(select('Precio máximo'), 'Hasta $10.000 / hora')
 
       expect(await screen.findByText('5 espacios')).toBeInTheDocument()
       expect(names()).not.toContain('Bodega de eventos Santiago') // solo se arrienda por día
       expect(names()).toContain('Taller metálico San Miguel') // $9.000 la hora
       expect(router.state.location.search).toBe('?maxPrice=10000')
+    })
+
+    it('filtra por precio mínimo por hora', async () => {
+      const router = await openCatalog()
+
+      await userEvent.selectOptions(select('Precio mínimo'), 'Desde $20.000 / hora')
+
+      expect(await screen.findByText('3 espacios')).toBeInTheDocument()
+      expect(names()).toEqual(['Cancha techada Las Condes', 'Salón Jardín', 'Sala Directorio Centro'])
+      expect(router.state.location.search).toBe('?minPrice=20000')
+    })
+
+    it('el rango toma el mínimo y el máximo, con los extremos incluidos', async () => {
+      const router = await openCatalog()
+
+      await userEvent.selectOptions(select('Precio mínimo'), 'Desde $10.000 / hora')
+      await userEvent.selectOptions(select('Precio máximo'), 'Hasta $15.000 / hora')
+
+      expect(await screen.findByText('4 espacios')).toBeInTheDocument()
+      expect(names()).toEqual([
+        'Sala Alameda',
+        'Cocina taller Providencia',
+        'Estudio de grabación Ñuñoa',
+        'Taller de cerámica',
+      ])
+      expect(router.state.location.search).toBe('?minPrice=10000&maxPrice=15000')
+    })
+
+    it('no deja armar un rango al revés: las opciones que lo invertirían están deshabilitadas', async () => {
+      await openCatalog('/?minPrice=15000&maxPrice=20000')
+      await screen.findByText(/^\d+ espacios?$/)
+
+      const maxOption = (text: string) => within(select('Precio máximo')).getByRole('option', { name: text })
+      const minOption = (text: string) => within(select('Precio mínimo')).getByRole('option', { name: text })
+      expect(maxOption('Hasta $10.000 / hora')).toBeDisabled()
+      expect(maxOption('Hasta $15.000 / hora')).toBeEnabled()
+      expect(maxOption('Hasta $30.000 / hora')).toBeEnabled()
+      expect(minOption('Desde $30.000 / hora')).toBeDisabled()
+      expect(minOption('Desde $20.000 / hora')).toBeEnabled()
+      expect(minOption('Desde $5.000 / hora')).toBeEnabled()
+    })
+
+    it('"Por día" aplica el rango al precio por día, con otras opciones', async () => {
+      const router = await openCatalog()
+
+      await userEvent.click(screen.getByRole('button', { name: 'Por día' }))
+
+      expect(await screen.findByRole('button', { name: 'Por día', pressed: true })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Por hora', pressed: false })).toBeInTheDocument()
+      expect(within(select('Precio máximo')).getAllByRole('option').map((o) => o.textContent)).toEqual([
+        'Precio máximo',
+        'Hasta $30.000 / día',
+        'Hasta $50.000 / día',
+        'Hasta $80.000 / día',
+        'Hasta $120.000 / día',
+        'Hasta $200.000 / día',
+      ])
+      // La unidad sola no filtra nada: se ven todos y no hay nada que limpiar.
+      expect(router.state.location.search).toBe('?priceUnit=day')
+      expect(screen.getByText('14 espacios')).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Limpiar filtros' })).not.toBeInTheDocument()
+
+      await userEvent.selectOptions(select('Precio máximo'), 'Hasta $50.000 / día')
+
+      expect(await screen.findByText('2 espacios')).toBeInTheDocument()
+      expect(names()).toEqual(['Cowork Plaza Ñuñoa', 'Oficina compartida Providencia'])
+      expect(router.state.location.search).toBe('?priceUnit=day&maxPrice=50000')
+    })
+
+    it('un espacio que solo se arrienda por día aparece al filtrar por día', async () => {
+      await openCatalog('/?priceUnit=day&minPrice=200000')
+
+      expect(await screen.findByText('2 espacios')).toBeInTheDocument()
+      expect(names()).toEqual(['Salón Jardín', 'Bodega de eventos Santiago'])
+    })
+
+    it('cambiar de unidad empieza el precio de nuevo, porque las escalas no se parecen', async () => {
+      const router = await openCatalog('/?minPrice=10000&maxPrice=20000')
+      await screen.findByText(/^\d+ espacios?$/)
+
+      await userEvent.click(screen.getByRole('button', { name: 'Por día' }))
+
+      expect(await screen.findByText('14 espacios')).toBeInTheDocument()
+      expect(router.state.location.search).toBe('?priceUnit=day')
+      expect(select('Precio mínimo')).toHaveDisplayValue('Precio mínimo')
+      expect(select('Precio máximo')).toHaveDisplayValue('Precio máximo')
     })
 
     it('elegir "Cualquier…" quita el filtro', async () => {
@@ -209,9 +307,9 @@ describe('CatalogPage: filtros y búsqueda (BU-03)', () => {
     })
 
     it('si el valor de la URL no es una de las opciones, el selector igual lo muestra', async () => {
-      await openCatalog('/?maxPrice=15000&minCapacity=6')
+      await openCatalog('/?maxPrice=12000&minCapacity=6')
 
-      expect(select('Precio máximo por hora')).toHaveDisplayValue('Hasta $15.000 / hora')
+      expect(select('Precio máximo')).toHaveDisplayValue('Hasta $12.000 / hora')
       expect(select('Capacidad mínima')).toHaveDisplayValue('6 o más personas')
     })
   })
@@ -263,7 +361,7 @@ describe('CatalogPage: filtros y búsqueda (BU-03)', () => {
 
   describe('la URL', () => {
     it('abre con los filtros de la URL ya aplicados y reflejados en los controles', async () => {
-      await openCatalog('/?q=taller&typeId=8&communeId=3&minCapacity=8&maxPrice=20000')
+      await openCatalog('/?q=taller&typeId=8&communeId=3&minCapacity=8&minPrice=10000&maxPrice=20000')
 
       expect(await screen.findByText('1 espacio')).toBeInTheDocument()
       expect(names()).toEqual(['Taller de cerámica'])
@@ -271,7 +369,8 @@ describe('CatalogPage: filtros y búsqueda (BU-03)', () => {
       expect(screen.getByRole('button', { name: 'Taller', pressed: true })).toBeInTheDocument()
       expect(select('Comuna')).toHaveDisplayValue('Ñuñoa')
       expect(select('Capacidad mínima')).toHaveDisplayValue('8 o más personas')
-      expect(select('Precio máximo por hora')).toHaveDisplayValue('Hasta $20.000 / hora')
+      expect(select('Precio mínimo')).toHaveDisplayValue('Desde $10.000 / hora')
+      expect(select('Precio máximo')).toHaveDisplayValue('Hasta $20.000 / hora')
     })
 
     it('manda a la API los filtros de la URL, y nada de lo que no se eligió', async () => {
@@ -279,7 +378,34 @@ describe('CatalogPage: filtros y búsqueda (BU-03)', () => {
       renderCatalog('/?q=taller&typeId=8&maxPrice=20000')
       await screen.findByText(/^\d+ espacios?$/)
 
-      expect(Object.fromEntries(calls[0].searchParams)).toEqual({ page: '1', pageSize: '12', q: 'taller', typeId: '8', maxPrice: '20000' })
+      expect(Object.fromEntries(calls[0].searchParams)).toEqual({
+        page: '1',
+        pageSize: '12',
+        q: 'taller',
+        typeId: '8',
+        priceUnit: 'hour',
+        maxPrice: '20000',
+      })
+    })
+
+    it('la unidad solo viaja a la API junto con un precio', async () => {
+      const calls = spyOnCatalog()
+      await openCatalog('/?priceUnit=day')
+      expect(calls[0].searchParams.has('priceUnit')).toBe(false)
+
+      renderCatalog('/?priceUnit=day&minPrice=30000&maxPrice=80000')
+      await screen.findAllByText(/^\d+ espacios?$/)
+
+      const withPrice = calls.find((url) => url.searchParams.has('minPrice'))!
+      expect(Object.fromEntries(withPrice.searchParams)).toMatchObject({ priceUnit: 'day', minPrice: '30000', maxPrice: '80000' })
+    })
+
+    it('un mínimo mayor que el máximo en la URL se ignora en vez de provocar un error', async () => {
+      await openCatalog('/?minPrice=30000&maxPrice=10000')
+
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+      expect(select('Precio mínimo')).toHaveDisplayValue('Precio mínimo')
+      expect(select('Precio máximo')).toHaveDisplayValue('Hasta $10.000 / hora')
     })
 
     it('un filtro combinado deja todos los parámetros en un orden fijo', async () => {

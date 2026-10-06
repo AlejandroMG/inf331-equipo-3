@@ -21,6 +21,9 @@ export function fetchCatalog({ page, pageSize = CATALOG_PAGE_SIZE, filters = noF
       typeId: filters.typeId,
       communeId: filters.communeId,
       minCapacity: filters.minCapacity,
+      // La unidad solo cuenta junto con un precio; sin él no se manda.
+      priceUnit: filters.minPrice !== null || filters.maxPrice !== null ? filters.priceUnit : undefined,
+      minPrice: filters.minPrice,
       maxPrice: filters.maxPrice,
     },
     signal,
