@@ -1,7 +1,8 @@
-import { NotFoundException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { PrismaService } from '../prisma/prisma.service';
 import { CatalogService } from './catalog.service';
+import { ListCatalogQueryDto } from './dto/list-catalog-query.dto';
 
 describe('CatalogService', () => {
   let service: CatalogService;
@@ -97,6 +98,171 @@ describe('CatalogService', () => {
       expect(select).not.toHaveProperty('addressDetail');
       expect(select).not.toHaveProperty('ownerId');
       expect(select).not.toHaveProperty('status');
+    });
+
+    describe('filtros', () => {
+      const search = (filters: Partial<ListCatalogQueryDto>) =>
+        service.findPage({ page: 1, pageSize: 12, ...filters });
+      const whereOf = () =>
+        (prisma.space.findMany.mock.calls[0] as [{ where: unknown }])[0].where;
+      // Lo que se espera por cada palabra del texto: está en alguno de los cuatro campos.
+      const word = (text: string) => {
+        const contains = { contains: text, mode: 'insensitive' };
+        return {
+          OR: [
+            { name: contains },
+            { description: contains },
+            { type: { name: contains } },
+            { commune: { name: contains } },
+          ],
+        };
+      };
+
+      beforeEach(() => {
+        prisma.space.findMany.mockResolvedValue([]);
+        prisma.space.count.mockResolvedValue(0);
+      });
+
+      it('sin filtros no agrega ninguna condición', async () => {
+        await search({});
+
+        expect(whereOf()).toEqual({ status: 'ACTIVE' });
+      });
+
+      it('filtra por tipo y por comuna', async () => {
+        await search({ typeId: 3, communeId: 2 });
+
+        expect(whereOf()).toEqual({
+          status: 'ACTIVE',
+          typeId: 3,
+          communeId: 2,
+        });
+      });
+
+      it('filtra por capacidad mínima', async () => {
+        await search({ minCapacity: 8 });
+
+        expect(whereOf()).toEqual({
+          status: 'ACTIVE',
+          capacity: { gte: 8 },
+        });
+      });
+
+      it('filtra por rango de precio por hora', async () => {
+        await search({ minPrice: 5000, maxPrice: 15000 });
+
+        expect(whereOf()).toEqual({
+          status: 'ACTIVE',
+          pricePerHour: { gte: 5000, lte: 15000 },
+        });
+      });
+
+      it('con solo uno de los extremos, el otro queda abierto', async () => {
+        await search({ minPrice: 5000 });
+        await search({ maxPrice: 15000 });
+
+        const [first, second] = prisma.space.findMany.mock.calls as Array<
+          [{ where: { pricePerHour: Record<string, unknown> } }]
+        >;
+        expect(first[0].where.pricePerHour).toEqual({ gte: 5000 });
+        expect(second[0].where.pricePerHour).toEqual({ lte: 15000 });
+      });
+
+      it('con priceUnit=day el rango se aplica al precio por día', async () => {
+        await search({ priceUnit: 'day', minPrice: 40000, maxPrice: 90000 });
+
+        expect(whereOf()).toEqual({
+          status: 'ACTIVE',
+          pricePerDay: { gte: 40000, lte: 90000 },
+        });
+      });
+
+      it('con priceUnit=hour, o sin indicarla, el rango es del precio por hora', async () => {
+        await search({ priceUnit: 'hour', maxPrice: 15000 });
+        await search({ maxPrice: 15000 });
+
+        const [explicit, byDefault] = prisma.space.findMany.mock.calls as Array<
+          [{ where: unknown }]
+        >;
+        const expected = { status: 'ACTIVE', pricePerHour: { lte: 15000 } };
+        expect(explicit[0].where).toEqual(expected);
+        expect(byDefault[0].where).toEqual(expected);
+      });
+
+      it('la unidad sin un rango de precio no agrega ninguna condición', async () => {
+        await search({ priceUnit: 'day' });
+
+        expect(whereOf()).toEqual({ status: 'ACTIVE' });
+      });
+
+      it('el precio mínimo 0 también es un filtro', async () => {
+        await search({ minPrice: 0 });
+
+        expect(whereOf()).toEqual({
+          status: 'ACTIVE',
+          pricePerHour: { gte: 0 },
+        });
+      });
+
+      it('rechaza un precio mínimo mayor que el máximo sin consultar', async () => {
+        await expect(
+          search({ minPrice: 20000, maxPrice: 10000 }),
+        ).rejects.toThrow(BadRequestException);
+
+        expect(prisma.space.findMany).not.toHaveBeenCalled();
+      });
+
+      it('cada palabra del texto debe estar en el nombre, la descripción, el tipo o la comuna', async () => {
+        await search({ q: 'sala Providencia' });
+
+        expect(whereOf()).toEqual({
+          status: 'ACTIVE',
+          AND: [word('sala'), word('Providencia')],
+        });
+      });
+
+      it('separa las palabras por cualquier cantidad de espacios', async () => {
+        await search({ q: 'sala   luminosa' });
+
+        expect(whereOf()).toEqual({
+          status: 'ACTIVE',
+          AND: [word('sala'), word('luminosa')],
+        });
+      });
+
+      it('escapa los comodines de LIKE para buscarlos como texto', async () => {
+        await search({ q: '50% a_b c\\d' });
+
+        const { AND } = whereOf() as {
+          AND: Array<{ OR: Array<{ name: { contains: string } }> }>;
+        };
+        expect(AND.map((word) => word.OR[0].name.contains)).toEqual([
+          '50\\%',
+          'a\\_b',
+          'c\\\\d',
+        ]);
+      });
+
+      it('usa solo las primeras 5 palabras', async () => {
+        await search({ q: 'a b c d e f g' });
+
+        const { AND } = whereOf() as { AND: unknown[] };
+        expect(AND).toEqual(['a', 'b', 'c', 'd', 'e'].map(word));
+      });
+
+      it('combina los filtros y el total usa las mismas condiciones', async () => {
+        await search({ typeId: 1, communeId: 2, minCapacity: 4, q: 'sala' });
+
+        const where = {
+          status: 'ACTIVE',
+          typeId: 1,
+          communeId: 2,
+          capacity: { gte: 4 },
+          AND: [word('sala')],
+        };
+        expect(whereOf()).toEqual(where);
+        expect(prisma.space.count).toHaveBeenCalledWith({ where });
+      });
     });
   });
 
