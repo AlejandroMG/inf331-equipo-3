@@ -5,4 +5,5 @@ export const paths = {
   publish: '/publish',
   ownerSpaces: '/owner/spaces',
   login: '/login',
+  register: '/register',
 } as const

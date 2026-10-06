@@ -7,6 +7,8 @@ import {
   IsOptional,
   IsString,
   ValidateIf,
+  Matches,
+  MinLength,
   validateSync,
 } from 'class-validator';
 
@@ -49,6 +51,24 @@ class EnvironmentVariables {
   @IsString()
   @IsNotEmpty()
   SUPABASE_BUCKET: string;
+
+  // Origen del front permitido por CORS. Si no se define, se usa el de Vite en local.
+  @IsString()
+  @IsOptional()
+  FRONTEND_URL: string;
+
+  // Firma de los tokens de sesión. Obligatoria: sin ella cualquiera podría fabricar un token.
+  @IsString()
+  @MinLength(32, { message: 'JWT_SECRET debe tener al menos 32 caracteres' })
+  JWT_SECRET: string;
+
+  // Duración del token, por ejemplo "1d" o "8h". Si no se define, dura 1 día.
+  @IsString()
+  @IsOptional()
+  @Matches(/^\d+[smhd]$/, {
+    message: 'JWT_EXPIRES_IN debe ser un número seguido de s, m, h o d',
+  })
+  JWT_EXPIRES_IN: string;
 }
 
 function validate(config: Record<string, unknown>) {

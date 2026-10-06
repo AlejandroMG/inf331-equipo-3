@@ -7,6 +7,7 @@ import { PrismaModule } from './prisma/prisma.module';
 import { SpaceTypesModule } from './space-types/space-types.module';
 import { SpacesModule } from './spaces/spaces.module';
 import { StorageModule } from './storage/storage.module';
+import { AuthModule } from './auth/auth.module';
 
 @Module({
   imports: [
@@ -15,6 +16,7 @@ import { StorageModule } from './storage/storage.module';
     StorageModule,
     SpaceTypesModule,
     SpacesModule,
+    AuthModule,
   ],
   controllers: [AppController],
   providers: [AppService],

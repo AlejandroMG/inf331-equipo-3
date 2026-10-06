@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { clearToken, getToken, setToken } from './token'
+import { clearToken, getToken, setToken, subscribeToken } from './token'
 
 describe('token', () => {
   afterEach(() => vi.restoreAllMocks())
@@ -28,5 +28,19 @@ describe('token', () => {
     expect(getToken()).toBeNull()
     expect(() => setToken('abc')).not.toThrow()
     expect(() => clearToken()).not.toThrow()
+  })
+
+  it('avisa a los suscriptores al iniciar y cerrar sesión', () => {
+    const listener = vi.fn()
+    const unsubscribe = subscribeToken(listener)
+
+    setToken('abc')
+    clearToken()
+    expect(listener).toHaveBeenCalledTimes(2)
+
+    unsubscribe()
+    setToken('otro')
+    expect(listener).toHaveBeenCalledTimes(2)
+    clearToken()
   })
 })

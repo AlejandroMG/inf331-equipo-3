@@ -18,4 +18,30 @@ export const handlers = [
       { id: 8, name: 'Taller' },
     ]),
   ),
+
+  // CU-01: registro. "existe@rentsmart.test" simula un email ya usado.
+  http.post('*/api/auth/register', async ({ request }) => {
+    const body = (await request.json()) as { email: string; name: string }
+    const email = body.email.trim().toLowerCase()
+    if (email === 'existe@rentsmart.test') {
+      return HttpResponse.json({ message: 'Ya existe una cuenta con este email.' }, { status: 409 })
+    }
+    return HttpResponse.json(
+      { id: 'mock-user', email, name: body.name, role: 'USER', isHost: false, createdAt: new Date().toISOString() },
+      { status: 201 },
+    )
+  }),
+
+  // CU-02: login. Cualquier email con la contraseña "Password123" entra; otra contraseña da 401.
+  http.post('*/api/auth/login', async ({ request }) => {
+    const body = (await request.json()) as { email: string; password: string }
+    if (body.password !== 'Password123') {
+      return HttpResponse.json({ message: 'Email o contraseña incorrectos.' }, { status: 401 })
+    }
+    const email = body.email.trim().toLowerCase()
+    return HttpResponse.json({
+      accessToken: 'mock-token',
+      user: { id: 'mock-user', email, name: 'Usuario de prueba', role: 'USER', isHost: false, createdAt: new Date().toISOString() },
+    })
+  }),
 ]
