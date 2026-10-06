@@ -350,6 +350,123 @@ Simulación local del job del back desde cero, con `db-test` levantada: `npm ci`
 
 ---
 
+### 2026-10-05 · B (xReNatS) · F-07 base del front en TypeScript: rutas, layout y componentes
+
+**Issues:** #7 (F-07), #9 (F-09, prototipo)
+**Rama / PR:** `feat/F-07-base-front-ts` · sin PR todavía
+**Duración aproximada:** 3 h
+**Herramientas:** Claude Code
+
+#### Objetivo
+Dejar la base del front para que A y C construyan sus pantallas: TypeScript, rutas, layout responsive, cliente HTTP y componentes base, con la identidad visual aprobada.
+
+#### Qué se hizo
+- **Prototipo de diseño (F-09).** Antes de escribir código se hizo un prototipo navegable (catálogo, detalle, publicar por pasos, panel del propietario, móvil y escritorio) basado en Peerspace y Airbnb, con dos paletas. Se aprobó la paleta A (verde azulado). El prototipo está en https://claude.ai/artifact/MipjoPHn9NVH9yknSMy9LM, un enlace privado: hay que compartirlo desde su menú Share para que A y C lo vean.
+- **Migración a TypeScript (P-04).** `tsconfig` (app y node), `vite.config.ts`, `main.tsx` y `App.tsx`; ESLint con typescript-eslint; `npm run build` ahora corre `tsc -b` antes de Vite. Se quitó el código de la plantilla (`App.jsx`, `App.css`, imágenes).
+- **Marca.** Colores, tipografías (Bricolage Grotesque y Figtree) y radios como variables `@theme` de Tailwind 4 en `src/index.css`; favicon propio.
+- **Rutas.** `src/routes.tsx` con `AppLayout`, páginas provisorias (catálogo, detalle, publicar, mis espacios, login), 404 y `RequireAuth`, que redirige a `/login` guardando la ruta pedida.
+- **Layout.** `Navbar` (menú plegable en móvil) y `Footer`, con enlace para saltar al contenido.
+- **Cliente HTTP.** `src/lib/http.ts` (token Bearer, query string, JSON y FormData, `ApiError` con mensajes en español, 401 borra el token), más `token.ts`, `format.ts` (`formatClp`) y `paths.ts`.
+- **Componentes.** `Button` y `LinkButton`, `Input`, `Card`, `Modal` (`<dialog>` nativo) y `Toast` (`ToastProvider` y `useToast`).
+- **Guía de componentes** en `/dev/componentes`, solo en desarrollo.
+
+#### Decisiones y por qué
+| Decisión | Alternativas consideradas | Por qué se eligió |
+|---|---|---|
+| El cliente HTTP agrega `/api` a `VITE_API_URL` | Que `VITE_API_URL` ya incluya `/api` | `.env.example` ya definía `http://localhost:3000` y el back publicará todo bajo `/api`; así no cambia la variable |
+| `Modal` con `<dialog>` nativo | Librería de modales o un `div` propio | El navegador da gratis el foco atrapado, Esc y el fondo bloqueado, sin dependencias |
+| React Router 7 con `createBrowserRouter` y rutas como arreglo | Rutas JSX con `<Routes>` | El arreglo se puede reutilizar con `createMemoryRouter` en los tests de F-08 |
+| `RequireAuth` solo mira si hay token | Esperar el contexto de sesión de A | A todavía no entrega CU-02; cuando exista, solo hay que cambiar esta condición |
+| `/login` es un placeholder en `routes.tsx` | Crear `features/auth/` | Es dominio de A; reemplaza la ruta con su pantalla |
+| Íconos como SVG propios | Librería de íconos | Solo se usan cinco |
+
+#### Archivos principales
+- `rentsmart-front/src/routes.tsx`, `App.tsx`, `main.tsx`: arranque y rutas.
+- `rentsmart-front/src/components/`: componentes base, layout y `RequireAuth`.
+- `rentsmart-front/src/lib/`: `http.ts`, `token.ts`, `format.ts`, `paths.ts`, `cn.ts`.
+- `rentsmart-front/src/index.css`: tokens de la marca.
+- `rentsmart-front/eslint.config.js`, `tsconfig*.json`, `vite.config.ts`, `package.json`: toolchain TypeScript.
+- `docs/arquitectura.md`, `AGENTS.md`, `.env.example`, `rentsmart-front/README.md`: documentación al día.
+
+#### Cómo probarlo
+- Desde `rentsmart-front`: `npm run lint`, `npm run build` y `npm run dev`.
+- Abrir `/publish` sin sesión: debe redirigir a `/login`. Con `localStorage.setItem('rentsmart_token', 'dev')` en la consola, `/publish` y `/owner/spaces` abren.
+- `/dev/componentes`: probar el modal, los avisos y el botón con carga.
+- A 375 px el menú se pliega y no hay scroll horizontal.
+
+#### Estado de verificación
+- Build: ✅ (`tsc -b` y Vite)
+- Lint: ✅
+- Tests: no aplica todavía. F-08 agrega Vitest, Testing Library y MSW, y con ellos las pruebas del cliente HTTP, `RequireAuth` y los componentes. Se hizo así porque no hay un ejecutor de tests hasta F-08; hay que mergear F-08 antes de dar por cerrada la definición de terminado de F-07.
+- Comprobado a mano en el navegador: redirección de rutas privadas, modal (abre, cierra, título enlazado), avisos de éxito y error, y menú móvil a 375 px (sin scroll horizontal). No se revisó visualmente con capturas.
+
+#### Pendientes y bloqueos
+- F-08 (#8): Vitest, Testing Library y MSW, y los tests de lo de arriba.
+- F-09 (#9): adjuntar el enlace del prototipo al issue una vez compartido.
+- Falta abrir el PR con `Closes #7`; lo revisa C (@gonzzza-lol).
+
+#### Para el resto del equipo
+- Ahora el front es TypeScript: los archivos nuevos van en `.ts` o `.tsx`.
+- Usen las utilidades de la marca (`bg-primary`, `text-ink`, `border-line`, `font-display`, `rounded-card`) y los componentes de `src/components/`; en `/dev/componentes` están todos.
+- Para llamar a la API: `import { http } from '../../lib/http'` y `http.get<Tipo>('/spaces')`. El cliente agrega `/api` y el token.
+- A (@AlejandroMG): al implementar el login, usa `setToken` de `src/lib/token.ts`, cambia la condición de `RequireAuth` si necesitas el usuario, reemplaza la ruta `login` de `routes.tsx` y el botón "Ingresar" de `Navbar`.
+- C (@gonzzza-lol): el detalle del espacio (BU-02) tendrá un lugar para `<BookingWidget spaceId>`, y el formulario de publicar uno para `<HorarioSemanal>`.
+
+---
+
+### 2026-10-05 · B (xReNatS) · F-08 pruebas del front con Vitest, Testing Library y MSW (en el mismo PR que F-07)
+
+**Issues:** #8 (F-08); completa la definición de terminado de #7 (F-07)
+**Rama / PR:** `feat/F-07-base-front-ts` · sin PR todavía
+**Duración aproximada:** 1,5 h
+**Herramientas:** Claude Code
+
+#### Objetivo
+Tener `npm test` corriendo en el CI y probar lo construido en F-07. Se decidió llevar F-08 en el mismo PR que F-07 para que ninguno quede sin pruebas (la entrada anterior de F-07 decía que los tests llegarían en un PR aparte).
+
+#### Qué se hizo
+- Vitest con jsdom, Testing Library y user-event, y MSW para simular la API. Scripts `test` y `test:watch`; el CI ya ejecutaba `npm test --if-present`, así que desde ahora corre las pruebas sin tocar el workflow.
+- `src/test/setup.ts`: jest-dom, ciclo de vida de MSW (una petición sin handler falla el test), limpieza de `localStorage` entre pruebas y simulación de `<dialog>`, que jsdom no implementa.
+- `src/mocks/`: `handlers.ts` (ejemplo: `GET /api/space-types`), `server.ts` para los tests y `browser.ts` con el service worker (`public/mockServiceWorker.js`), activado con `VITE_USE_MOCKS=true`.
+- 60 pruebas en 10 archivos: cliente HTTP (token, query string, JSON, FormData, 204, mensajes de error, 401, red caída y cancelación), token, `formatClp` y `cn`, un endpoint simulado de ejemplo, `Button`, `LinkButton`, `Input`, `Modal`, `Toast`, `Navbar` y las rutas (redirección a `/login` guardando la ruta pedida, acceso con token, 404).
+- Las pruebas encontraron un fallo real: el cliente HTTP no dejaba pasar la cancelación (`AbortError`) y la convertía en error de red, porque comparaba con `instanceof DOMException`. Ahora compara por nombre.
+
+#### Decisiones y por qué
+| Decisión | Alternativas consideradas | Por qué se eligió |
+|---|---|---|
+| F-08 en el mismo PR que F-07 | Dos PR apilados | Cada historia debe terminar con tests; son piezas que se revisan juntas (el PR crece, pero es la base del front) |
+| `onUnhandledRequest: 'error'` en los tests | Dejar pasar a la red | Un test no debe depender de un servidor real ni pasar por accidente |
+| Se simula `<dialog>` en el setup | Cambiar el `Modal` por un `div` | El `<dialog>` nativo da foco, Esc y fondo bloqueado; jsdom solo necesita `showModal` y `close` |
+| Worker de MSW para el navegador con una variable opcional | Solo MSW en los tests | `docs/arquitectura.md` prevé mocks mientras el back no exista, para que A y C avancen |
+| Un solo handler de ejemplo | Mockear catálogo y espacios | El contrato de la API (F-05) todavía no está definido; cada dominio agrega los suyos |
+
+#### Archivos principales
+- `rentsmart-front/vite.config.ts`: bloque `test`.
+- `rentsmart-front/src/test/setup.ts`, `src/mocks/*`, `public/mockServiceWorker.js` (generado con `npx msw init public/`).
+- `rentsmart-front/src/**/*.test.ts(x)`: las pruebas, junto al código.
+- `rentsmart-front/src/lib/http.ts`: corrección de la cancelación.
+- `docs/arquitectura.md`, `.env.example`, `rentsmart-front/README.md`: variable `VITE_USE_MOCKS` y sección de pruebas.
+
+#### Cómo probarlo
+Desde `rentsmart-front`: `npm test`, `npm run lint` y `npm run build`.
+
+#### Estado de verificación
+- Build: ✅
+- Lint: ✅
+- Tests: ✅ (10 archivos, 60 pruebas)
+- No verificado: el worker de MSW en el navegador. En el navegador integrado de la herramienta el service worker no se registra (ni a mano), aunque el servidor entrega el script bien. Hay que probar `VITE_USE_MOCKS=true npm run dev` en Chrome o Edge antes de contar con ello.
+
+#### Pendientes y bloqueos
+- Probar el worker de MSW en un navegador real.
+- Abrir el PR con `Closes #7` y `Closes #8`; lo revisa C (@gonzzza-lol).
+
+#### Para el resto del equipo
+- Los tests van junto al código (`Algo.test.tsx`) y usan `render` de Testing Library. Para probar una pantalla con rutas: `createMemoryRouter(routes, { initialEntries: [...] })` (ejemplo en `src/routes.test.tsx`).
+- Para simular un endpoint: agrega un handler en `src/mocks/handlers.ts`; en un test puntual, `server.use(...)`.
+- Cualquier petición a la API sin handler hace fallar el test: es a propósito.
+
+---
+
 ### 2026-10-05 · B (xReNatS) · F-05 base de la API y ES-01 datos de referencia (back)
 
 **Issues:** #20 (ES-01); parte de B de #5 (F-05)
@@ -399,6 +516,44 @@ Dejar la API con la configuración que prometen los docs (prefijo `/api`, valida
 #### Para el resto del equipo
 - Todas las rutas llevan el prefijo `/api`. Un controlador nuevo no debe repetirlo; solo Swagger vive fuera, en `/docs`.
 - Para un e2e nuevo: `createTestApp()` de `test/utils/` y datos propios con un sufijo único.
+
+---
+
+### 2026-10-05 · Agente (Antigravity) · Resolver conflicto de merge en PR #92
+
+**Issues:** PR #92
+**Rama / PR:** `feat/ES-01-space-types` · PR #92
+**Duración aproximada:** 15 min
+**Herramientas:** Antigravity
+
+#### Objetivo
+Resolver el conflicto de merge entre `main` y la rama `feat/ES-01-space-types`.
+
+#### Qué se hizo
+- Se hizo merge de `origin/main` en la rama `feat/ES-01-space-types`.
+- Se resolvió el conflicto en `docs/memory.md` conservando la entrada que venía de la rama y las de `main` en orden cronológico.
+
+#### Decisiones y por qué
+| Decisión | Alternativas consideradas | Por qué se eligió |
+|---|---|---|
+| Conservar ambas entradas en `docs/memory.md` | Sobrescribir una | Cumple la regla 4 de AGENTS.md |
+
+#### Archivos principales
+- `docs/memory.md`: archivo donde ocurrió el conflicto.
+
+#### Cómo probarlo
+N/A
+
+#### Estado de verificación
+- Build: ✅
+- Lint: ✅
+- Tests: ✅
+
+#### Pendientes y bloqueos
+- Merge y push a origin pendientes de aprobación manual.
+
+#### Para el resto del equipo
+- Conflicto de PR #92 resuelto localmente y listo para subir.
 
 ---
 
