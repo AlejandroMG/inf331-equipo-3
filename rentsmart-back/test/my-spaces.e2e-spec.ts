@@ -130,6 +130,7 @@ describe('Mis espacios (e2e)', () => {
       pricePerDay: null,
       coverUrl: expect.stringMatching(/^\/api\/uploads\/spaces\/.+\.png$/),
       missing: ['schedule'],
+      blockedReason: null,
       updatedAt: expect.any(String),
     });
     const { text } = await request(server()).get('/api/spaces/me').set(as(ownerId)).expect(200);

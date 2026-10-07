@@ -110,6 +110,7 @@ describe('Espacios del propietario (e2e)', () => {
         latitude: null,
         longitude: null,
         rules: null,
+        blockedReason: null,
         amenityIds: [],
         photos: [],
         createdAt: expect.any(String),

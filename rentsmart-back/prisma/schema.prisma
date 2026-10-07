@@ -144,6 +144,9 @@ model Space {
   longitude     Float?
   rules         String?
   status        SpaceStatus @default(DRAFT)
+  // Por qué un administrador despublicó el espacio (AD-02) y cuándo; solo mientras está BLOCKED.
+  blockedReason String?
+  blockedAt     DateTime?
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
 
