@@ -13,11 +13,16 @@ interface NavItem {
   end: boolean
 }
 
-/** Menú según la sesión (CU-03): "Mis espacios" con sesión y "Administración" solo para ADMIN. */
+/** Menú según la sesión (CU-03): "Mis espacios" y "Favoritos" con sesión, y "Administración" solo para ADMIN. */
 function linksFor(loggedIn: boolean, isAdmin: boolean): NavItem[] {
   return [
     { to: paths.home, label: 'Explorar', end: true },
-    ...(loggedIn ? [{ to: paths.ownerSpaces, label: 'Mis espacios', end: false }] : []),
+    ...(loggedIn
+      ? [
+          { to: paths.ownerSpaces, label: 'Mis espacios', end: false },
+          { to: paths.favorites, label: 'Favoritos', end: false },
+        ]
+      : []),
     ...(isAdmin ? [{ to: paths.admin, label: 'Administración', end: false }] : []),
   ]
 }

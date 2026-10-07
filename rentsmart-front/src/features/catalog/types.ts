@@ -37,6 +37,13 @@ export interface ScheduleRule {
   endTime: string
 }
 
+/** Zona donde está un espacio: un círculo, no un punto exacto. El espacio queda dentro de él (ES-07). */
+export interface ApproximateLocation {
+  latitude: number
+  longitude: number
+  radiusMeters: number
+}
+
 /** Detalle público de un espacio (GET /api/catalog/:id). Nunca incluye `addressDetail`. */
 export interface SpaceDetail {
   id: string
@@ -47,6 +54,8 @@ export interface SpaceDetail {
   communeName: string
   /** Dirección pública. */
   address: string | null
+  /** Zona aproximada en el mapa; null si el propietario no marcó el punto. */
+  location: ApproximateLocation | null
   capacity: number
   pricePerHour: number | null
   pricePerDay: number | null

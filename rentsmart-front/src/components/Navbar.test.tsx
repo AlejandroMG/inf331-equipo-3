@@ -26,6 +26,7 @@ describe('Navbar', () => {
     expect(within(nav).getByRole('link', { name: 'Ingresar' })).toHaveAttribute('href', '/login')
     expect(within(nav).getByRole('link', { name: 'Crear cuenta' })).toHaveAttribute('href', '/register')
     expect(within(nav).queryByRole('link', { name: 'Mis espacios' })).toBeNull()
+    expect(within(nav).queryByRole('link', { name: 'Favoritos' })).toBeNull()
     expect(within(nav).queryByRole('link', { name: 'Administración' })).toBeNull()
   })
 
@@ -72,6 +73,7 @@ describe('Navbar', () => {
     const nav = mainNav()
 
     expect(within(nav).getByRole('link', { name: 'Mis espacios' })).toHaveAttribute('href', '/owner/spaces')
+    expect(within(nav).getByRole('link', { name: 'Favoritos' })).toHaveAttribute('href', '/favorites')
     expect(within(nav).getByRole('button', { name: 'Salir' })).toBeInTheDocument()
     expect(within(nav).queryByRole('link', { name: 'Ingresar' })).toBeNull()
     expect(within(nav).queryByRole('link', { name: 'Crear cuenta' })).toBeNull()

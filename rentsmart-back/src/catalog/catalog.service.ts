@@ -8,6 +8,7 @@ import { SpaceStatus } from '../generated/prisma/enums';
 import { PrismaService } from '../prisma/prisma.service';
 import { approximateLocation } from './approximate-location';
 import { CatalogDetailDto } from './dto/catalog-detail.dto';
+import { CatalogItemDto } from './dto/catalog-item.dto';
 import { CatalogPageDto } from './dto/catalog-page.dto';
 import {
   CatalogSort,
@@ -16,7 +17,7 @@ import {
 } from './dto/list-catalog-query.dto';
 
 // Solo los espacios activos son públicos: borradores, inactivos y bloqueados no aparecen en ninguna consulta.
-const PUBLIC = { status: SpaceStatus.ACTIVE } as const;
+export const PUBLIC = { status: SpaceStatus.ACTIVE } as const;
 
 /** Cuántas palabras de la búsqueda se usan; las demás se ignoran para no armar consultas enormes. */
 const MAX_SEARCH_WORDS = 5;
@@ -70,6 +71,40 @@ function orderBy(
   ];
 }
 
+/** Lo que se lee de un espacio para mostrarlo como tarjeta del catálogo (también en los favoritos). */
+export const CATALOG_ITEM_SELECT = {
+  id: true,
+  name: true,
+  capacity: true,
+  pricePerHour: true,
+  pricePerDay: true,
+  type: { select: { name: true } },
+  commune: { select: { name: true } },
+  photos: {
+    select: { url: true },
+    orderBy: { position: 'asc' },
+    take: 1,
+  },
+} satisfies Prisma.SpaceSelect;
+
+type CatalogItemRow = Prisma.SpaceGetPayload<{
+  select: typeof CATALOG_ITEM_SELECT;
+}>;
+
+export function toCatalogItem(space: CatalogItemRow): CatalogItemDto {
+  return {
+    id: space.id,
+    name: space.name,
+    // Un espacio activo ya pasó las reglas de publicación (ES-04), pero el schema los deja opcionales.
+    typeName: space.type?.name ?? '',
+    communeName: space.commune?.name ?? '',
+    capacity: space.capacity ?? 0,
+    pricePerHour: space.pricePerHour,
+    pricePerDay: space.pricePerDay,
+    coverUrl: space.photos[0]?.url ?? null,
+  };
+}
+
 /**
  * Consultas públicas del catálogo. El `select` es una lista blanca: lo que no se pide aquí
  * (addressDetail, ownerId, status…) no sale nunca por la API pública (P-09).
@@ -117,36 +152,13 @@ export class CatalogService {
         orderBy: orderBy(sort, priceUnit),
         skip: (page - 1) * pageSize,
         take: pageSize,
-        select: {
-          id: true,
-          name: true,
-          capacity: true,
-          pricePerHour: true,
-          pricePerDay: true,
-          type: { select: { name: true } },
-          commune: { select: { name: true } },
-          photos: {
-            select: { url: true },
-            orderBy: { position: 'asc' },
-            take: 1,
-          },
-        },
+        select: CATALOG_ITEM_SELECT,
       }),
       this.prisma.space.count({ where }),
     ]);
 
     return {
-      items: spaces.map((space) => ({
-        id: space.id,
-        name: space.name,
-        // Un espacio activo ya pasó las reglas de publicación (ES-04), pero el schema los deja opcionales.
-        typeName: space.type?.name ?? '',
-        communeName: space.commune?.name ?? '',
-        capacity: space.capacity ?? 0,
-        pricePerHour: space.pricePerHour,
-        pricePerDay: space.pricePerDay,
-        coverUrl: space.photos[0]?.url ?? null,
-      })),
+      items: spaces.map(toCatalogItem),
       total,
       page,
       pageSize,
