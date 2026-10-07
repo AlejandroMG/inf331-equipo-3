@@ -57,7 +57,7 @@ function FilterSelect({ label, placeholder, value, options, onChange }: FilterSe
         id={id}
         value={value ?? ''}
         onChange={(event) => onChange(event.target.value === '' ? null : Number(event.target.value))}
-        className="min-h-11 rounded-control border border-line bg-white px-3 text-[15px] text-ink"
+        className="min-h-11 rounded-control border border-field bg-white px-3 text-[15px] text-ink"
       >
         <option value="">{placeholder}</option>
         {options.map((option) => (
@@ -120,7 +120,7 @@ export function FilterBar({ options, filters, onChange, onClear }: FilterBarProp
         />
 
         <div role="group" aria-label="Precio" className="flex flex-wrap items-center gap-3">
-          <div role="group" aria-label="Unidad del precio" className="inline-flex overflow-hidden rounded-control border border-line">
+          <div role="group" aria-label="Unidad del precio" className="inline-flex overflow-hidden rounded-control border border-field">
             {UNITS.map((option) => (
               <button
                 key={option.value}
