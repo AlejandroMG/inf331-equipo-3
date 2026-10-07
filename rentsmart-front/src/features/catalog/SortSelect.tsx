@@ -27,7 +27,7 @@ export function SortSelect({ value, priceUnit, onChange }: SortSelectProps) {
         id={id}
         value={value}
         onChange={(event) => onChange(event.target.value as CatalogSort)}
-        className="min-h-11 rounded-control border border-line bg-white px-3 text-[15px] text-ink"
+        className="min-h-11 rounded-control border border-field bg-white px-3 text-[15px] text-ink"
       >
         {options.map((option) => (
           <option key={option.value} value={option.value}>
