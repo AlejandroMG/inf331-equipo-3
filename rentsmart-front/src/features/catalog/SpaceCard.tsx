@@ -1,6 +1,7 @@
 import { Link } from 'react-router'
 import { formatClp } from '../../lib/format'
 import { paths } from '../../lib/paths'
+import { FavoriteButton } from '../favorites/FavoriteButton'
 import type { CatalogItem } from './types'
 
 function PinIcon() {
@@ -31,55 +32,59 @@ function ImagePlaceholder() {
   )
 }
 
-/** Tarjeta de un espacio en el catálogo; toda la tarjeta lleva al detalle. */
+/** Tarjeta de un espacio en el catálogo; toda la tarjeta lleva al detalle, salvo el corazón de favoritos (BU-08). */
 export function SpaceCard({ space }: { space: CatalogItem }) {
   return (
-    <Link
-      to={paths.space(space.id)}
-      className="flex w-full flex-col overflow-hidden rounded-card border border-line bg-white text-ink no-underline"
-    >
-      <div className="relative flex h-44 items-center justify-center bg-gradient-to-br from-primary-soft to-accent-soft text-primary">
-        {space.coverUrl ? (
-          <img src={space.coverUrl} alt="" loading="lazy" className="size-full object-cover" />
-        ) : (
-          <ImagePlaceholder />
-        )}
-        {/* Mientras no existan reseñas (RS-02), todos los espacios son "Nuevo". */}
-        <span className="absolute left-3 top-3 rounded-full bg-accent-soft px-2.5 py-1 text-[13px] font-bold text-accent-ink">
-          Nuevo
-        </span>
-      </div>
-      <div className="flex flex-col gap-1.5 p-4">
-        <span className="text-[13px] font-semibold text-muted">{space.typeName}</span>
-        <h3 className="font-display text-[19px] font-bold leading-tight">{space.name}</h3>
-        <div className="flex flex-wrap gap-x-3.5 gap-y-1 text-sm text-muted">
-          <span className="inline-flex items-center gap-1.5">
-            <PinIcon />
-            {space.communeName}
-          </span>
-          <span className="inline-flex items-center gap-1.5">
-            <UsersIcon />
-            Hasta {space.capacity} personas
+    // El corazón es un botón y no puede ir dentro del enlace: va al lado, encima de la foto.
+    <div className="relative flex w-full">
+      <Link
+        to={paths.space(space.id)}
+        className="flex w-full flex-col overflow-hidden rounded-card border border-line bg-white text-ink no-underline"
+      >
+        <div className="relative flex h-44 items-center justify-center bg-gradient-to-br from-primary-soft to-accent-soft text-primary">
+          {space.coverUrl ? (
+            <img src={space.coverUrl} alt="" loading="lazy" className="size-full object-cover" />
+          ) : (
+            <ImagePlaceholder />
+          )}
+          {/* Mientras no existan reseñas (RS-02), todos los espacios son "Nuevo". */}
+          <span className="absolute left-3 top-3 rounded-full bg-accent-soft px-2.5 py-1 text-[13px] font-bold text-accent-ink">
+            Nuevo
           </span>
         </div>
-        <div className="mt-2 flex flex-wrap items-baseline gap-x-2.5">
-          {space.pricePerHour !== null && (
-            <>
-              <span className="text-xl font-bold">{formatClp(space.pricePerHour)}</span>
-              <span className="text-sm text-muted">/ hora</span>
-            </>
-          )}
-          {space.pricePerDay !== null && (
-            <span className="text-sm text-muted">
-              {space.pricePerHour !== null ? 'o ' : ''}
-              <span className={space.pricePerHour === null ? 'text-xl font-bold text-ink' : ''}>
-                {formatClp(space.pricePerDay)}
-              </span>{' '}
-              / día
+        <div className="flex flex-col gap-1.5 p-4">
+          <span className="text-[13px] font-semibold text-muted">{space.typeName}</span>
+          <h3 className="font-display text-[19px] font-bold leading-tight">{space.name}</h3>
+          <div className="flex flex-wrap gap-x-3.5 gap-y-1 text-sm text-muted">
+            <span className="inline-flex items-center gap-1.5">
+              <PinIcon />
+              {space.communeName}
             </span>
-          )}
+            <span className="inline-flex items-center gap-1.5">
+              <UsersIcon />
+              Hasta {space.capacity} personas
+            </span>
+          </div>
+          <div className="mt-2 flex flex-wrap items-baseline gap-x-2.5">
+            {space.pricePerHour !== null && (
+              <>
+                <span className="text-xl font-bold">{formatClp(space.pricePerHour)}</span>
+                <span className="text-sm text-muted">/ hora</span>
+              </>
+            )}
+            {space.pricePerDay !== null && (
+              <span className="text-sm text-muted">
+                {space.pricePerHour !== null ? 'o ' : ''}
+                <span className={space.pricePerHour === null ? 'text-xl font-bold text-ink' : ''}>
+                  {formatClp(space.pricePerDay)}
+                </span>{' '}
+                / día
+              </span>
+            )}
+          </div>
         </div>
-      </div>
-    </Link>
+      </Link>
+      <FavoriteButton spaceId={space.id} name={space.name} className="absolute right-3 top-3" />
+    </div>
   )
 }

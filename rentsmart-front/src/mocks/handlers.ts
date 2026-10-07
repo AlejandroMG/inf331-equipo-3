@@ -51,12 +51,16 @@ const COMMUNES = [
   { id: 5, name: 'San Miguel' },
 ]
 
+/** Ids de los favoritos simulados, el último guardado primero (BU-08). */
+const favoriteIds: string[] = []
+
 /** Borradores creados con el POST simulado; permiten volver a abrirlos con GET y PATCH. */
 const drafts = new Map<string, OwnerSpace>()
 
 /** Vacía los borradores simulados (los tests lo llaman entre pruebas). */
 export function resetMockDrafts() {
   drafts.clear()
+  favoriteIds.length = 0
   photoCounter = 0
 }
 
@@ -295,6 +299,29 @@ export const handlers = [
       return HttpResponse.json({ message: 'El espacio no existe', error: 'Not Found', statusCode: 404 }, { status: 404 })
     }
     return HttpResponse.json(detailOf(item))
+  }),
+
+  // BU-08: favoritos. Los ids van antes que ':spaceId' para que "ids" no se tome por un espacio.
+  http.get('*/api/favorites/ids', () => HttpResponse.json(favoriteIds)),
+  http.get('*/api/favorites', ({ request }) => {
+    const url = new URL(request.url)
+    const page = Math.max(1, Number(url.searchParams.get('page')) || 1)
+    const pageSize = Math.max(1, Number(url.searchParams.get('pageSize')) || 12)
+    const items = favoriteIds.flatMap((id) => catalogData.find((space) => space.id === id) ?? [])
+    return HttpResponse.json({ items: items.slice((page - 1) * pageSize, page * pageSize), total: items.length, page, pageSize })
+  }),
+  http.put('*/api/favorites/:spaceId', ({ params }) => {
+    const id = String(params.spaceId)
+    if (!catalogData.some((space) => space.id === id)) {
+      return HttpResponse.json({ message: 'El espacio no existe', error: 'Not Found', statusCode: 404 }, { status: 404 })
+    }
+    if (!favoriteIds.includes(id)) favoriteIds.unshift(id)
+    return new HttpResponse(null, { status: 204 })
+  }),
+  http.delete('*/api/favorites/:spaceId', ({ params }) => {
+    const index = favoriteIds.indexOf(String(params.spaceId))
+    if (index >= 0) favoriteIds.splice(index, 1)
+    return new HttpResponse(null, { status: 204 })
   }),
 
   // CU-01: registro. "existe@rentsmart.test" simula un email ya usado.
