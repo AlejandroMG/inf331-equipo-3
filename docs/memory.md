@@ -2053,3 +2053,59 @@ No aplica: es solo documentación.
 - Quien abra un PR nuevo puede hacer lo mismo si quiere evitar conflictos: dejar su entrada en un PR aparte o en el último en entrar.
 
 ---
+
+### 2026-10-07 · B (xReNatS) · ES-08 eliminar un espacio y entregables de la Entrega 1
+
+**Issues:** #116 (ES-08)
+**Rama / PR:** `feat/ES-08-eliminar-espacio` (código) y `docs/entrega-1` (README, CHANGELOG, CONTRIBUTING, GitFlow, esta bitácora) · Wiki del repositorio
+**Duración aproximada:** 3 h
+**Herramientas:** Claude Code
+
+#### Objetivo
+Cumplir lo que le toca a B en la Entrega 1 (enunciado "Construcción inicial aplicación y pruebas automatizadas"): completar el CRUD de espacios con "eliminar", y dejar los entregables del repositorio y de la Wiki que pide la sección 5.
+
+#### Qué se hizo
+- **ES-08 en la API:** `DELETE /api/spaces/:id` en un servicio nuevo, `SpaceRemovalService`. Borra el espacio con sus fotos (también del almacenamiento), equipamiento, horario y favoritos en cascada. Responde 409 si el espacio tiene reservas de cualquier estado, 403 si es de otro o está bloqueado, 404 si no existe y 204 si lo borró. Tiene 8 pruebas unitarias y 7 de integración (`test/space-delete.e2e-spec.ts`).
+- **ES-08 en el front:** botón "Eliminar" en cada fila de Mis espacios (salvo los bloqueados), con un diálogo de confirmación. Al borrar, la fila sale de la lista sin recargar y se muestra un aviso; con 409 se muestra el mensaje del servidor. Tiene 5 pruebas nuevas.
+- **Decisión P-20** y su regla en `producto.md` y `arquitectura.md`. Se creó el issue #116.
+- **Repositorio (5.1):** el README ahora tiene enlaces (video, Wiki, release), integrantes, una sección de pruebas, contribución y contacto, y licencia. Se agregaron `CHANGELOG.md` (release notes de `v1.0-entrega1`) y `CONTRIBUTING.md`.
+- **GitFlow (3.2):** decisión T-05; `CONTRIBUTING.md`, `flujo-de-trabajo.md` y `AGENTS.md` describen `develop`, `feature/*`, `release/*` y `hotfix/*`; el CI ahora también corre en `develop`.
+- **Wiki (5.2 y Anexo C):** páginas de Resumen y alcance, Requisitos y trazabilidad, Arquitectura y tecnologías, Estrategia de pruebas, Supuestos y dependencias, Evidencias y Entrega 1, más los marcadores de las entregas 2 y 3, y la Home actualizada.
+
+#### Decisiones y por qué
+| Decisión | Alternativas consideradas | Por qué se eligió |
+|---|---|---|
+| Solo se elimina un espacio sin reservas; con reservas, 409 y se sugiere desactivarlo (P-20) | Borrado lógico con estado `DELETED`; borrar las reservas en cascada | Las reservas y pagos son el historial de ambas partes. El borrado lógico exige cambiar `schema.prisma` (de A) y filtrar el estado en todas las consultas, a dos días de la entrega. La llave foránea de `Booking` ya protege el caso sin tocar el schema |
+| Un espacio bloqueado no se puede eliminar | Permitirlo | Borrarlo eliminaría el rastro de la moderación del administrador |
+| Servicio aparte (`SpaceRemovalService`) | Agregar el método a `SpacesService` | `SpacesService` no conoce el almacenamiento; inyectarlo obligaba a cambiar el setup de sus pruebas existentes |
+| Las fotos se borran del almacenamiento después del borrado en la BD, y si falla solo se registra | Borrarlas antes | Si el borrado en la BD falla (por ejemplo con 409), las fotos siguen ahí; una foto huérfana es preferible a un espacio sin fotos. Es el mismo criterio que al borrar una foto |
+| GitFlow con *squash* hacia `develop` (T-05) | Seguir directo a `main` | El enunciado exige GitFlow y el tag de cada entrega sobre `main` |
+
+#### Archivos principales
+- `rentsmart-back/src/spaces/space-removal.service.ts` y su `.spec.ts`, `spaces.controller.ts`, `spaces.module.ts`, `test/space-delete.e2e-spec.ts`.
+- `rentsmart-front/src/features/owner/OwnerSpacesPage.tsx`, `OwnerSpaceRow.tsx`, `OwnerSpacesPage.test.tsx`, `src/features/spaces/spaces-api.ts`.
+- `docs/producto.md`, `docs/decisiones.md` (P-20 y T-05), `docs/arquitectura.md`, `docs/flujo-de-trabajo.md`, `AGENTS.md`.
+- `README.md`, `CHANGELOG.md`, `CONTRIBUTING.md`, `.github/workflows/ci.yml` (disparadores en `develop`).
+
+#### Cómo probarlo
+- Back: `npm test` y `npm run test:e2e` (BD de test migrada) con Node 24.
+- Front: `npm test`.
+- A mano: entra como `propietario@rentsmart.test`, ve a Mis espacios y elimina un espacio sin reservas. Uno con reservas del seed muestra el aviso de que hay que desactivarlo.
+
+#### Estado de verificación
+- Back: lint ✅ · build ✅ · unitarias ✅ 229 de 230 con Node 24. La que falla es `prisma.service.spec.ts`, porque necesita la BD; también falla en `main` sin la BD.
+- Integración: ❌ **no se corrió en local.** Docker Desktop respondía con error 500 y el PostgreSQL nativo del puerto 5432 no es el del proyecto. La corre el CI en el PR.
+- Front: lint ✅ · build ✅ · 592 pruebas ✅ con Node 24.
+
+#### Pendientes y bloqueos
+- **Publicar desde la app no funciona:** el formulario exige el horario semanal (DI-01, de C) y todavía no se puede cargar. "Agregar" deja el espacio como borrador. Es lo más importante que falta para la demo del CRUD.
+- **GitFlow:** falta crear `develop` desde `main` y reapuntar los PR abiertos. Al cerrar la entrega hay que crear `release/v1.0-entrega1`, mergearla a `main` y hacer el tag con su Release.
+- **Marcadores `PENDIENTE_` en el README y la Wiki:** link al video, líder de equipo, herramienta inscrita en Aula y capturas (app, JIRA y Slack/Discord).
+- **Fuera del repo:** tablero JIRA, integración con Slack o Discord, organización de GitHub (Anexo D) y video.
+
+#### Para el resto del equipo
+- C (@gonzzza-lol): el CI ahora también corre en `develop` (solo cambiaron los disparadores de `ci.yml`). DI-01 desbloquea publicar desde la app.
+- A (@AlejandroMG): ES-08 no cambia `schema.prisma`; usa la cascada que ya tenían fotos, equipamiento, horario y favoritos, y la llave foránea de `Booking`.
+- Todos: los PR nuevos van hacia `develop`. Como `Closes #N` solo cierra issues al llegar a `main`, ciérrenlos a mano al mergear a `develop`.
+
+---
