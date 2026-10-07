@@ -51,7 +51,7 @@ export function Navbar() {
   return (
     <header className="border-b border-line bg-white">
       <div className="mx-auto flex min-h-[72px] max-w-[1200px] items-center justify-between gap-4 px-4 sm:px-6">
-        <Link to={paths.home} onClick={closeMenu} aria-label="RentSmart, ir al inicio" className="inline-flex items-center gap-2.5 text-ink no-underline">
+        <Link to={paths.home} onClick={closeMenu} aria-label="RentSmart, ir al inicio" className="inline-flex min-h-11 items-center gap-2.5 text-ink no-underline">
           <Logo />
           <span className="font-display text-[22px] font-bold">RentSmart</span>
         </Link>

@@ -62,7 +62,8 @@ async function openPanel(list: OwnerSpaceSummary[]) {
 }
 
 const tile = (label: string) => screen.getByText(label).parentElement as HTMLElement
-const switchOf = (name: string) => screen.getByRole('switch', { name: `Publicación de ${name}` })
+// Su nombre accesible es el texto visible ("Activo" o "Inactivo") más el del espacio.
+const switchOf = (name: string) => screen.getByRole('switch', { name: (accessibleName) => accessibleName.endsWith(` ${name}`) })
 
 describe('OwnerSpacesPage', () => {
   it('mientras carga muestra un estado de carga, y después la lista', async () => {
@@ -126,6 +127,18 @@ describe('OwnerSpacesPage', () => {
 
     expect(screen.getByRole('link', { name: 'Editar Sala Alameda' })).toHaveAttribute('href', '/publish/s1')
     expect(screen.queryByText(/^Falta:/)).not.toBeInTheDocument()
+  })
+
+  it('el nombre accesible del interruptor contiene el texto que se ve, y sigue al estado', async () => {
+    serveStatusChanges()
+    await openPanel([summary(), summary({ id: 's2', name: 'Estudio Luz', status: 'INACTIVE' })])
+
+    expect(screen.getByRole('switch', { name: 'Activo Sala Alameda' })).toHaveTextContent('Activo')
+    expect(screen.getByRole('switch', { name: 'Inactivo Estudio Luz' })).toHaveTextContent('Inactivo')
+
+    await userEvent.click(screen.getByRole('switch', { name: 'Inactivo Estudio Luz' }))
+
+    expect(await screen.findByRole('switch', { name: 'Activo Estudio Luz' })).toBeChecked()
   })
 
   it('un espacio bloqueado por el administrador no se puede editar ni activar', async () => {

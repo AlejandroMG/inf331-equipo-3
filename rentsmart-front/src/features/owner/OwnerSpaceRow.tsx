@@ -1,3 +1,4 @@
+import { useId } from 'react'
 import { LinkButton } from '../../components/Button'
 import { cn } from '../../lib/cn'
 import { paths } from '../../lib/paths'
@@ -22,6 +23,8 @@ interface OwnerSpaceRowProps {
 /** Un espacio en el panel: portada, estado, lo que le falta y los accesos a editar y a activar o desactivar. */
 export function OwnerSpaceRow({ space, pending, onToggle }: OwnerSpaceRowProps) {
   const status = STATUS[space.status]
+  const titleId = useId()
+  const stateId = useId()
   const on = space.status === 'ACTIVE'
   // Un borrador se publica desde el formulario y uno bloqueado solo lo mueve el administrador.
   const canToggle = space.status === 'ACTIVE' || space.status === 'INACTIVE'
@@ -34,7 +37,9 @@ export function OwnerSpaceRow({ space, pending, onToggle }: OwnerSpaceRowProps) 
 
       <div className="min-w-0 flex-[1_1_200px]">
         <div className="flex flex-wrap items-center gap-2">
-          <h3 className="font-display text-lg font-bold">{space.name}</h3>
+          <h3 id={titleId} className="font-display text-lg font-bold">
+            {space.name}
+          </h3>
           <span className={cn('rounded-full px-2.5 py-[3px] text-[13px] font-bold', status.badge)}>{status.label}</span>
         </div>
         <p className="mt-1 text-sm text-muted">{metaText(space)}</p>
@@ -56,15 +61,16 @@ export function OwnerSpaceRow({ space, pending, onToggle }: OwnerSpaceRowProps) 
             type="button"
             role="switch"
             aria-checked={on}
-            aria-label={`Publicación de ${space.name}`}
+            // El nombre es el texto que se ve ("Activo") más el del espacio: quien dicta "activo" por voz lo encuentra.
+            aria-labelledby={`${stateId} ${titleId}`}
             disabled={pending}
             onClick={() => onToggle(space)}
             className="inline-flex min-h-11 items-center gap-2.5 px-1 text-sm font-semibold text-ink disabled:cursor-wait disabled:opacity-60"
           >
-            <span className={cn('relative h-[26px] w-11 rounded-full transition-colors', on ? 'bg-primary' : 'bg-[#7d8c89]')}>
+            <span className={cn('relative h-[26px] w-11 rounded-full transition-colors', on ? 'bg-primary' : 'bg-field')}>
               <span className={cn('absolute top-[3px] size-5 rounded-full bg-white transition-all', on ? 'left-[21px]' : 'left-[3px]')} />
             </span>
-            {on ? 'Activo' : 'Inactivo'}
+            <span id={stateId}>{on ? 'Activo' : 'Inactivo'}</span>
           </button>
         )}
         {space.status !== 'BLOCKED' && (

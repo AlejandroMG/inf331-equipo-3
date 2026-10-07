@@ -24,7 +24,7 @@ export function Textarea({ label, error, hint, id, className, ...rest }: Textare
         aria-describedby={message ? messageId : undefined}
         className={cn(
           'min-h-28 w-full resize-y rounded-control bg-white px-3.5 py-2.5 text-base text-ink disabled:bg-surface disabled:text-muted',
-          error ? 'border-2 border-accent' : 'border border-line',
+          error ? 'border-2 border-accent' : 'border border-field',
           className,
         )}
         {...rest}
