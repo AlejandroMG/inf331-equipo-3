@@ -1384,3 +1384,55 @@ Con `docker compose up -d db-test`, en `rentsmart-back` (Node 24): `npm run lint
 - C (@gonzzza-lol): cuando existan las reservas, el panel necesitará `GET /api/spaces/me` con las próximas reservas de cada espacio; avísame el contrato.
 
 ---
+
+### 2026-10-06 · A (AlejandroMG) · CU-03 roles y permisos en la API y el front
+
+**Issues:** #14 (CU-03)
+**Rama / PR:** `feat/CU-03-roles` · sin PR todavía
+**Duración aproximada:** 2 h
+**Herramientas:** Claude Code
+
+#### Objetivo
+Dejar `JwtAuthGuard`, `RolesGuard` y `@CurrentUser()` listos para los demás módulos, y que el menú y las rutas del front dependan de la sesión y del rol.
+
+#### Qué se hizo
+- `JwtAuthGuard` y `RolesGuard` con `@Roles(...)` en `src/auth/guards`; `AuthModule` global para usarlos sin importarlo.
+- `GET /api/auth/me`: usuario de la sesión.
+- Reemplazo del `DevAuthGuard` temporal de B por `JwtAuthGuard` en `SpacesController` y `PhotosController` (lo pedía su entrada del 2026-10-05); se borró `dev-auth.guard.ts` y su test.
+- Helper `bearer(app, userId)` en `test/utils/auth.ts`; los e2e de espacios ahora usan tokens reales en vez de `x-user-id`.
+- Front: `useCurrentUser()` (lee `/auth/me`), menú según la sesión ("Mis espacios" con sesión, "Administración" solo ADMIN) y `RequireRole` para `/admin` (placeholder hasta AD-01).
+- Sección "Sesión y permisos" en `docs/arquitectura.md` con un ejemplo de uso.
+
+#### Decisiones y por qué
+| Decisión | Alternativas consideradas | Por qué se eligió |
+|---|---|---|
+| El guard revisa al usuario en la base en cada petición | Confiar solo en el token | Una cuenta suspendida pierde el acceso de inmediato, sin esperar a que el token expire |
+| El rol sale de la base, no del token | Usar el `role` del token | Un cambio de rol aplica de inmediato |
+| `AuthModule` global | Importarlo en cada módulo | B y C usan los guards sin tocar sus módulos |
+| Mantener `AuthUser` y `@CurrentUser()` de B en `src/common/auth` | Moverlos a `auth/` | Los controladores de B no cambian |
+| `RequireRole` en el front solo oculta pantallas | Confiar en el front | La API igual valida el rol; el front solo evita mostrar algo que no sirve |
+
+#### Archivos principales
+- `rentsmart-back/src/auth/guards/`: guards y sus tests.
+- `rentsmart-back/src/auth/auth.controller.ts`, `auth.service.ts`, `auth.module.ts`: `/me` y módulo global.
+- `rentsmart-back/src/spaces/*.controller.ts` y `test/*spaces*.e2e-spec.ts`, `test/photos.e2e-spec.ts`, `test/publication.e2e-spec.ts` (de B): guard real y tokens.
+- `rentsmart-back/test/auth-me.e2e-spec.ts`, `test/utils/auth.ts`.
+- `rentsmart-front/src/features/auth/useCurrentUser.ts`, `RequireRole.tsx`, `components/Navbar.tsx`, `routes.tsx`, `mocks/handlers.ts`.
+
+#### Cómo probarlo
+`docker compose up -d`; en `rentsmart-back`: `npm test` y `npm run test:e2e`; en `rentsmart-front`: `npm test`. A mano: `admin@rentsmart.test` / `Password123` ve "Administración"; `arrendatario@rentsmart.test` no.
+
+#### Estado de verificación
+- Build: ✅ back y front
+- Lint: ✅ back y front
+- Tests: ✅ back 159 unitarios y 182 e2e; front 328
+
+#### Pendientes y bloqueos
+- AD-01: reemplazar el placeholder de `/admin` por el panel real, con `@Roles(UserRole.ADMIN)` en la API.
+
+#### Para el resto del equipo
+- Desde este PR, `/api/spaces/*` exige un token real; `x-user-id` ya no funciona. En Swagger, usa "Authorize" con el `accessToken` del login.
+- Para proteger un endpoint: `@UseGuards(JwtAuthGuard)` y `@CurrentUser() user: AuthUser`; para restringir por rol, `@UseGuards(JwtAuthGuard, RolesGuard)` y `@Roles(UserRole.ADMIN)`. Ver `docs/arquitectura.md`.
+- En los e2e: `bearer(app, userId)` de `test/utils/auth.ts`.
+
+---
