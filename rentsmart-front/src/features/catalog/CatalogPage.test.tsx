@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http as mswHttp, HttpResponse } from 'msw'
 import { createMemoryRouter, RouterProvider } from 'react-router'
@@ -496,5 +496,156 @@ describe('CatalogPage: filtros y búsqueda (BU-03)', () => {
 
     // Dos talleres y la "Cocina taller".
     expect(await screen.findByText('3 espacios')).toBeInTheDocument()
+  })
+})
+
+describe('CatalogPage: orden (BU-04)', () => {
+  const names = () => screen.getAllByRole('heading', { level: 3 }).map((heading) => heading.textContent)
+  const sortSelect = () => screen.getByRole('combobox', { name: 'Ordenar por' })
+
+  async function openCatalog(path = '/') {
+    const router = renderCatalog(path)
+    await screen.findByRole('button', { name: 'Taller' })
+    await screen.findByText(/^\d+ espacios?$/)
+    return router
+  }
+
+  function spyOnCatalog() {
+    const urls: URL[] = []
+    server.events.on('request:start', ({ request }) => {
+      const url = new URL(request.url)
+      if (url.pathname === '/api/catalog') urls.push(url)
+    })
+    return urls
+  }
+
+  it('ofrece los tres órdenes y por defecto muestra los más recientes', async () => {
+    await openCatalog()
+
+    expect(sortSelect()).toHaveDisplayValue('Más recientes')
+    expect(within(sortSelect()).getAllByRole('option').map((o) => o.textContent)).toEqual([
+      'Más recientes',
+      'Precio por hora: menor a mayor',
+      'Precio por hora: mayor a menor',
+    ])
+    expect(names()[0]).toBe('Sala Alameda')
+  })
+
+  it('por precio de menor a mayor: lo deja en la URL y los que no tienen precio por hora van al final', async () => {
+    const router = await openCatalog()
+
+    await userEvent.selectOptions(sortSelect(), 'Precio por hora: menor a mayor')
+
+    await waitFor(() => expect(names()[0]).toBe('Oficina compartida Providencia')) // $6.000 la hora
+    expect(names().slice(0, 3)).toEqual(['Oficina compartida Providencia', 'Cowork Plaza Ñuñoa', 'Sala de ensayo Los Olivos'])
+    expect(router.state.location.search).toBe('?sort=price_asc')
+    expect(sortSelect()).toHaveDisplayValue('Precio por hora: menor a mayor')
+  })
+
+  it('por precio de mayor a menor, con el que solo se arrienda por día en la última página', async () => {
+    await openCatalog('/?sort=price_desc')
+
+    await waitFor(() => expect(names()[0]).toBe('Salón Jardín')) // $40.000 la hora
+    expect(names().slice(0, 3)).toEqual(['Salón Jardín', 'Cancha techada Las Condes', 'Sala Directorio Centro'])
+    expect(names()).not.toContain('Bodega de eventos Santiago')
+
+    await userEvent.click(screen.getByRole('link', { name: 'Página 2' }))
+
+    expect(await screen.findByRole('heading', { level: 3, name: 'Bodega de eventos Santiago' })).toBeInTheDocument()
+  })
+
+  it('con la unidad "por día", ordena por el precio por día y lo dice en las opciones', async () => {
+    await openCatalog('/?priceUnit=day&sort=price_asc')
+
+    await waitFor(() => expect(names()[0]).toBe('Oficina compartida Providencia')) // $38.000 el día
+    expect(names().slice(0, 3)).toEqual(['Oficina compartida Providencia', 'Cowork Plaza Ñuñoa', 'Taller metálico San Miguel'])
+    expect(within(sortSelect()).getAllByRole('option').map((o) => o.textContent)).toEqual([
+      'Más recientes',
+      'Precio por día: menor a mayor',
+      'Precio por día: mayor a menor',
+    ])
+  })
+
+  it('cambiar la unidad del precio cambia el precio por el que se ordena', async () => {
+    const router = await openCatalog('/?sort=price_asc')
+    await waitFor(() => expect(names()[0]).toBe('Oficina compartida Providencia'))
+
+    await userEvent.click(screen.getByRole('button', { name: 'Por día' }))
+
+    expect(await screen.findByText('14 espacios')).toBeInTheDocument()
+    expect(router.state.location.search).toBe('?priceUnit=day&sort=price_asc')
+    expect(sortSelect()).toHaveDisplayValue('Precio por día: menor a mayor')
+  })
+
+  it('volver a "Más recientes" quita el orden de la URL', async () => {
+    const router = await openCatalog('/?sort=price_asc')
+
+    await userEvent.selectOptions(sortSelect(), 'Más recientes')
+
+    await waitFor(() => expect(router.state.location.search).toBe(''))
+    expect(await screen.findByRole('heading', { level: 3, name: 'Sala Alameda' })).toBeInTheDocument()
+  })
+
+  it('cambiar el orden conserva los filtros y vuelve a la primera página', async () => {
+    const router = await openCatalog('/?maxPrice=40000&page=2')
+    await screen.findByText('13 espacios')
+
+    await userEvent.selectOptions(sortSelect(), 'Precio por hora: mayor a menor')
+
+    await waitFor(() => expect(router.state.location.search).toBe('?maxPrice=40000&sort=price_desc'))
+    expect(await screen.findByText('13 espacios')).toBeInTheDocument()
+  })
+
+  it('los enlaces de la paginación conservan el orden', async () => {
+    await openCatalog('/?sort=price_asc')
+
+    expect(screen.getByRole('link', { name: 'Página 2' })).toHaveAttribute('href', '/?sort=price_asc&page=2')
+  })
+
+  it('el orden solo no cuenta como filtro: no aparece "Limpiar filtros"', async () => {
+    await openCatalog('/?sort=price_asc')
+
+    expect(screen.queryByRole('button', { name: 'Limpiar filtros' })).not.toBeInTheDocument()
+  })
+
+  it('"Limpiar filtros" quita los filtros pero deja el orden elegido', async () => {
+    const router = await openCatalog('/?q=sala&typeId=1&sort=price_desc')
+    await screen.findByText(/^\d+ espacios?$/)
+
+    await userEvent.click(screen.getByRole('button', { name: 'Limpiar filtros' }))
+
+    await waitFor(() => expect(router.state.location.search).toBe('?sort=price_desc'))
+    expect(await screen.findByText('14 espacios')).toBeInTheDocument()
+    expect(sortSelect()).toHaveDisplayValue('Precio por hora: mayor a menor')
+  })
+
+  it('un orden inválido en la URL se ignora', async () => {
+    const calls = spyOnCatalog()
+    await openCatalog('/?sort=baratos')
+
+    expect(sortSelect()).toHaveDisplayValue('Más recientes')
+    expect(calls[0].searchParams.has('sort')).toBe(false)
+  })
+
+  it('ordenar por precio manda también la unidad, aunque no haya un rango de precio', async () => {
+    const calls = spyOnCatalog()
+    await openCatalog('/?sort=price_asc&priceUnit=day')
+
+    const request = calls.find((url) => url.searchParams.has('sort'))!
+    expect(Object.fromEntries(request.searchParams)).toMatchObject({ sort: 'price_asc', priceUnit: 'day' })
+    expect(request.searchParams.has('minPrice')).toBe(false)
+    expect(request.searchParams.has('maxPrice')).toBe(false)
+  })
+
+  it('manda el orden a la API solo cuando no es el normal', async () => {
+    const calls = spyOnCatalog()
+    await openCatalog('/')
+    expect(calls[0].searchParams.has('sort')).toBe(false)
+
+    renderCatalog('/?sort=price_desc&priceUnit=day&maxPrice=100000')
+    await screen.findAllByText(/^\d+ espacios?$/)
+
+    const sorted = calls.find((url) => url.searchParams.has('sort'))!
+    expect(Object.fromEntries(sorted.searchParams)).toMatchObject({ sort: 'price_desc', priceUnit: 'day', maxPrice: '100000' })
   })
 })
