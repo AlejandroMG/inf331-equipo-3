@@ -16,6 +16,7 @@ const detail: SpaceDetail = {
   regionName: 'Región Metropolitana',
   communeName: 'Santiago',
   address: 'Av. Libertador 1234',
+  location: { latitude: -33.449, longitude: -70.669, radiusMeters: 150 },
   capacity: 10,
   pricePerHour: 12000,
   pricePerDay: 90000,
@@ -110,6 +111,28 @@ describe('SpaceDetailPage', () => {
 
     expect(screen.getByText(/se muestra cuando tu reserva esté confirmada/)).toBeInTheDocument()
     expect(screen.getByText(/aún no tiene reseñas/)).toBeInTheDocument()
+  })
+
+  describe('mapa', () => {
+    it('muestra la zona aproximada en un mapa cuando el propietario marcó el punto', async () => {
+      serve()
+      renderDetail()
+
+      const map = await screen.findByRole('region', { name: 'Mapa con la ubicación aproximada de Sala Alameda' })
+
+      expect(await within(map).findByRole('button', { name: 'Acercar' })).toBeInTheDocument()
+      expect(within(map).getByRole('button', { name: 'Alejar' })).toBeInTheDocument()
+      expect(screen.getByText('El círculo marca la zona aproximada del espacio.')).toBeInTheDocument()
+    })
+
+    it('sin punto marcado no hay mapa, y la dirección escrita sigue ahí', async () => {
+      serve({ location: null })
+      renderDetail()
+      await screen.findByRole('heading', { level: 1, name: 'Sala Alameda' })
+
+      expect(screen.queryByRole('region', { name: /Mapa con la ubicación/ })).not.toBeInTheDocument()
+      expect(screen.getByText('Av. Libertador 1234, Santiago, Región Metropolitana')).toBeInTheDocument()
+    })
   })
 
   it('muestra la galería con las fotos del espacio', async () => {
