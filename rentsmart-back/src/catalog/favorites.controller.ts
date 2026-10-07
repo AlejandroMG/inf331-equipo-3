@@ -11,7 +11,7 @@ import {
 import {
   ApiBadRequestResponse,
   ApiConflictResponse,
-  ApiHeader,
+  ApiBearerAuth,
   ApiNoContentResponse,
   ApiNotFoundResponse,
   ApiOkResponse,
@@ -21,21 +21,15 @@ import {
 } from '@nestjs/swagger';
 import type { AuthUser } from '../common/auth/auth-user';
 import { CurrentUser } from '../common/auth/current-user.decorator';
-import { DevAuthGuard } from '../common/auth/dev-auth.guard';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CatalogPageDto } from './dto/catalog-page.dto';
 import { ListFavoritesQueryDto } from './dto/list-favorites-query.dto';
 import { FavoritesService } from './favorites.service';
 
-// TEMPORAL: DevAuthGuard se reemplaza por el JwtAuthGuard de A (CU-03) sin cambiar nada más.
 @ApiTags('Favoritos')
-@ApiHeader({
-  name: 'x-user-id',
-  required: false,
-  description:
-    'Solo desarrollo: id del usuario que actúa. Sin él, el propietario del seed. Se reemplaza por el token JWT.',
-})
+@ApiBearerAuth()
 @ApiUnauthorizedResponse({ description: 'Sin sesión' })
-@UseGuards(DevAuthGuard)
+@UseGuards(JwtAuthGuard)
 @Controller('favorites')
 export class FavoritesController {
   constructor(private readonly service: FavoritesService) {}

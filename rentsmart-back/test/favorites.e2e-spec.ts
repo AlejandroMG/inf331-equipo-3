@@ -2,6 +2,7 @@ import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { App } from 'supertest/types';
 import { PrismaService } from '../src/prisma/prisma.service';
+import { bearer } from './utils/auth';
 import { createTestApp } from './utils/create-test-app';
 
 // Cada test crea sus propios datos con un sufijo único, así no depende del seed ni choca con él.
@@ -26,7 +27,7 @@ describe('Favoritos (e2e)', () => {
   let communeId: number;
   const ids: Record<string, string> = {};
 
-  const as = (id: string) => ({ 'x-user-id': id });
+  const as = (id: string) => bearer(app, id);
   const server = () => app.getHttpServer();
   const list = (query = '', id = userId) => request(server()).get(`/api/favorites${query}`).set(as(id));
   const idsOf = (id = userId) => request(server()).get('/api/favorites/ids').set(as(id));
@@ -81,7 +82,7 @@ describe('Favoritos (e2e)', () => {
 
   describe('sin sesión', () => {
     it('un usuario que no existe da 401 en todos los endpoints', async () => {
-      const ghost = { 'x-user-id': 'no-existe' };
+      const ghost = bearer(app, 'no-existe');
       await request(server()).get('/api/favorites').set(ghost).expect(401);
       await request(server()).get('/api/favorites/ids').set(ghost).expect(401);
       await request(server()).put(`/api/favorites/${ids.A}`).set(ghost).expect(401);
