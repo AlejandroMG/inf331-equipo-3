@@ -1,4 +1,5 @@
 import { ApiError } from '../../lib/http'
+import { CHILE_BOUNDS } from '../map/map-config'
 import type { OwnerSpace, SpaceForm, SpacePayload } from './types'
 
 export const MAX_NAME = 100
@@ -15,12 +16,14 @@ export const emptyForm: SpaceForm = {
   communeId: '',
   address: '',
   addressDetail: '',
+  latitude: '',
+  longitude: '',
   pricePerHour: '',
   pricePerDay: '',
 }
 
 const text = (value: string | null) => value ?? ''
-const num = (value: number | null) => (value === null ? '' : String(value))
+const num = (value: number | null | undefined) => (value == null ? '' : String(value))
 
 /** Pasa un espacio guardado en el servidor a los datos del formulario. */
 export function toForm(space: OwnerSpace): SpaceForm {
@@ -34,12 +37,14 @@ export function toForm(space: OwnerSpace): SpaceForm {
     communeId: num(space.communeId),
     address: text(space.address),
     addressDetail: text(space.addressDetail),
+    latitude: num(space.latitude),
+    longitude: num(space.longitude),
     pricePerHour: num(space.pricePerHour),
     pricePerDay: num(space.pricePerDay),
   }
 }
 
-export type FormField = 'name' | 'capacity' | 'pricePerHour' | 'pricePerDay'
+export type FormField = 'name' | 'capacity' | 'pricePerHour' | 'pricePerDay' | 'latitude' | 'longitude'
 export type FormErrors = Partial<Record<FormField, string>>
 
 /** Un entero positivo hasta `max`, escrito como texto: "10". Los vacíos son válidos (es un borrador). */
@@ -48,6 +53,15 @@ function integerError(value: string, max: number, what: string): string | undefi
   const n = Number(value)
   if (!Number.isInteger(n) || n < 1) return `${what} debe ser un número entero mayor que 0.`
   if (n > max) return `${what} no puede superar ${max.toLocaleString('es-CL')}.`
+  return undefined
+}
+
+/** Una coordenada escrita como texto: un número dentro de Chile. Vacía es válida (el punto es opcional). */
+function coordinateError(value: string, min: number, max: number, what: string): string | undefined {
+  if (value.trim() === '') return undefined
+  const n = Number(value)
+  if (!Number.isFinite(n)) return `${what} debe ser un número, por ejemplo -33.4489.`
+  if (n < min || n > max) return `${what} debe estar entre ${min} y ${max}, dentro de Chile.`
   return undefined
 }
 
@@ -63,11 +77,23 @@ export function validate(form: SpaceForm): FormErrors {
   if (hour) errors.pricePerHour = hour
   const day = integerError(form.pricePerDay, MAX_PRICE, 'El precio por día')
   if (day) errors.pricePerDay = day
+
+  const latitude = coordinateError(form.latitude, CHILE_BOUNDS.minLat, CHILE_BOUNDS.maxLat, 'La latitud')
+  if (latitude) errors.latitude = latitude
+  const longitude = coordinateError(form.longitude, CHILE_BOUNDS.minLng, CHILE_BOUNDS.maxLng, 'La longitud')
+  if (longitude) errors.longitude = longitude
+  // El punto va completo: sin una de las dos coordenadas no hay dónde poner el pin.
+  const hasLatitude = form.latitude.trim() !== ''
+  if (!latitude && !longitude && hasLatitude !== (form.longitude.trim() !== '')) {
+    errors[hasLatitude ? 'longitude' : 'latitude'] = `Falta la ${hasLatitude ? 'longitud' : 'latitud'}: completa las dos o quita el punto.`
+  }
   return errors
 }
 
 const orNull = (value: string) => (value.trim() === '' ? null : value.trim())
 const intOrNull = (value: string) => (value.trim() === '' ? null : Number(value))
+/** Hasta 6 decimales (~0,1 m), que es lo que acepta el back. */
+const coordinateOrNull = (value: string) => (value.trim() === '' ? null : Math.round(Number(value) * 1e6) / 1e6)
 
 /**
  * Cuerpo para guardar el borrador. Lo vacío se manda como null, así borrar un campo en el formulario
@@ -85,6 +111,8 @@ export function toPayload(form: SpaceForm, regionId: number | null): SpacePayloa
     communeId: intOrNull(form.communeId),
     address: orNull(form.address),
     addressDetail: orNull(form.addressDetail),
+    latitude: coordinateOrNull(form.latitude),
+    longitude: coordinateOrNull(form.longitude),
     rules: orNull(form.rules),
     amenityIds: form.amenityIds,
   }
