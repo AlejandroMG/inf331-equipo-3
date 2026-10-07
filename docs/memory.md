@@ -661,6 +661,513 @@ Agregar `JWT_SECRET` a `rentsmart-back/.env`, `docker compose up -d`; en `rentsm
 
 ---
 
+### 2026-10-05 · B (xReNatS) · BU-01 catálogo de espacios (front)
+
+**Issues:** #27 (BU-01), parte del front
+**Rama / PR:** `feat/BU-01-catalogo`, apilada sobre `feat/F-07-base-front-ts` (PR #91) · sin PR todavía
+**Duración aproximada:** 1,5 h
+**Herramientas:** Claude Code
+
+#### Objetivo
+Mostrar el catálogo con tarjetas y paginación según el prototipo aprobado, trabajando contra una API simulada mientras el endpoint real no exista.
+
+#### Qué se hizo
+- `CatalogPage` (`/`): estado de carga con esqueletos, error con botón "Reintentar", estado vacío, grilla de tarjetas y paginación. La página vive en la URL (`?page=2`); una página inválida vuelve a la 1.
+- `SpaceCard`: tipo, nombre, comuna, capacidad, precio por hora y/o por día, portada o marcador, y la etiqueta "Nuevo" (todos lo son hasta que existan reseñas, RS-02). Toda la tarjeta enlaza al detalle.
+- `Pagination` (componente compartido, con enlaces reales) y `pageItems` en `src/lib/pagination.ts`.
+- `useCatalog` y `catalog-api.ts`: la petición se cancela al cambiar de página o salir de la pantalla.
+- Contrato propuesto de `GET /api/catalog`, documentado en `docs/arquitectura.md`, y su simulación en `src/mocks` (14 espacios de ejemplo).
+- 26 pruebas nuevas (86 en total).
+
+#### Decisiones y por qué
+| Decisión | Alternativas consideradas | Por qué se eligió |
+|---|---|---|
+| El contrato del catálogo lo propone el front y el back lo sigue | Esperar a F-05 | F-05 sigue abierto y el plazo es corto; con MSW el front avanza y el back se ajusta a esta forma |
+| Estado de la petición derivado de un identificador (`request`) | `setState('loading')` dentro del efecto | La regla `react-hooks` de ESLint 7 prohíbe cambiar estado de forma síncrona en un efecto, y así nunca se ve la página anterior bajo un número nuevo |
+| Paginación con `<Link>` y no con botones | Botones con `setSearchParams` | Se puede abrir una página en otra pestaña y el estado ya está en la URL, lo que BU-03 necesita para los filtros |
+| Etiqueta "Nuevo" fija | Quitarla hasta que haya reseñas | Está en el prototipo aprobado; hay un comentario para sacarla en RS-02 |
+
+#### Archivos principales
+- `rentsmart-front/src/features/catalog/`: `CatalogPage`, `SpaceCard`, `useCatalog`, `catalog-api`, `types` y sus pruebas.
+- `rentsmart-front/src/components/Pagination.tsx` y `src/lib/pagination.ts`.
+- `rentsmart-front/src/mocks/`: `catalog-data.ts` y el handler de `/api/catalog`.
+
+#### Cómo probarlo
+- Desde `rentsmart-front`: `npm run lint`, `npm run build` y `npm test`.
+- Visual: `VITE_USE_MOCKS=true npm run dev` en Chrome o Edge, o un servidor que responda `/api/catalog` con la forma del contrato. Se probó así a 375 px y en escritorio.
+
+#### Estado de verificación
+- Build: ✅
+- Lint: ✅
+- Tests: ✅ (14 archivos, 86 pruebas)
+- Comprobado en el navegador contra un servidor de prueba que respondía el contrato: 12 tarjetas de igual alto en 3 columnas, página 2 con 2 tarjetas en 1 columna a 375 px y sin scroll horizontal.
+
+#### Pendientes y bloqueos
+- El endpoint real `GET /api/catalog` (lado back de BU-01) y el detalle (BU-02).
+- Los filtros llegan con BU-03; el diseño ya deja la URL como fuente de verdad.
+- Depende de que el PR #91 (F-07 y F-08) esté mergeado.
+
+#### Para el resto del equipo
+- Para listar con paginación, usa `Paginated<T>` de `src/features/catalog/types.ts` y el componente `Pagination`.
+- C: las tarjetas enlazan a `/spaces/:id`; ahí irá `<BookingWidget>` (BU-02).
+
+---
+
+### 2026-10-05 · B (xReNatS) · BU-02 detalle del espacio (front)
+
+**Issues:** #28 (BU-02), parte del front
+**Rama / PR:** `feat/BU-02-detalle`, apilada sobre `feat/BU-01-catalogo` (que depende del PR #91) · sin PR todavía
+**Duración aproximada:** 1,5 h
+**Herramientas:** Claude Code
+
+#### Objetivo
+Mostrar el detalle de un espacio según el prototipo aprobado: galería, descripción, equipamiento, reglas, horario, ubicación, reseñas y una caja de reserva con el lugar para el widget de C.
+
+#### Qué se hizo
+- `SpaceDetailPage` (`/spaces/:spaceId`): estado de carga, 404 con aviso y enlace al catálogo, error con "Reintentar", y las secciones que el espacio tiene (las vacías se omiten).
+- `Gallery`: foto principal y miniaturas accesibles (botones con `aria-pressed`); sin fotos muestra un marcador.
+- `groupSchedule`: agrupa los días consecutivos con el mismo horario ("Lunes a viernes 09:00 – 21:00", "Sábado y domingo no disponible"); el domingo (0) va al final.
+- `BookingSlot`: lugar del widget de reserva. Hoy dice que la reserva estará disponible pronto; C lo reemplaza por `<BookingWidget spaceId={...} />`.
+- `useRequest` (`src/lib/useRequest.ts`): el hook de carga que antes estaba dentro de `useCatalog`, ahora genérico. `useCatalog` y `useSpace` lo usan.
+- Handler de MSW para `GET /api/catalog/:id` (404 si no existe) y tipos del detalle según el contrato del back.
+- 28 pruebas nuevas (114 en total).
+
+#### Decisiones y por qué
+| Decisión | Alternativas consideradas | Por qué se eligió |
+|---|---|---|
+| Extraer `useRequest` | Repetir el patrón en cada pantalla | Ya había dos pantallas con la misma lógica de cancelación y carga; las que vienen (panel, editar) también la necesitan |
+| Sin mapa en la ubicación | El marcador de mapa del prototipo | El mapa es el extra ES-07; un recuadro vacío para el usuario no aporta |
+| La caja de reserva muestra un aviso y no un recuadro de desarrollo | Dejar la anotación "lo construye el equipo C" | Es texto que vería un usuario real; el comentario para C queda en el código de `BookingSlot` |
+| Secciones sin datos se omiten | Mostrar títulos vacíos | Un espacio puede publicarse sin reglas o equipamiento |
+| La etiqueta "Nuevo · sin reseñas aún" es fija | Quitarla | Está en el prototipo aprobado; se saca en RS-02 |
+
+#### Archivos principales
+- `rentsmart-front/src/features/catalog/`: `SpaceDetailPage`, `Gallery`, `BookingSlot`, `schedule`, `useSpace`, `catalog-api` y `types`, con sus pruebas.
+- `rentsmart-front/src/lib/useRequest.ts` (y su prueba).
+- `rentsmart-front/src/mocks/handlers.ts`: detalle simulado.
+
+#### Cómo probarlo
+- Desde `rentsmart-front`: `npm run lint`, `npm run build` y `npm test`.
+- Visual: con el back (`/api/catalog/:id`) o un servidor de prueba con el contrato. Se probó así a 375 px y en escritorio: galería con miniaturas, secciones, horario agrupado, 404 y espacio sin fotos.
+
+#### Estado de verificación
+- Build: ✅
+- Lint: ✅
+- Tests: ✅ (18 archivos, 114 pruebas)
+
+#### Pendientes y bloqueos
+- Depende de que se mergee el PR #91 (y BU-01 front después). El back del detalle está en `feat/BU-01-catalog-api`.
+- C (@gonzzza-lol): reemplazar `BookingSlot` por `<BookingWidget spaceId={space.id} />` (RE-02).
+- Probar contra el back real cuando los dos PR del back estén en `main`.
+
+#### Para el resto del equipo
+- Para cargar datos en una pantalla: `useRequest(clave, (signal) => llamada(signal))`; devuelve `data`, `error`, `loading` y `retry`.
+- `ApiError` trae `status`: un 404 se puede mostrar distinto de otros errores, como hace esta pantalla.
+
+---
+
+### 2026-10-05 · B (xReNatS) · ES-02 formulario por pasos para publicar (front)
+
+**Issues:** #21 (ES-02), parte del front
+**Rama / PR:** `feat/ES-02-wizard`, apilada sobre `feat/BU-02-detalle` (que depende del PR #91) · sin PR todavía
+**Duración aproximada:** 3 h
+**Herramientas:** Claude Code
+
+#### Objetivo
+Construir el formulario por pasos de "Publica tu espacio" según el prototipo aprobado, que guarda un borrador en cada paso contra la API real (`POST` y `PATCH /api/spaces`).
+
+#### Qué se hizo
+- `PublishSpacePage` y `SpaceWizard` en `/publish` y `/publish/:spaceId` (continuar un borrador): 5 pasos (Información, Ubicación, Precio y horario, Fotos, Revisar), listas de tipos, equipamiento y comunas que vienen de la API, y la región fija (Metropolitana).
+- Se guarda el borrador al cambiar de paso (Siguiente, Atrás o el indicador de pasos): el primer guardado hace `POST`, crea la URL `/publish/<id>` y los siguientes hacen `PATCH`. Si el servidor rechaza el guardado, se muestra el mensaje y no se avanza.
+- Validación en el cliente: solo el nombre es obligatorio; capacidad y precios, si se escriben, deben ser enteros positivos dentro de los límites del back.
+- La lista "Para publicar necesitas" se completa con lo que se escribe. Fotos y horario siguen pendientes hasta ES-03 y DI-01; el último paso resume el borrador y deja el botón "Publicar" desactivado.
+- Componentes nuevos `Select` y `Textarea`, y la ruta `/login` de desarrollo (`DevLoginPage`: guarda un token y vuelve a donde se iba), solo en desarrollo.
+- `vite.config.ts`: proxy de `/api` hacia `localhost:3000`. Con `VITE_API_URL=http://localhost:5173` el navegador no necesita CORS (llega con CU-05); `.env.example` y `docs/arquitectura.md` actualizados.
+- Handlers de MSW de regiones, comunas, equipamiento y de los espacios (con borradores en memoria).
+- 45 pruebas nuevas (159 en total).
+- Probado de punta a punta en el navegador contra el back real (rama de integración local con ES-02 y el catálogo): login de desarrollo, los 4 pasos, el borrador queda en la base como `DRAFT` con todos sus campos y no aparece en el catálogo público.
+
+#### Decisiones y por qué
+| Decisión | Alternativas consideradas | Por qué se eligió |
+|---|---|---|
+| Guardar al cambiar de paso, no con un botón aparte | Botón "Guardar borrador" | Es lo que promete el prototipo y evita perder trabajo |
+| La URL pasa a `/publish/:id` con `state.created`, sin recargar | Redirigir y volver a cargar el borrador | Recargar reiniciaba el paso y mostraba un parpadeo; cualquier otra navegación a `/publish` sí empieza de cero |
+| Región fija con la primera que devuelve la API | Selector de región | El seed solo trae la Metropolitana y la regla es "una lista cerrada" |
+| Fotos, horario y publicar quedan como avisos | Esconder esos pasos | Se ven en el flujo completo y A y C saben dónde se enchufan sus piezas |
+| Proxy de Vite en vez de CORS en el back | Habilitar CORS ahora | CORS es de A (CU-05); el proxy desbloquea el desarrollo sin tocar su dominio |
+| `/login` de desarrollo | Pedir poner el token a mano en la consola | Cualquiera del equipo puede probar las rutas privadas con un clic; en producción sigue el placeholder |
+
+#### Archivos principales
+- `rentsmart-front/src/features/spaces/`: `PublishSpacePage`, `SpaceWizard`, `form`, `spaces-api`, `types` y pruebas.
+- `rentsmart-front/src/components/Select.tsx` y `Textarea.tsx`.
+- `rentsmart-front/src/features/dev/DevLoginPage.tsx`, `src/routes.tsx`, `vite.config.ts`.
+- `rentsmart-front/src/mocks/handlers.ts`.
+
+#### Cómo probarlo
+- Desde `rentsmart-front`: `npm run lint`, `npm run build` y `npm test`.
+- Con el back (ver más abajo) en `localhost:3000` y `cp .env.example rentsmart-front/.env`: `npm run dev`, abrir `/publish`, entrar con el login de desarrollo y recorrer los pasos.
+- Sin back: `VITE_USE_MOCKS=true npm run dev` en Chrome o Edge usa MSW.
+
+#### Estado de verificación
+- Build: ✅
+- Lint: ✅
+- Tests: ✅ (22 archivos, 159 pruebas)
+- Navegador contra el back real: ✅ (descrito arriba). No se probó con el guard JWT de A, que no existe todavía.
+
+#### Pendientes y bloqueos
+- Depende de los PR #91 y #92 y de las ramas apiladas de BU-01 y BU-02.
+- ES-03 (fotos), DI-01 de C (horario semanal) y ES-04 (publicar de verdad) completan los pasos 3, 4 y 5.
+- Cuando A entregue CU-02, reemplazar la ruta `login` de `routes.tsx` y quitar `DevLoginPage`.
+
+#### Para el resto del equipo
+- **Si `docker compose up` no te conecta a la base:** en esta máquina ya había un PostgreSQL nativo escuchando en el puerto 5432, que ocupa el puerto de `db-dev`. Para la demo se usó otro contenedor en el puerto 5435 (`DATABASE_URL=postgresql://devuser:devpassword@localhost:5435/devdb`). Si te pasa lo mismo, cambia el puerto publicado en `docker-compose.yml` (solo local) o detén el PostgreSQL nativo.
+- Para llamar a la API en desarrollo sin CORS, deja `VITE_API_URL=http://localhost:5173` (ya es el valor de `.env.example`).
+- A (@AlejandroMG): el formulario espera que el back valide con `ValidationPipe`; los mensajes de error 400 se muestran tal cual.
+
+---
+
+### 2026-10-05 · B (xReNatS) · ES-03 subir y ordenar fotos (front)
+
+**Issues:** #22 (ES-03), parte del front
+**Rama / PR:** `feat/ES-03-photos-ui`, apilada sobre `feat/ES-02-wizard` · sin PR todavía
+**Duración aproximada:** 1,5 h
+**Herramientas:** Claude Code
+
+#### Objetivo
+Completar el paso "Fotos" del formulario de publicar: subir de 1 a 10 fotos, ordenarlas (la primera es la portada) y borrarlas, contra los endpoints de fotos del back.
+
+#### Qué se hizo
+- `PhotosStep`: botón "Agregar fotos" (selección múltiple), contador "n de 10 fotos", una tarjeta por foto con la insignia "Portada", mover a izquierda y derecha, "Hacer portada" y "Eliminar" (con confirmación en un `Modal`). Las fotos suben una a una y aparecen a medida que terminan, con un aviso de progreso.
+- `photo-rules`: validación en el cliente antes de subir (JPG, PNG o WebP, hasta 5 MB y lugar para hasta 10), con un mensaje por cada archivo rechazado; `moveItem` calcula el orden nuevo. El servidor vuelve a comprobar todo.
+- Con un error del servidor se muestra con el nombre del archivo y se sigue con las demás; con un 409 (espacio lleno) se deja de intentar. Si falla el orden o el borrado, la lista queda como estaba.
+- El formulario guarda las fotos al momento (no con el borrador): la lista "Para publicar necesitas" marca "Al menos una foto" y el resumen del último paso cuenta las fotos. `OwnerSpace` trae `photos`, así que un borrador abierto por su dirección muestra las suyas.
+- Handlers de MSW de las fotos (subir, ordenar y borrar), con imágenes de color generadas en el momento.
+- 38 pruebas nuevas (197 en total). Las pruebas encontraron un error de redacción ("no se subióron") y que `instanceof File` no sirve en MSW dentro de jsdom; ambos corregidos.
+- Probado de punta a punta en el navegador contra el back real: tres fotos subidas, "Hacer portada", orden guardado en la base, borrado que elimina la fila y el archivo, y las imágenes se ven (900×600) desde `/api/uploads` por el proxy.
+
+#### Decisiones y por qué
+| Decisión | Alternativas consideradas | Por qué se eligió |
+|---|---|---|
+| Subir de a una, mostrando cada foto al terminar | Subir todas en paralelo | El servidor limita a 10 de forma segura, pero el orden de llegada y los mensajes por archivo son más claros de a una |
+| Las fotos no pasan por el guardado del borrador | Incluirlas en el `PATCH` | Son archivos con su propio ciclo en el servidor (subir, ordenar, borrar) |
+| Botones ← → y "Hacer portada" | Arrastrar y soltar | Funciona con teclado y en móvil sin una librería; el arrastre queda como mejora |
+| Confirmar antes de eliminar | Borrar al instante | Una foto borrada no se recupera; el servidor también borra el archivo |
+| Validar en el cliente y en el servidor | Solo en el servidor | Evita subir un archivo de 20 MB solo para que lo rechace |
+
+#### Archivos principales
+- `rentsmart-front/src/features/spaces/`: `PhotosStep`, `photo-rules`, `spaces-api` y `types`, con sus pruebas.
+- `rentsmart-front/src/mocks/handlers.ts`.
+
+#### Cómo probarlo
+- Desde `rentsmart-front`: `npm run lint`, `npm run build` y `npm test`.
+- Con el back de ES-03 en `localhost:3000`: `npm run dev`, entrar con el login de desarrollo, crear un borrador y abrir el paso 4.
+
+#### Estado de verificación
+- Build: ✅
+- Lint: ✅
+- Tests: ✅ (24 archivos, 197 pruebas)
+- Navegador contra el back real: ✅ (descrito arriba).
+
+#### Pendientes y bloqueos
+- Depende del back de ES-03 (rama `feat/ES-03-photos-api`) y de la cadena de ramas anteriores.
+- Arrastrar y soltar para ordenar (mejora).
+- ES-04 (publicar de verdad) y el horario semanal (DI-01 de C) completan el flujo.
+
+#### Para el resto del equipo
+- Las fotos locales se ven bajo `/api/uploads`; con Supabase la `url` ya viene absoluta.
+
+---
+
+### 2026-10-05 · B (xReNatS) · ES-04 publicar desde el formulario (front)
+
+**Issues:** #23 (ES-04), parte del front
+**Rama / PR:** `feat/ES-04-publish-ui`, apilada sobre `feat/ES-03-photos-ui` · sin PR todavía
+**Duración aproximada:** 1,5 h
+**Herramientas:** Claude Code
+
+#### Objetivo
+Conectar el botón "Publicar espacio" del último paso con `POST /api/spaces/:id/publish`, mostrar exactamente qué falta cuando el back responde 409 y reflejar la regla nueva P-18 (tipo y comuna obligatorios).
+
+#### Qué se hizo
+- La lista "Para publicar necesitas" ahora tiene los 7 requisitos con los mismos códigos que el back (tipo, descripción, capacidad, comuna, precio, foto y horario), cada uno con el paso donde se completa (`REQUIREMENTS` en `form.ts`).
+- "Publicar espacio" guarda lo pendiente y pide publicar. Si el back responde 409 con `missing`, se muestra "Aún no puedes publicar. Te falta:" con un enlace "Ir al paso N" por cada cosa; el horario semanal se avisa "(se podrá cargar pronto)" sin enlace, porque DI-01 todavía no existe. El aviso desaparece al volver a guardar.
+- Si se publica, la pantalla cambia a "¡Tu espacio está publicado!" con enlaces a la ficha en el catálogo, a Mis espacios y a publicar otro.
+- Un borrador abierto que ya está publicado, desactivado o bloqueado se edita ("Edita tu espacio", "Cambios guardados") y no ofrece publicar: explica en qué estado está.
+- `missingFromError` lee `missing` de un `ApiError`; `publishSpace` y `changeSpaceStatus` en `spaces-api.ts` (el segundo lo usará el panel PN-01).
+- Handlers de MSW de publicar y cambiar estado, con las mismas reglas del back (el horario se da por cargado en la simulación).
+- 21 pruebas nuevas (218 en total).
+- Probado de punta a punta en el navegador contra el back real: con todo completo menos el horario, el back responde 409 y la pantalla dice "Horario semanal (se podrá cargar pronto)"; al insertar un horario a mano en la base, publica, el espacio sale primero en el catálogo público con su portada y horario, y la cuenta queda como propietaria.
+
+#### Decisiones y por qué
+| Decisión | Alternativas consideradas | Por qué se eligió |
+|---|---|---|
+| El botón está siempre disponible y el back dice qué falta | Desactivarlo hasta que la lista esté completa | La lista del cliente no conoce el horario; confiar en la respuesta del back evita duplicar la regla y muestra lo que realmente falta |
+| Sin enlace para el horario | Enlazar al paso 3 | Ese paso solo tiene un aviso hasta que DI-01 exista; un enlace que no lleva a nada confunde |
+| Los espacios publicados se editan en el mismo formulario | Pantalla de edición aparte (ES-05) | Es el mismo formulario; el back ya impide dejar incompleto un espacio activo |
+
+#### Archivos principales
+- `rentsmart-front/src/features/spaces/`: `SpaceWizard`, `form`, `spaces-api` y pruebas.
+- `rentsmart-front/src/mocks/handlers.ts`.
+
+#### Cómo probarlo
+- Desde `rentsmart-front`: `npm run lint`, `npm run build` y `npm test`.
+- Con el back de ES-04 en `localhost:3000`: completar un borrador hasta el último paso y pulsar "Publicar espacio".
+
+#### Estado de verificación
+- Build: ✅
+- Lint: ✅
+- Tests: ✅ (24 archivos, 218 pruebas)
+- Navegador contra el back real: ✅ (descrito arriba).
+
+#### Pendientes y bloqueos
+- Sin el horario semanal (DI-01 de C) un espacio nuevo no se puede publicar de verdad.
+- Panel "Mis espacios" con el interruptor activar/desactivar (PN-01 y ES-06 front).
+
+#### Para el resto del equipo
+- Los códigos de `missing` (`type`, `description`, `capacity`, `commune`, `price`, `photos`, `schedule`) son parte del contrato con el back.
+
+---
+
+### 2026-10-06 · B (xReNatS) · Revisión de #93 y #94 y subida de las ramas en 3 PR
+
+**Issues:** #27, #28 (BU-01, BU-02), #21, #22, #23, #25 (ES-02 a ES-06) y #48 (PN-01, solo la API)
+**Rama / PR:** `feat/BU-01-ES-04-front` (este PR, el del front), `feat/BU-01-catalog-api` y `feat/ES-02-ES-06-spaces-api` (los dos del back)
+**Duración aproximada:** 1 h
+**Herramientas:** Claude Code
+
+#### Objetivo
+Revisar los PR de A (#93 registro y #94 login) y subir mi trabajo, que estaba en 11 ramas apiladas, en tres PR para que C pueda revisarlo antes del viernes 9.
+
+#### Qué se hizo
+- Revisión de #93 (CU-01) y #94 (CU-02): aprobados. Observaciones en #94: el `JWT_SECRET` de `.env.example` es un valor válido, el token aún no se usa en la API (falta CU-03) y `RequireAuth` no reacciona al vencer el token.
+- Las 11 ramas apiladas se reunieron en tres PR contra `main`: back del catálogo (BU-01 y BU-02), back de espacios (ES-02 a ES-06 y la API de PN-01) y el front completo (catálogo, detalle, formulario con fotos y publicar).
+- Se trajo `main` (los merges de #91 y #92) a las tres ramas. Solo hubo conflicto en esta bitácora: se dejó la versión de `main` y se agregaron las entradas de cada rama.
+- Vitest: `testTimeout` de 15 s. Los tests del formulario por pasos usan `userEvent` y en un runner lento pasaban de los 5 s por defecto (falló una vez bajo carga).
+
+#### Decisiones y por qué
+| Decisión | Alternativas consideradas | Por qué se eligió |
+|---|---|---|
+| Tres PR grandes | Once PR chicos en cadena | El plazo es el 9 y cada PR en cadena espera la revisión del anterior; el CI solo corre sobre PR hacia `main`. Se pierde la regla de menos de 400 líneas, pero se conserva un commit por historia |
+| PR independientes entre sí | Apilar el de espacios sobre el del catálogo | Cada uno se puede mergear solo; el segundo en entrar resuelve un conflicto trivial en `app.module.ts` y en la bitácora |
+
+#### Cómo probarlo
+Back: `docker compose up -d db-test`, `npx prisma migrate deploy`, y en `rentsmart-back` (Node 24) `npm run lint`, `npm test`, `npm run test:e2e` y `npm run build`. Front: en `rentsmart-front`, `npm run lint`, `npm test` y `npm run build`.
+
+#### Estado de verificación
+- Back catálogo: lint ✅ · 20 unitarias ✅ · 29 e2e ✅ · build ✅
+- Back espacios: lint ✅ · 109 unitarias ✅ · 97 e2e ✅ · build ✅
+- Front: lint ✅ · 218 tests (24 archivos) ✅ · build ✅
+
+#### Pendientes y bloqueos
+- Cuando entren #93 y #94: usar el login de A y retirar `DevLoginPage`, y agregar `JWT_SECRET` al `.env` local. El guard temporal se cambia por `JwtAuthGuard` con CU-03.
+- Sin `<HorarioSemanal>` (DI-01, de C) no se puede publicar un espacio nuevo desde la app: el horario se carga a mano en la BD.
+- Falta el front del panel "Mis espacios" (PN-01), BU-03 (filtros) y probar el almacenamiento en Supabase con credenciales reales.
+
+#### Para el resto del equipo
+- C (@gonzzza-lol): son tres PR grandes; el orden sugerido de revisión es catálogo (back), espacios (back) y front. El front reserva el espacio de `<BookingWidget>` en el detalle y el del horario en el formulario.
+- A (@AlejandroMG): con #94 el back exige `JWT_SECRET`, así que los `.env` locales dejan de arrancar hasta agregarlo.
+
+---
+
+### 2026-10-06 · B (xReNatS) · PN-01 y ES-06 panel "Mis espacios" (front)
+
+**Issues:** #48 (PN-01, parte del front), #25 (ES-06, el interruptor), #24 (ES-05, el acceso a editar)
+**Rama / PR:** `feat/PN-01-mis-espacios`, apilada sobre `feat/BU-01-ES-04-front` (#98) · sin PR todavía
+**Duración aproximada:** 1 h
+**Herramientas:** Claude Code
+
+#### Objetivo
+Que el propietario vea sus espacios con el estado de cada uno y lo que le falta, y pueda editarlos y activarlos o desactivarlos, según el panel del prototipo aprobado.
+
+#### Qué se hizo
+- `/owner/spaces` deja de ser un placeholder: lee `GET /api/spaces/me` y muestra, por espacio, la portada, el estado (Activo, Inactivo, Borrador o Bloqueado), tipo, comuna, precio y "Falta: foto, precio y horario". Arriba, tres contadores por estado (un cuarto, de bloqueados, solo si hay).
+- Interruptor activar o desactivar con `PATCH /api/spaces/:id/status`. **Desactivar pide confirmación** (sale del catálogo y no recibe nuevas reservas; las confirmadas se mantienen, como dice `producto.md`); activar no. Si el back rechaza la activación con `missing[]`, el aviso dice qué falta. El estado se actualiza con lo que responde el servidor, sin recargar la lista.
+- Accesos a editar: "Editar" (publicados e inactivos) y "Completar" (borradores) abren el formulario `/publish/:id`. Los borradores no tienen interruptor (se publican desde el formulario) y los bloqueados por el administrador no tienen ningún acceso.
+- Estados de carga, error con reintento y vacío (invita a publicar el primero). A 375 px los contadores van en una fila y no hay scroll horizontal.
+- Mock de MSW para `GET /api/spaces/me` con la misma forma que el contrato. Las listas de tipos y comunas de los mocks se extrajeron a constantes para reutilizarlas.
+- Pruebas: 28 nuevas (helpers de texto, la página con sus estados y flujos, y el mock). Quedan 246 en 26 archivos.
+
+#### Decisiones y por qué
+| Decisión | Alternativas consideradas | Por qué se eligió |
+|---|---|---|
+| Confirmar al desactivar, no al activar | Confirmar siempre, o nunca | Desactivar saca la publicación del catálogo; activar es reversible y no tiene riesgo |
+| El interruptor tiene nombre fijo ("Publicación de X") y el estado va en `aria-checked` | Cambiar el nombre a "Activar X" o "Desactivar X" | Es la práctica de accesibilidad para `role="switch"`; el estado no debe cambiar su nombre |
+| "Próximas reservas" como aviso fijo | Mostrar datos de ejemplo | Las reservas son del equipo de C (RE-02 a RE-04) y hoy no existen; el prototipo lo marcaba para después del 9 |
+| Actualizar la lista con la respuesta del `PATCH` | Recargar `GET /api/spaces/me` | Evita el parpadeo y que la fila cambie de lugar al modificarse |
+
+#### Archivos principales
+- `rentsmart-front/src/features/owner/`: `OwnerSpacesPage`, `OwnerSpaceRow`, `owner-api`, `summary`, `types` y sus pruebas.
+- `rentsmart-front/src/mocks/handlers.ts` y `handlers.test.ts`.
+
+#### Cómo probarlo
+En `rentsmart-front`: `npm run lint`, `npm test` y `npm run build`. A mano, con el back (tras mergear #96 y #97) y el seed: entrar por `/login` y abrir `/owner/spaces`; desactivar un espacio, volver a activarlo, e intentar activar uno del seed (sin foto) para ver el aviso de lo que falta.
+
+#### Estado de verificación
+- Lint: ✅
+- Tests: ✅ (26 archivos, 246 pruebas)
+- Build: ✅
+- A mano, contra el back real con el seed: lista, borrador, desactivar con confirmación, reactivar y rechazo por falta de foto ✅. A 375 px y en escritorio ✅
+
+#### Pendientes y bloqueos
+- Próximas reservas de cada espacio (PN-01) y reservas por estado (PN-02): dependen de C.
+- ES-05: falta el test de que un cambio de precio no altera las reservas existentes; depende de las reservas de C.
+- Los espacios del seed están `ACTIVE` sin foto, así que desactivarlos y reactivarlos da el aviso de que falta la foto.
+
+#### Para el resto del equipo
+- C (@gonzzza-lol): el panel deja un bloque "Próximas reservas" para listar las de los espacios del usuario cuando existan; avísame el contrato.
+
+---
+
+### 2026-10-06 · B (xReNatS) · BU-03 filtros y búsqueda del catálogo (front)
+
+**Issues:** #29 (BU-03), parte del front
+**Rama / PR:** `feat/BU-03-catalog-filters`, apilada sobre `feat/BU-01-ES-04-front` (#98) · sin PR todavía
+**Duración aproximada:** 1,5 h
+**Herramientas:** Claude Code
+
+#### Objetivo
+Dar al catálogo el buscador y los filtros del prototipo aprobado, con la búsqueda guardada en la URL para poder compartirla.
+
+#### Qué se hizo
+- Franja superior del prototipo con el buscador por texto ("Busca por nombre, tipo o comuna"). La búsqueda se aplica al enviar (Enter o "Buscar"), no en cada tecla.
+- Un chip por tipo de espacio (con "Todos") y selectores de comuna y capacidad mínima. El precio tiene un selector "Por hora / Por día" y los selectores "Precio mínimo" y "Precio máximo", cada unidad con sus propias opciones. Las opciones que dejarían el rango al revés están deshabilitadas y, al cambiar de unidad, el precio se reinicia (las escalas no se parecen). Cada cambio se aplica al instante. "Limpiar filtros" aparece cuando hay alguno; la unidad sola no cuenta como filtro.
+- **La URL es la fuente de verdad**: `?q=sala&typeId=3&communeId=2&minCapacity=8&priceUnit=day&minPrice=30000&maxPrice=80000&page=2`. Se puede recargar, compartir y volver atrás. Un valor inválido o fuera de rango se ignora en vez de provocar un 400 de la API; si el valor de la URL no es una de las opciones del selector, igual se muestra. Cambiar un filtro vuelve a la página 1 y los enlaces de la paginación conservan los filtros.
+- Sin resultados: "No encontramos espacios con esos filtros" con un botón para limpiarlos. Si no cargan los tipos y las comunas, el catálogo y el buscador siguen funcionando.
+- El mock del catálogo filtra con las mismas reglas que el back. `SPACE_TYPES` y `COMMUNES` se extraen a constantes (igual que en el PR del panel, #99).
+- A 375 px el buscador ocupa todo el ancho con el botón debajo, y los chips y selectores se envuelven sin scroll horizontal.
+- Pruebas nuevas de la lógica de la URL y de la página con todos sus flujos. En esta rama, con Node 24, hay 324 en 28 archivos (incluye el panel y el login de A).
+
+#### Decisiones y por qué
+| Decisión | Alternativas consideradas | Por qué se eligió |
+|---|---|---|
+| Precio con unidad (por hora o por día) y selectores desde y hasta | Solo "Hasta $X / hora", como en el prototipo | Lo decidió Renato el 06-10: cumple "rango de precio" y deja encontrar los espacios que solo se arriendan por día. Se aparta un poco del prototipo, que traía solo el máximo por hora |
+| El texto se envía al apretar Enter o "Buscar" | Buscar mientras se escribe | Evita pedir resultados a medias y no llena el historial con una entrada por tecla |
+| Los tipos y las comunas se leen de la API que ya usa el formulario | Listas fijas en el código | Si el administrador agrega un tipo, aparece solo |
+
+#### Archivos principales
+- `rentsmart-front/src/features/catalog/`: `CatalogPage`, `FilterBar`, `SearchBox`, `filters`, `catalog-api`, `useCatalog` y sus pruebas.
+- `rentsmart-front/src/mocks/handlers.ts`, `src/components/icons.tsx` y `src/routes.test.tsx`.
+
+#### Cómo probarlo
+En `rentsmart-front` (Node 24): `npm run lint`, `npm test` y `npm run build`. A mano, con el back de #96 y la rama de filtros del back: abrir `/`, elegir un tipo, una comuna, buscar un texto, y recargar o copiar la URL.
+
+#### Estado de verificación
+- Lint: ✅
+- Tests: ✅ (28 archivos, 324 pruebas, con Node 24)
+- Build: ✅
+- A mano, contra el back real con el seed: chips, selectores, búsqueda con tildes, enlace compartido y 375 px ✅
+
+#### Pendientes y bloqueos
+- El orden de los resultados (BU-04) y el filtro por disponibilidad (BU-05) quedan para después del 9 de octubre.
+- Las opciones de precio son fijas por unidad (por hora hasta $30.000, por día hasta $200.000). Si el catálogo crece con otros precios habrá que revisarlas.
+
+#### Para el resto del equipo
+- C (@gonzzza-lol): cuando exista la disponibilidad, el filtro BU-05 irá junto a estos en `FilterBar`.
+
+---
+
+### 2026-10-05 · B (xReNatS) · BU-01 y BU-02 catálogo público (back)
+
+**Issues:** #27 (BU-01) y #28 (BU-02), parte del back
+**Rama / PR:** `feat/BU-01-catalog-api`, apilada sobre `feat/ES-01-space-types` (PR #92) · sin PR todavía
+**Duración aproximada:** 1,5 h
+**Herramientas:** Claude Code
+
+#### Objetivo
+Implementar los endpoints públicos que consume el front del catálogo, con la forma de respuesta que ya usa el front (`GET /api/catalog` paginado) y el detalle de un espacio.
+
+#### Qué se hizo
+- Módulo `catalog`: `GET /api/catalog?page=&pageSize=` (solo espacios activos, más recientes primero, `{ items, total, page, pageSize }`) y `GET /api/catalog/:id` (detalle público con equipamiento, fotos por posición y horario semanal; 404 si no existe o no está activo).
+- Validación de la consulta con un DTO: `page` ≥ 1 y `pageSize` de 1 a 50; un valor inválido o un parámetro desconocido da 400.
+- Privacidad (P-09): el `select` de Prisma es una lista blanca; `addressDetail`, `ownerId` y `status` nunca salen por la API.
+- Pruebas: 8 unitarias del servicio y 20 e2e contra la base de test. Una prueba rompe a propósito el filtro y la lista blanca para comprobar que los tests lo detectan (se hizo a mano y se restauró).
+- Documentación de los endpoints en `docs/arquitectura.md`.
+
+#### Decisiones y por qué
+| Decisión | Alternativas consideradas | Por qué se eligió |
+|---|---|---|
+| Una sola consulta transaccional para la página y el total | Dos consultas sueltas | El total y los items salen del mismo instante |
+| Orden `createdAt desc` con desempate por `id` | Solo `createdAt` | Con fechas iguales (seed) la paginación podía repetir o saltar espacios |
+| `select` explícito en lugar de excluir campos | Traer todo y borrar `addressDetail` | Si se agrega un campo privado al schema, no queda expuesto por accidente |
+| `typeName` y `communeName` vacíos si faltan | Descartar el espacio | El schema los deja opcionales, pero un espacio activo ya pasó las reglas de publicación (ES-04) |
+| El detalle usa `:id` sin validar el formato | `ParseUUIDPipe` | Los espacios del seed tienen ids como `seed-space-1`; un id inexistente da 404 igual |
+| Los e2e dan fechas de creación lejanas a sus espacios | Depender del orden de inserción | El orden queda fijo y los espacios no activos tienen fechas aún más nuevas, así que un filtro roto los haría aparecer arriba |
+
+#### Archivos principales
+- `rentsmart-back/src/catalog/`: módulo, controlador, servicio, DTOs y prueba unitaria.
+- `rentsmart-back/test/catalog.e2e-spec.ts` y `test/app.e2e-spec.ts` (Swagger lista los endpoints nuevos).
+- `docs/arquitectura.md`.
+
+#### Cómo probarlo
+- Con `docker compose up -d db-test`: en `rentsmart-back`, `npm run lint`, `npm run build`, `npm test` y `npm run test:e2e` (Node 24).
+- `npm run seed` y `npm run start:dev`: `GET http://localhost:3000/api/catalog` devuelve los 10 espacios del seed y `GET /api/catalog/seed-space-1` su detalle; Swagger en `/docs`.
+
+#### Estado de verificación
+- Build: ✅
+- Lint: ✅
+- Tests unitarios: ✅ (5 archivos, 20 pruebas)
+- Tests e2e: ✅ (3 archivos, 29 pruebas)
+
+#### Pendientes y bloqueos
+- Depende de que se mergee el PR #92 (ES-01 y base de la API).
+- BU-03 (filtros y búsqueda) y BU-04 (orden) se agregan como parámetros de este mismo endpoint.
+- El front del detalle (BU-02) sigue pendiente; ya existe el contrato.
+
+#### Para el resto del equipo
+- C: el detalle público trae `schedule` (el horario semanal) y el `id` que necesita `<BookingWidget spaceId>`. La disponibilidad real (bloques libres) sigue siendo `GET /api/spaces/:id/availability` (DI-02).
+- Cualquier endpoint público nuevo debe usar `select` explícito y tener un test que compruebe que no filtra `addressDetail`.
+
+---
+
+### 2026-10-06 · B (xReNatS) · BU-03 filtros y búsqueda del catálogo (back)
+
+**Issues:** #29 (BU-03), parte del back
+**Rama / PR:** `feat/BU-03-catalog-filters-api`, apilada sobre `feat/BU-01-catalog-api` (#96) · sin PR todavía
+**Duración aproximada:** 1 h
+**Herramientas:** Claude Code
+
+#### Objetivo
+Que `GET /api/catalog` filtre por tipo, comuna, capacidad mínima, rango de precio y texto libre, para que el front deje la búsqueda en la URL.
+
+#### Qué se hizo
+- Parámetros opcionales y combinables de `GET /api/catalog`: `typeId`, `communeId`, `minCapacity`, `minPrice`, `maxPrice`, `priceUnit` y `q`. Todos deben cumplirse y `total` cuenta solo los que cumplen, así la paginación sigue bien.
+- Validan con `class-validator` y topes (los mismos que al publicar): un valor inválido o enorme da 400, no un 500 por desbordar el `Int` de Postgres. Un precio mínimo mayor que el máximo da 400 con mensaje.
+- `q` usa hasta 5 palabras y cada una debe aparecer en el nombre, la descripción, el tipo o la comuna, sin distinguir mayúsculas. **No busca en la dirección ni en su detalle**: así la búsqueda no sirve para averiguar el detalle privado (P-09). Hay un e2e que lo comprueba.
+- `contains` de Prisma no escapa los comodines de LIKE: buscar `%` listaba todo. Ahora se escapan `%`, `_` y la barra invertida (lo descubrió el e2e).
+- Swagger describe cada parámetro y la respuesta 400. `docs/arquitectura.md` documenta el contrato.
+- `priceUnit` (`hour` por defecto o `day`) elige si `minPrice` y `maxPrice` se aplican al precio por hora o por día (decidido con Renato el 06-10).
+- Pruebas nuevas unitarias y e2e. En esta rama, con Node 24, hay 54 unitarias y 88 e2e en total.
+
+#### Decisiones y por qué
+| Decisión | Alternativas consideradas | Por qué se eligió |
+|---|---|---|
+| `priceUnit` (`hour` o `day`) elige a qué precio se aplican `minPrice` y `maxPrice` | Aceptar cualquiera de los dos precios, o filtrar solo por hora | Los dos precios están en escalas distintas (miles contra decenas de miles) y mezclarlos confunde. Un espacio que no se arrienda en esa unidad queda fuera de un filtro de precio. Lo decidió Renato el 06-10 |
+| Cada palabra de `q` en cualquiera de cuatro campos | Una sola frase exacta, o también buscar en la dirección | Con "sala providencia" se encuentra una sala en Providencia. La dirección y su detalle quedan fuera por privacidad |
+| No ignora las tildes ("camara" no encuentra "Cámara") | Extensión `unaccent` de Postgres | Exigiría una migración, y el esquema es de A. Se puede ver después |
+
+#### Archivos principales
+- `rentsmart-back/src/catalog/`: `dto/list-catalog-query.dto`, `catalog.service`, `catalog.controller` y `catalog.service.spec`.
+- `rentsmart-back/test/catalog-filters.e2e-spec.ts`.
+- `docs/arquitectura.md`.
+
+#### Cómo probarlo
+Con una BD de test migrada, en `rentsmart-back` (Node 24): `npm run lint`, `npm test`, `npm run test:e2e` y `npm run build`. A mano, con el seed: `GET /api/catalog?typeId=1&maxPrice=14000&q=sala` en Swagger (http://localhost:3000/docs).
+
+#### Estado de verificación
+- Lint: ✅
+- Tests unitarios: ✅ (6 archivos, 54 pruebas)
+- Tests e2e: ✅ (6 archivos, 88 pruebas)
+- Build: ✅
+
+#### Pendientes y bloqueos
+- El orden de los resultados (BU-04) queda para después del 9 de octubre.
+- Filtrar por disponibilidad (BU-05) depende de las reservas de C.
+
+#### Para el resto del equipo
+- A (@AlejandroMG): no toca `schema.prisma`. Una búsqueda sin tildes (`unaccent`) requeriría una migración suya, si se quiere.
+
+---
+
 ### 2026-10-05 · B (xReNatS) · ES-02 espacios del propietario y autenticación temporal (back)
 
 **Issues:** #21 (ES-02), parte del back

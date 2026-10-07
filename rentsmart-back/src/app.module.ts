@@ -8,6 +8,7 @@ import { SpaceTypesModule } from './space-types/space-types.module';
 import { SpacesModule } from './spaces/spaces.module';
 import { StorageModule } from './storage/storage.module';
 import { AuthModule } from './auth/auth.module';
+import { CatalogModule } from './catalog/catalog.module';
 
 @Module({
   imports: [
@@ -17,6 +18,7 @@ import { AuthModule } from './auth/auth.module';
     SpaceTypesModule,
     SpacesModule,
     AuthModule,
+    CatalogModule,
   ],
   controllers: [AppController],
   providers: [AppService],

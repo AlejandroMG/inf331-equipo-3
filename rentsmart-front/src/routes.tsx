@@ -25,7 +25,7 @@ export const routes: RouteObject[] = [
       {
         element: <RequireAuth />,
         children: [
-          { path: 'publish', element: <PublishSpacePage /> },
+          { path: 'publish/:spaceId?', element: <PublishSpacePage /> },
           { path: 'owner/spaces', element: <OwnerSpacesPage /> },
         ],
       },

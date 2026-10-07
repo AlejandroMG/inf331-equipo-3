@@ -39,6 +39,8 @@ describe('API base (e2e)', () => {
         '/api/amenities',
         '/api/regions',
         '/api/regions/{id}/communes',
+        '/api/catalog',
+        '/api/catalog/{id}',
       ]),
     );
   });
