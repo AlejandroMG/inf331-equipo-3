@@ -1592,3 +1592,39 @@ Dejar `JwtAuthGuard`, `RolesGuard` y `@CurrentUser()` listos para los demás mó
 - En los e2e: `bearer(app, userId)` de `test/utils/auth.ts`.
 
 ---
+
+### 2026-10-07 · B (xReNatS) · ES-05 editar un espacio: las reservas conservan su total
+
+**Issues:** #24 (ES-05)
+**Rama / PR:** `feat/ES-05-editar-espacio` · sin PR todavía
+**Duración aproximada:** 30 min
+**Herramientas:** Claude Code
+
+#### Objetivo
+Cerrar ES-05. El formulario ya edita un espacio (la misma pantalla de publicar, con "Edita tu espacio"), y la API ya deja cambiar sus datos con las reglas de P-18. Faltaba lo único que pide el criterio: demostrar que un cambio de precio aplica solo a las reservas nuevas.
+
+#### Qué se hizo
+- No hubo que cambiar código: `Booking` guarda `subtotal`, `fee` y `total` al crearse y no los calcula desde el precio del espacio, así que editar el precio no puede tocar una reserva que ya existe.
+- Se agregó `test/space-edit-bookings.e2e-spec.ts` (5 pruebas) que lo demuestra: con un espacio publicado y una reserva confirmada de 3 horas, cambiar el precio por hora y por día, quitar el precio por día, o editar el nombre, la descripción y la capacidad deja la reserva con el mismo subtotal, comisión, total y estado; el público ve el precio nuevo; y desactivar el espacio mantiene la reserva confirmada (criterio de ES-06).
+
+#### Decisiones y por qué
+| Decisión | Alternativas consideradas | Por qué se eligió |
+|---|---|---|
+| Probar con reservas creadas directo en la base de datos | Esperar a la API de reservas (RE-02, de C) | El criterio se cumple por cómo está modelada `Booking`, no por código de reservas: la prueba no depende de nada de C, y cuando exista RE-02 sigue valiendo |
+
+#### Archivos principales
+- `rentsmart-back/test/space-edit-bookings.e2e-spec.ts`.
+
+#### Cómo probarlo
+En `rentsmart-back` (Node 24): `npm run lint`, `npm run build`, `npm test` y `npm run test:e2e`.
+
+#### Estado de verificación
+- Lint: ✅ · Build: ✅ · e2e: ✅ (Node 24, BD de test migrada y sin seed)
+
+#### Pendientes y bloqueos
+- Cuando C entregue RE-02, conviene sumar una prueba que cree la reserva por la API y no por la base de datos.
+
+#### Para el resto del equipo
+- C (@gonzzza-lol): al crear una reserva hay que guardar `subtotal`, `fee` y `total` calculados en ese momento (como ya prevé el modelo); es lo que hace que editar el precio de un espacio no afecte a las reservas existentes.
+
+---
