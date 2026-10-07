@@ -2,15 +2,25 @@ import { useState } from 'react'
 import { Link, NavLink, useNavigate } from 'react-router'
 import { cn } from '../lib/cn'
 import { paths } from '../lib/paths'
-import { useRole } from '../lib/role'
+import { useCurrentUser } from '../features/auth/useCurrentUser'
 import { clearToken, useToken } from '../lib/token'
 import { Button, LinkButton } from './Button'
 import { CloseIcon, MenuIcon } from './icons'
 
-const links = [
-  { to: paths.home, label: 'Explorar', end: true },
-  { to: paths.ownerSpaces, label: 'Mis espacios', end: false },
-]
+interface NavItem {
+  to: string
+  label: string
+  end: boolean
+}
+
+/** Menú según la sesión (CU-03): "Mis espacios" con sesión y "Administración" solo para ADMIN. */
+function linksFor(loggedIn: boolean, isAdmin: boolean): NavItem[] {
+  return [
+    { to: paths.home, label: 'Explorar', end: true },
+    ...(loggedIn ? [{ to: paths.ownerSpaces, label: 'Mis espacios', end: false }] : []),
+    ...(isAdmin ? [{ to: paths.admin, label: 'Administración', end: false }] : []),
+  ]
+}
 
 function navLinkClass({ isActive }: { isActive: boolean }) {
   return cn(
@@ -39,8 +49,8 @@ export function Navbar() {
   const closeMenu = () => setMenuOpen(false)
   const navigate = useNavigate()
   const loggedIn = useToken() !== null
-  // Los administradores ven además el enlace a la moderación; la API es quien lo exige.
-  const visibleLinks = useRole() === 'ADMIN' ? [...links, { to: paths.adminSpaces, label: 'Administración', end: false }] : links
+  const { user } = useCurrentUser()
+  const links = linksFor(loggedIn, user?.role === 'ADMIN')
 
   const logout = () => {
     closeMenu()
@@ -57,7 +67,7 @@ export function Navbar() {
         </Link>
 
         <nav aria-label="Principal" className="hidden items-center gap-1 md:flex">
-          {visibleLinks.map((link) => (
+          {links.map((link) => (
             <NavLink key={link.to} to={link.to} end={link.end} className={navLinkClass}>
               {link.label}
             </NavLink>
@@ -95,7 +105,7 @@ export function Navbar() {
 
       {menuOpen && (
         <nav id="menu-movil" aria-label="Principal" className="flex flex-col gap-1 border-t border-line px-4 py-3 md:hidden">
-          {visibleLinks.map((link) => (
+          {links.map((link) => (
             <NavLink key={link.to} to={link.to} end={link.end} onClick={closeMenu} className={navLinkClass}>
               {link.label}
             </NavLink>

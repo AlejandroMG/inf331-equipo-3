@@ -10,4 +10,5 @@ export const paths = {
   adminSpaceTypes: '/admin/space-types',
   login: '/login',
   register: '/register',
+  admin: '/admin',
 } as const
