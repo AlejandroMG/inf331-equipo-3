@@ -99,4 +99,14 @@ export class AuthService {
     const payload: JwtPayload = { sub: user.id, role: user.role };
     return { accessToken: await this.jwt.signAsync(payload), user };
   }
+
+  /** El usuario de la sesión. JwtAuthGuard ya comprobó que existe y está activo. */
+  async me(userId: string): Promise<PublicUser> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: publicUserSelect,
+    });
+    if (!user) throw new UnauthorizedException('Inicia sesión para continuar.');
+    return user;
+  }
 }

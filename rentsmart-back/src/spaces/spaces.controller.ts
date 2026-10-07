@@ -13,7 +13,7 @@ import {
   ApiConflictResponse,
   ApiCreatedResponse,
   ApiForbiddenResponse,
-  ApiHeader,
+  ApiBearerAuth,
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
@@ -22,7 +22,7 @@ import {
 } from '@nestjs/swagger';
 import type { AuthUser } from '../common/auth/auth-user';
 import { CurrentUser } from '../common/auth/current-user.decorator';
-import { DevAuthGuard } from '../common/auth/dev-auth.guard';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CreateSpaceDto } from './dto/create-space.dto';
 import { ChangeStatusDto } from './dto/change-status.dto';
 import { OwnerSpaceSummaryDto } from './dto/owner-space-summary.dto';
@@ -31,15 +31,10 @@ import { UpdateSpaceDto } from './dto/update-space.dto';
 import { PublicationService } from './publication.service';
 import { SpacesService } from './spaces.service';
 
-// TEMPORAL: DevAuthGuard se reemplaza por el JwtAuthGuard de A (CU-03) sin cambiar nada más.
 @ApiTags('Espacios del propietario')
-@ApiHeader({
-  name: 'x-user-id',
-  required: false,
-  description: 'Solo desarrollo: id del usuario que actúa. Sin él, el propietario del seed. Se reemplaza por el token JWT.',
-})
+@ApiBearerAuth()
 @ApiUnauthorizedResponse({ description: 'Sin sesión' })
-@UseGuards(DevAuthGuard)
+@UseGuards(JwtAuthGuard)
 @Controller('spaces')
 export class SpacesController {
   constructor(
