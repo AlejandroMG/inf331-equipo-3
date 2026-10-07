@@ -1,6 +1,8 @@
 import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { NestExpressApplication } from '@nestjs/platform-express';
 import { ConfigService } from '@nestjs/config';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { UPLOADS_PREFIX, uploadsDir } from './storage/storage.service';
 
 const DEFAULT_FRONTEND_URL = 'http://localhost:5173';
 
@@ -24,6 +26,12 @@ export function configureApp(app: INestApplication): void {
       transform: true,
     }),
   );
+  // Con el almacenamiento local las fotos se sirven desde disco; con Supabase las sirve Supabase.
+  if (process.env.STORAGE_DRIVER !== 'supabase') {
+    (app as NestExpressApplication).useStaticAssets(uploadsDir(), {
+      prefix: UPLOADS_PREFIX,
+    });
+  }
 }
 
 export function setupSwagger(app: INestApplication): void {

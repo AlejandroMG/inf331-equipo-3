@@ -1167,3 +1167,220 @@ Con una BD de test migrada, en `rentsmart-back` (Node 24): `npm run lint`, `npm 
 - A (@AlejandroMG): no toca `schema.prisma`. Una búsqueda sin tildes (`unaccent`) requeriría una migración suya, si se quiere.
 
 ---
+
+### 2026-10-05 · B (xReNatS) · ES-02 espacios del propietario y autenticación temporal (back)
+
+**Issues:** #21 (ES-02), parte del back
+**Rama / PR:** `feat/ES-02-spaces-api`, apilada sobre `feat/ES-01-space-types` (PR #92) · sin PR todavía
+**Duración aproximada:** 2 h
+**Herramientas:** Claude Code
+
+#### Objetivo
+Adelantar el back de "publicar un espacio" sin esperar el login de A: crear y editar el borrador del espacio, con la autenticación mientras tanto resuelta con un guard temporal que se puede cambiar por el real sin tocar los controladores.
+
+#### Qué se hizo
+- Módulo `spaces`: `POST /api/spaces` (crea en `DRAFT`, solo el nombre es obligatorio), `PATCH /api/spaces/:id` (parcial; `null` borra un campo opcional; `amenityIds` reemplaza el equipamiento) y `GET /api/spaces/:id` (con el detalle privado de la dirección). Solo el dueño accede: 403 si es de otro, 404 si no existe.
+- Validación de referencias: tipo, región, comuna y equipamiento deben existir, y la comuna debe ser de la región; si solo llega la comuna se guarda su región. El estado y el dueño no se pueden mandar (400).
+- `src/common/auth/`: `DevAuthGuard` (usuario por `x-user-id` o el propietario del seed), `@CurrentUser()` y `AuthUser`. Con `NODE_ENV=production` el guard rechaza todo.
+- Pruebas: 17 unitarias nuevas (servicio y guard) y 30 e2e nuevos. Se rompió a propósito la comprobación de dueño para verificar que los tests de 403 la detectan (se restauró).
+- Documentación en `docs/arquitectura.md`.
+
+#### Decisiones y por qué
+| Decisión | Alternativas consideradas | Por qué se eligió |
+|---|---|---|
+| `DevAuthGuard` temporal con la forma del guard real | Esperar a A; o construir el login yo | Desbloquea ES-02 a ES-06 y PN-01 sin invadir el dominio de A; el cambio a JWT es reemplazar el guard en cada `@UseGuards` |
+| El guard no funciona en producción | Dejarlo y confiar en que se reemplace | Cualquiera podría hacerse pasar por otro usuario; un olvido no debe llegar a producción |
+| Casi todos los campos opcionales y `null` para borrar | Campos obligatorios por paso | El formulario guarda un borrador en cada paso; las reglas para publicar son de ES-04 |
+| Reemplazar todo el equipamiento en cada `PATCH` | Agregar y quitar por separado | El formulario manda la selección completa; es más simple y no hay estados intermedios |
+| 403 (y no 404) para el espacio de otro | 404 para no revelar que existe | Lo pide el AGENTS.md y los ids son uuid; no hay nada que adivinar |
+
+#### Archivos principales
+- `rentsmart-back/src/spaces/`: módulo, controlador, servicio, DTOs y prueba.
+- `rentsmart-back/src/common/auth/`: guard temporal, decorador y tipo.
+- `rentsmart-back/test/spaces.e2e-spec.ts`.
+- `docs/arquitectura.md`.
+
+#### Cómo probarlo
+- Con `docker compose up -d db-test`, en `rentsmart-back` (Node 24): `npm run lint`, `npm run build`, `npm test` y `npm run test:e2e`.
+- A mano: `npm run seed`, `npm run start:dev` y en Swagger (`/docs`) probar `POST /api/spaces` (sin `x-user-id` actúa el propietario del seed).
+
+#### Estado de verificación
+- Build: ✅
+- Lint: ✅
+- Tests unitarios: ✅ (6 archivos, 29 pruebas)
+- Tests e2e: ✅ (3 archivos, 39 pruebas)
+
+#### Pendientes y bloqueos
+- Depende de que se mergee el PR #92.
+- ES-03 (fotos), ES-04 (publicar), ES-05/06 (editar y activar) y `GET /api/spaces/me` (PN-01) siguen pendientes.
+- A (@AlejandroMG): cuando entregue CU-03, reemplazar `DevAuthGuard` por `JwtAuthGuard` en `SpacesController` y borrar `dev-auth.guard.ts`. `@CurrentUser()` y `AuthUser` pueden quedar si el guard real deja `request.user` con la misma forma.
+
+#### Para el resto del equipo
+- Para proteger un endpoint nuevo: `@UseGuards(DevAuthGuard)` y `@CurrentUser() user: AuthUser`. En los e2e, `set('x-user-id', id)` actúa como ese usuario.
+- Los permisos por dueño se comprueban en el servicio, no en el controlador.
+
+---
+
+### 2026-10-05 · B (xReNatS) · ES-03 subir y ordenar fotos (back) y almacenamiento de archivos
+
+**Issues:** #22 (ES-03), parte del back
+**Rama / PR:** `feat/ES-03-photos-api`, apilada sobre `feat/ES-02-spaces-api` (que depende del PR #92) · sin PR todavía
+**Duración aproximada:** 2,5 h
+**Herramientas:** Claude Code
+
+#### Objetivo
+Permitir que el propietario suba de 1 a 10 fotos a su espacio, las ordene (la primera es la portada) y las borre, con un `StorageService` intercambiable: disco local mientras no haya credenciales de Supabase.
+
+#### Qué se hizo
+- Módulo `storage`: `StorageService` (clase abstracta), `LocalStorageService` (disco, servido en `/api/uploads`) y `SupabaseStorageService` (API REST de Supabase con `fetch`, sin dependencias). Se elige con `STORAGE_DRIVER`; con `supabase` la API no arranca si faltan `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` o `SUPABASE_BUCKET`.
+- Endpoints: `POST /api/spaces/:id/photos` (multipart `file`), `PATCH /api/spaces/:id/photos/order` y `DELETE /api/spaces/:id/photos/:photoId`. `GET /api/spaces/:id` ahora trae `photos` ordenadas.
+- Reglas: JPG, PNG o WebP de hasta 5 MB (413 si pesa más) y hasta 10 por espacio (409). El formato se reconoce por los primeros bytes, no por el nombre ni el tipo declarado. El archivo se guarda con un nombre propio y el original se descarta.
+- Subidas simultáneas: se bloquea la fila del espacio (`FOR UPDATE`), así no se pasan de 10 ni repiten posición. Al borrar una foto, las siguientes suben una posición.
+- Si la base falla o se pasa del límite después de subir el archivo, se borra el archivo; si borrarlo falla, se anota y se sigue.
+- Pruebas: 34 unitarias nuevas (formato, almacenamiento local y de Supabase con `fetch` simulado, servicio de fotos y validación del entorno) y 19 e2e nuevos (63 y 58 en total). Se comprobó que el test de subidas simultáneas falla si se quita el bloqueo (se hizo a mano y se restauró).
+- Documentación en `docs/arquitectura.md`, `.env.example` y la tabla de variables.
+
+#### Decisiones y por qué
+| Decisión | Alternativas consideradas | Por qué se eligió |
+|---|---|---|
+| Supabase con `fetch` y la API REST | Instalar `@supabase/supabase-js` | Son dos llamadas (subir y borrar) y así se prueba con un `fetch` simulado, sin una dependencia más |
+| Local por defecto, Supabase por variable | Esperar las credenciales | Desbloquea el desarrollo y los tests ahora; la implementación de Supabase está lista pero sin probar contra un proyecto real |
+| Formato por los bytes del archivo | Confiar en el tipo MIME | El MIME lo manda el navegador y se puede falsear (un HTML con `Content-Type: image/png`) |
+| 409 al pasar de 10 fotos | 400 | Es un conflicto con el estado actual del espacio, no un dato mal escrito (AGENTS.md) |
+| Bloqueo de la fila del espacio | Contar y crear sin bloqueo | Sin él, dos subidas a la vez superaban el máximo (el test lo demuestra) |
+| Las fotos locales se sirven bajo `/api/uploads` | `/uploads` | Queda dentro del proxy de Vite en desarrollo y el prefijo de la API |
+| Subir primero el archivo y luego registrar | Registrar primero | Si el archivo falla no queda una fila apuntando a nada; si la fila falla se borra el archivo |
+
+#### Archivos principales
+- `rentsmart-back/src/storage/`: servicio abstracto, local, Supabase, módulo y pruebas.
+- `rentsmart-back/src/spaces/`: `photos.controller`, `photos.service`, `image-type`, `dto/photo.dto` y pruebas.
+- `rentsmart-back/src/config/env.validation.ts`, `src/app.setup.ts`, `src/app.module.ts`, `tsconfig.json` (tipos de multer).
+- `rentsmart-back/test/photos.e2e-spec.ts` y `test/utils/setup-env.ts` (carpeta temporal para las fotos de los e2e).
+
+#### Cómo probarlo
+- Con `docker compose up -d db-test`, en `rentsmart-back` (Node 24): `npm run lint`, `npm run build`, `npm test` y `npm run test:e2e`.
+- A mano: Swagger en `/docs`, `POST /api/spaces/{id}/photos` con un archivo; la foto se ve en la dirección `url` que devuelve.
+
+#### Estado de verificación
+- Build: ✅
+- Lint: ✅
+- Tests unitarios: ✅ (9 archivos, 63 pruebas)
+- Tests e2e: ✅ (4 archivos, 58 pruebas)
+- No verificado: `SupabaseStorageService` contra un proyecto real de Supabase.
+
+#### Pendientes y bloqueos
+- Depende del PR #92 y de la rama de ES-02.
+- Probar el almacenamiento con Supabase real cuando haya proyecto, bucket `space-photos` público y credenciales; decidir dónde configurarlas en el despliegue (P-17).
+- Borrar los archivos de un espacio cuando se borra el espacio (hoy no existe borrar espacios).
+- El front de ES-03 (subir, ordenar y borrar fotos en el paso 4) va en la rama del front.
+
+#### Para el resto del equipo
+- Nunca subir `SUPABASE_SERVICE_ROLE_KEY` al repositorio ni al front.
+- El catálogo público (`GET /api/catalog/:id`) ya muestra las fotos por posición, con la portada primero.
+
+---
+
+### 2026-10-05 · B (xReNatS) · ES-04 publicar con reglas y ES-06 activar y desactivar (back)
+
+**Issues:** #23 (ES-04), #25 (ES-06) y parte de #24 (ES-05), parte del back
+**Rama / PR:** `feat/ES-04-publish-api`, apilada sobre `feat/ES-03-photos-api` · sin PR todavía
+**Duración aproximada:** 2 h
+**Herramientas:** Claude Code
+
+#### Objetivo
+Cerrar el ciclo de vida del espacio en la API: publicar un borrador solo si está completo, y activar o desactivar un espacio publicado, sin que un espacio activo pueda quedar incompleto.
+
+#### Qué se hizo
+- `POST /api/spaces/:id/publish`: pasa un borrador a `ACTIVE` y marca la cuenta como propietaria (`isHost`, P-02). Si falta algo responde 409 con `missing` (`type`, `description`, `capacity`, `commune`, `price`, `photos`, `schedule`).
+- `PATCH /api/spaces/:id/status` (`ACTIVE` o `INACTIVE`): desactivar saca el espacio del catálogo; activar exige seguir cumpliendo lo necesario (el espacio pudo editarse mientras estaba desactivado). Pedir el estado que ya tiene no hace nada. Un borrador no se cambia por aquí (409) y uno `BLOCKED` por un admin no se toca (403).
+- Un espacio publicado no puede quedar incompleto: `PATCH /api/spaces/:id` y borrar su última foto responden 409 con `missing` (un cambio de precio, nombre o reglas sí vale). Esto adelanta parte de ES-05.
+- Las reglas viven en un solo lugar (`publish-rules.ts`) y las usan publicar, reactivar y editar.
+- Los cambios de estado son condicionales (`WHERE status = <anterior>`) dentro de una transacción: peticiones a la vez no se pisan.
+- Decisión de producto: tipo y comuna también son obligatorios para publicar (**P-18**, registrada en `docs/decisiones.md` y `docs/producto.md`).
+- Pruebas: 42 unitarias nuevas y 32 e2e nuevos (105 y 90 en esta rama). En una carpeta de integración con el catálogo, un e2e adicional comprueba el recorrido completo: el borrador no sale en el catálogo, publicado sí, desactivado ya no y reactivado vuelve, y el detalle público no muestra `addressDetail` (111 e2e en total).
+- Documentación en `docs/arquitectura.md`.
+
+#### Decisiones y por qué
+| Decisión | Alternativas consideradas | Por qué se eligió |
+|---|---|---|
+| Exigir también tipo y comuna (P-18) | Solo lo de `producto.md` | Sin ellos la tarjeta sale sin tipo ni comuna y el espacio no aparece en los filtros de BU-03; lo confirmó Renato |
+| 409 con `missing` | 400 | Es un conflicto con el estado del espacio (AGENTS.md); `missing` permite al front indicar exactamente qué completar |
+| Estado pedido igual al actual = 200 sin cambios | 409 | Un doble clic o un reintento no debe dar error |
+| Un espacio activo no puede quedar incompleto | Dejarlo y que el catálogo tolere vacíos | Si no, "publicado" dejaría de significar "completo" y el catálogo mostraría espacios sin precio ni fotos |
+| Publicar y cambiar estado en endpoints distintos | Un solo `PATCH status` | Publicar tiene efectos propios (`isHost`) y reglas de borrador; el cambio ACTIVE/INACTIVE es otra cosa |
+| El horario se valida contra `AvailabilityRule` | Esperar a DI-01 | Es lo que dice el plan; mientras C no entregue DI-01 un espacio nuevo no se puede publicar desde la app |
+
+#### Archivos principales
+- `rentsmart-back/src/spaces/`: `publication.service`, `publish-rules`, `incomplete-space.exception`, `dto/change-status.dto`, y cambios en `spaces.controller`, `spaces.service` y `photos.service`.
+- `rentsmart-back/test/publication.e2e-spec.ts` y las pruebas unitarias.
+- `docs/decisiones.md` (P-18), `docs/producto.md`, `docs/arquitectura.md`.
+
+#### Cómo probarlo
+- Con `docker compose up -d db-test`, en `rentsmart-back` (Node 24): `npm run lint`, `npm run build`, `npm test` y `npm run test:e2e`.
+- A mano: en Swagger, `POST /api/spaces/{id}/publish` sobre un borrador incompleto devuelve la lista de lo que falta.
+
+#### Estado de verificación
+- Build: ✅
+- Lint: ✅
+- Tests unitarios: ✅ (11 archivos, 105 pruebas)
+- Tests e2e: ✅ (5 archivos, 90 pruebas en esta rama; 111 con el catálogo integrado)
+- Nota: el e2e de "peticiones a la vez" detecta quitar la condición del estado solo a veces (la carga no siempre se cruza); la garantía real la dan la condición del `UPDATE` y su prueba unitaria.
+
+#### Pendientes y bloqueos
+- El horario semanal (DI-01, de C): sin él no se puede publicar un espacio nuevo desde la app.
+- Front: agregar tipo y comuna a la lista "Para publicar necesitas", conectar "Publicar espacio" y el interruptor activar/desactivar del panel (PN-01).
+- Cuando el catálogo y `spaces` estén en `main`, agregar el e2e de recorrido completo (publicar → catálogo) como prueba permanente; hoy vive solo en la carpeta de integración porque cada rama tiene un solo lado.
+- Admin: bloquear y desbloquear espacios (AD-02) pondrá `BLOCKED`.
+
+#### Para el resto del equipo
+- C (@gonzzza-lol): para que publicar funcione, DI-01 debe crear `AvailabilityRule` del espacio; con una regla basta para el chequeo.
+- A (@AlejandroMG): al reemplazar `DevAuthGuard` por el JWT, los endpoints nuevos usan el mismo patrón.
+- Las reservas confirmadas de un espacio desactivado se mantienen: C debe impedir reservas nuevas solo cuando `status !== 'ACTIVE'`.
+
+---
+
+### 2026-10-05 · B (xReNatS) · PN-01 mis espacios (back)
+
+**Issues:** #48 (PN-01), parte del back
+**Rama / PR:** `feat/PN-01-owner-spaces-api`, apilada sobre `feat/ES-04-publish-api` · sin PR todavía
+**Duración aproximada:** 45 min
+**Herramientas:** Claude Code
+
+#### Objetivo
+Dar al panel "Mis espacios" los datos que necesita: la lista de los espacios del usuario con su estado y lo que le falta a cada uno.
+
+#### Qué se hizo
+- `GET /api/spaces/me`: los espacios del usuario, de cualquier estado, los modificados más recientemente primero. Cada uno trae `{ id, status, name, typeName, communeName, pricePerHour, pricePerDay, coverUrl, missing, updatedAt }`. `missing` usa las mismas reglas que publicar, así el panel puede decir "Falta: foto y horario" sin repetir la lógica.
+- La ruta `me` va antes de `:id` y hay un test que comprueba que no se confunde con un id.
+- Sin datos privados: no devuelve `addressDetail` ni `ownerId` (hay test).
+- Pruebas: 4 unitarias y 7 e2e nuevas (109 y 97 en esta rama).
+
+#### Decisiones y por qué
+| Decisión | Alternativas consideradas | Por qué se eligió |
+|---|---|---|
+| `missing` calculado en el back | Que el front lo deduzca | Una sola regla (`publish-rules.ts`) para publicar, editar y listar |
+| Lista sin paginar | `?page=&pageSize=` | Un propietario tendrá pocos espacios en el MVP; se pagina si hace falta |
+| Sin "próximas reservas" todavía | Consultar `Booking` ahora | Las reservas son del equipo de C (RE-02 a RE-04) y hoy no existen; el panel las mostrará cuando haya datos |
+
+#### Archivos principales
+- `rentsmart-back/src/spaces/`: `spaces.controller`, `spaces.service`, `dto/owner-space-summary.dto` y pruebas.
+- `rentsmart-back/test/my-spaces.e2e-spec.ts`.
+- `docs/arquitectura.md`.
+
+#### Cómo probarlo
+Con `docker compose up -d db-test`, en `rentsmart-back` (Node 24): `npm run lint`, `npm run build`, `npm test` y `npm run test:e2e`.
+
+#### Estado de verificación
+- Build: ✅
+- Lint: ✅
+- Tests unitarios: ✅ (11 archivos, 109 pruebas)
+- Tests e2e: ✅ (6 archivos, 97 pruebas)
+
+#### Pendientes y bloqueos
+- Próximas reservas del propietario (PN-01) y reservas por estado (PN-02): dependen de C.
+- El front del panel.
+
+#### Para el resto del equipo
+- C (@gonzzza-lol): cuando existan las reservas, el panel necesitará `GET /api/spaces/me` con las próximas reservas de cada espacio; avísame el contrato.
+
+---

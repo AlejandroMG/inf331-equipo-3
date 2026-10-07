@@ -48,4 +48,32 @@ describe('validate', () => {
       'JWT_EXPIRES_IN',
     );
   });
+
+  describe('almacenamiento de fotos', () => {
+    const base = BASE;
+
+    it('por defecto no exige nada de Supabase', () => {
+      expect(() => validate(base)).not.toThrow();
+      expect(() => validate({ ...base, STORAGE_DRIVER: 'local' })).not.toThrow();
+    });
+
+    it('solo acepta los drivers local y supabase', () => {
+      expect(() => validate({ ...base, STORAGE_DRIVER: 's3' })).toThrow('STORAGE_DRIVER');
+    });
+
+    it('con supabase exige la URL, la clave de servicio y el bucket', () => {
+      expect(() => validate({ ...base, STORAGE_DRIVER: 'supabase' })).toThrow(
+        /SUPABASE_URL.*SUPABASE_SERVICE_ROLE_KEY.*SUPABASE_BUCKET/,
+      );
+      expect(() =>
+        validate({
+          ...base,
+          STORAGE_DRIVER: 'supabase',
+          SUPABASE_URL: 'https://proyecto.supabase.co',
+          SUPABASE_SERVICE_ROLE_KEY: 'clave',
+          SUPABASE_BUCKET: 'space-photos',
+        }),
+      ).not.toThrow();
+    });
+  });
 });

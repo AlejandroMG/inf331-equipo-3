@@ -1,10 +1,12 @@
 import { plainToInstance, Type } from 'class-transformer';
 import 'reflect-metadata';
 import {
+  IsIn,
   IsInt,
   IsNotEmpty,
   IsOptional,
   IsString,
+  ValidateIf,
   Matches,
   MinLength,
   validateSync,
@@ -23,6 +25,32 @@ class EnvironmentVariables {
   @IsInt()
   @Type(() => Number)
   PORT: number;
+
+  /** Dónde se guardan las fotos: disco local (por defecto) o Supabase Storage. */
+  @IsOptional()
+  @IsIn(['local', 'supabase'])
+  STORAGE_DRIVER: 'local' | 'supabase';
+
+  /** Carpeta de las fotos con STORAGE_DRIVER=local (por defecto ./uploads). */
+  @IsOptional()
+  @IsString()
+  UPLOADS_DIR: string;
+
+  // Con STORAGE_DRIVER=supabase las tres son obligatorias.
+  @ValidateIf((env: EnvironmentVariables) => env.STORAGE_DRIVER === 'supabase')
+  @IsString()
+  @IsNotEmpty()
+  SUPABASE_URL: string;
+
+  @ValidateIf((env: EnvironmentVariables) => env.STORAGE_DRIVER === 'supabase')
+  @IsString()
+  @IsNotEmpty()
+  SUPABASE_SERVICE_ROLE_KEY: string;
+
+  @ValidateIf((env: EnvironmentVariables) => env.STORAGE_DRIVER === 'supabase')
+  @IsString()
+  @IsNotEmpty()
+  SUPABASE_BUCKET: string;
 
   // Origen del front permitido por CORS. Si no se define, se usa el de Vite en local.
   @IsString()

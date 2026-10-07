@@ -5,6 +5,8 @@ import { validate } from './config/env.validation';
 import { ConfigModule } from '@nestjs/config';
 import { PrismaModule } from './prisma/prisma.module';
 import { SpaceTypesModule } from './space-types/space-types.module';
+import { SpacesModule } from './spaces/spaces.module';
+import { StorageModule } from './storage/storage.module';
 import { AuthModule } from './auth/auth.module';
 import { CatalogModule } from './catalog/catalog.module';
 
@@ -12,7 +14,9 @@ import { CatalogModule } from './catalog/catalog.module';
   imports: [
     ConfigModule.forRoot({ isGlobal: true, validate }),
     PrismaModule,
+    StorageModule,
     SpaceTypesModule,
+    SpacesModule,
     AuthModule,
     CatalogModule,
   ],

@@ -17,6 +17,7 @@ Cada decisión del producto tiene un ID `P-xx` que coincide con su issue en GitH
 | [P-09](#p-09--ubicación-pública-con-detalle-privado) | Ubicación pública con detalle privado | Decidida | 25-09-2026 |
 | [P-10](#p-10--fotos-en-supabase-storage) | Fotos en Supabase Storage | Decidida | 25-09-2026 |
 | [P-11](#p-11--meta-de-pruebas) | Meta de pruebas | En espera del profesor | — |
+| [P-18](#p-18--tipo-y-comuna-también-son-obligatorios-para-publicar) | Tipo y comuna también son obligatorios para publicar | Decidida | 05-10-2026 |
 | [T-01](#t-01--dominios-verticales-por-integrante) | Dominios verticales por integrante | Decidida | 25-09-2026 |
 | [T-02](#t-02--quitar-nestjsobserve) | Quitar `@nestjs/observe` | Decidida | 25-09-2026 |
 | [T-03](#t-03--nodejs-249-o-superior) | Node.js 24.9 o superior | Decidida | 25-09-2026 |
@@ -111,6 +112,14 @@ Decisiones abiertas: ver [al final](#decisiones-abiertas).
 - **Estado:** En espera del profesor · Issue [#78](https://github.com/AlejandroMG/inf331-equipo-3/issues/78)
 - **Contexto:** el ramo puede exigir una cobertura mínima, ciertos tipos de prueba o informes.
 - **Decisión provisoria:** no se fija una meta de cobertura hasta tener la respuesta. Mientras tanto, cada historia exige tests según la [definición de terminado](flujo-de-trabajo.md#definición-de-terminado). F-10 (plan de pruebas y Playwright) quedó para después del 9 de octubre.
+
+## P-18 · Tipo y comuna también son obligatorios para publicar
+
+- **Estado:** Decidida, 05-10-2026 · Sin issue todavía
+- **Contexto:** `producto.md` exigía foto, precio, capacidad, descripción y horario para publicar. Un espacio sin tipo ni comuna se mostraría en el catálogo sin esos datos y nunca aparecería en los filtros por tipo y comuna (BU-03).
+- **Decisión:** para publicar también se exigen el tipo de espacio y la comuna. Las mismas reglas valen para reactivar un espacio desactivado y para editar uno ya publicado: no puede quedar sin alguno de esos datos (ni sin su última foto); para dejarlo incompleto hay que desactivarlo primero.
+- **Alternativas descartadas:** exigir solo lo que decía `producto.md` y tolerar tipo o comuna vacíos en el catálogo (queda como respaldo, pero esos espacios no saldrían en los filtros).
+- **Consecuencias:** `POST /api/spaces/:id/publish` y `PATCH /api/spaces/:id/status` responden 409 con `missing` (`type`, `description`, `capacity`, `commune`, `price`, `photos`, `schedule`). El formulario del front debe agregar tipo y comuna a la lista "Para publicar necesitas".
 
 ## T-01 · Dominios verticales por integrante
 
