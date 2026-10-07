@@ -1,7 +1,8 @@
 import { Link } from 'react-router'
 import { paths } from '../lib/paths'
 
-const footerLink = 'text-[15px] text-white underline-offset-2 hover:underline'
+// 44 px de alto: los enlaces del pie se tocan con el pulgar.
+const footerLink = 'inline-flex min-h-11 items-center text-[15px] text-white underline-offset-2 hover:underline'
 const columnTitle = 'text-[13px] font-bold uppercase tracking-wider opacity-80'
 
 export function Footer() {
@@ -15,13 +16,13 @@ export function Footer() {
           </p>
         </div>
         <nav aria-label="Pie de página" className="flex flex-wrap gap-x-14 gap-y-8">
-          <div className="flex flex-col gap-2.5">
+          <div className="flex flex-col gap-0.5">
             <span className={columnTitle}>Arrendar</span>
             <Link to={paths.home} className={footerLink}>
               Explorar espacios
             </Link>
           </div>
-          <div className="flex flex-col gap-2.5">
+          <div className="flex flex-col gap-0.5">
             <span className={columnTitle}>Publicar</span>
             <Link to={paths.publish} className={footerLink}>
               Publicar un espacio

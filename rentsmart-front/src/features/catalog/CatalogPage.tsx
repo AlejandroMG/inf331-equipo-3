@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router'
 import { Button } from '../../components/Button'
 import { Pagination } from '../../components/Pagination'
+import { usePageTitle } from '../../lib/page-title'
 import { CATALOG_PAGE_SIZE } from './catalog-api'
 import { FilterBar } from './FilterBar'
 import { hasFilters, noFilters, parseFilters, toSearchParams, type CatalogFilters } from './filters'
@@ -21,17 +22,18 @@ function parsePage(value: string | null): number {
 function SkeletonCard() {
   return (
     <div aria-hidden="true" className="overflow-hidden rounded-card border border-line bg-white">
-      <div className="h-44 animate-pulse bg-line/60" />
+      <div className="h-44 motion-safe:animate-pulse bg-line/60" />
       <div className="flex flex-col gap-2 p-4">
-        <div className="h-3 w-1/3 animate-pulse rounded bg-line/60" />
-        <div className="h-5 w-3/4 animate-pulse rounded bg-line/60" />
-        <div className="h-3 w-1/2 animate-pulse rounded bg-line/60" />
+        <div className="h-3 w-1/3 motion-safe:animate-pulse rounded bg-line/60" />
+        <div className="h-5 w-3/4 motion-safe:animate-pulse rounded bg-line/60" />
+        <div className="h-3 w-1/2 motion-safe:animate-pulse rounded bg-line/60" />
       </div>
     </div>
   )
 }
 
 export function CatalogPage() {
+  usePageTitle('Espacios para arrendar')
   const [searchParams, setSearchParams] = useSearchParams()
   const page = parsePage(searchParams.get('page'))
   const filters = parseFilters(searchParams)
