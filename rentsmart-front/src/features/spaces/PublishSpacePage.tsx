@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useLocation, useParams } from 'react-router'
 import { Button, LinkButton } from '../../components/Button'
 import { ApiError } from '../../lib/http'
+import { usePageTitle } from '../../lib/page-title'
 import { paths } from '../../lib/paths'
 import { useRequest } from '../../lib/useRequest'
 import { SpaceWizard } from './SpaceWizard'
@@ -39,12 +40,13 @@ export function PublishSpacePage() {
   const { data, error, loading, retry } = useRequest(`${view.generation}:${view.initialId ?? 'new'}`, (signal) =>
     loadWizardData(view.initialId, signal),
   )
+  usePageTitle(view.initialId ? 'Edita tu espacio' : 'Publica tu espacio')
 
   if (loading) {
     return (
       <div role="status" aria-label="Cargando el formulario" className="mx-auto max-w-[1100px] px-4 py-10 sm:px-6">
-        <div className="h-10 w-1/2 animate-pulse rounded bg-line/60" />
-        <div className="mt-6 h-80 animate-pulse rounded-card bg-line/60" />
+        <div className="h-10 w-1/2 motion-safe:animate-pulse rounded bg-line/60" />
+        <div className="mt-6 h-80 motion-safe:animate-pulse rounded-card bg-line/60" />
       </div>
     )
   }
