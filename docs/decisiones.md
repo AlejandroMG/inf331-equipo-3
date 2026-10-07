@@ -22,6 +22,7 @@ Cada decisión del producto tiene un ID `P-xx` que coincide con su issue en GitH
 | [T-02](#t-02--quitar-nestjsobserve) | Quitar `@nestjs/observe` | Decidida | 25-09-2026 |
 | [T-03](#t-03--nodejs-249-o-superior) | Node.js 24.9 o superior | Decidida | 25-09-2026 |
 | [T-04](#t-04--commits-manuales-y-bitácora-de-sesiones) | Commits manuales y bitácora de sesiones | Decidida | 25-09-2026 |
+| [T-05](#t-05--gitflow-desde-la-entrega-1) | GitFlow desde la Entrega 1 | Decidida | 07-10-2026 |
 
 Decisiones abiertas: ver [al final](#decisiones-abiertas).
 
@@ -153,6 +154,14 @@ Decisiones abiertas: ver [al final](#decisiones-abiertas).
 - **Estado:** Decidida, 25-09-2026
 - **Decisión:** los commits son manuales: ningún agente de IA commitea sin preguntar y recibir un "sí" explícito. Cada sesión de trabajo se registra en [memory.md](memory.md) con la plantilla común.
 - **Por qué:** cada integrante mantiene el control de lo que entra al repo, y el razonamiento detrás de cada cambio queda escrito para el resto del equipo y para los agentes que retomen el trabajo.
+
+## T-05 · GitFlow desde la Entrega 1
+
+- **Estado:** Decidida, 07-10-2026
+- **Contexto:** el enunciado de la Entrega 1 exige GitFlow y un tag `vX.0-entregaN` sobre `main` por entrega. Hasta ahora cada rama entraba directo a `main` (T-01, flujo de trabajo).
+- **Decisión:** `main` guarda solo versiones entregadas; `develop` integra el trabajo del sprint; cada historia va en `feature/<ID>-…` desde `develop`; cada entrega pasa por `release/vX.0-entregaN` y termina con el tag y su Release; los arreglos urgentes sobre una entrega van en `hotfix/…`. El CI corre también en `develop`.
+- **Alternativas descartadas:** seguir con ramas directo a `main` (no cumple el enunciado); GitFlow con merge commits en vez de *squash* (el historial de `develop` queda más difícil de leer).
+- **Consecuencias:** `develop` se crea desde `main` al adoptar esta decisión. Los PR abiertos contra `main` se reapuntan a `develop`. Como GitHub solo cierra issues con `Closes #N` cuando el cambio llega a `main`, los issues terminados se cierran a mano al mergear a `develop` (o quedan cerrados al hacer el release). Las ramas `feat/…` ya creadas siguen sirviendo; las nuevas usan `feature/…`.
 
 ---
 
