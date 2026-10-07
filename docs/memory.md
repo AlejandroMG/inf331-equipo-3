@@ -1065,3 +1065,105 @@ En `rentsmart-front` (Node 24): `npm run lint`, `npm test` y `npm run build`. A 
 - C (@gonzzza-lol): cuando exista la disponibilidad, el filtro BU-05 irá junto a estos en `FilterBar`.
 
 ---
+
+### 2026-10-05 · B (xReNatS) · BU-01 y BU-02 catálogo público (back)
+
+**Issues:** #27 (BU-01) y #28 (BU-02), parte del back
+**Rama / PR:** `feat/BU-01-catalog-api`, apilada sobre `feat/ES-01-space-types` (PR #92) · sin PR todavía
+**Duración aproximada:** 1,5 h
+**Herramientas:** Claude Code
+
+#### Objetivo
+Implementar los endpoints públicos que consume el front del catálogo, con la forma de respuesta que ya usa el front (`GET /api/catalog` paginado) y el detalle de un espacio.
+
+#### Qué se hizo
+- Módulo `catalog`: `GET /api/catalog?page=&pageSize=` (solo espacios activos, más recientes primero, `{ items, total, page, pageSize }`) y `GET /api/catalog/:id` (detalle público con equipamiento, fotos por posición y horario semanal; 404 si no existe o no está activo).
+- Validación de la consulta con un DTO: `page` ≥ 1 y `pageSize` de 1 a 50; un valor inválido o un parámetro desconocido da 400.
+- Privacidad (P-09): el `select` de Prisma es una lista blanca; `addressDetail`, `ownerId` y `status` nunca salen por la API.
+- Pruebas: 8 unitarias del servicio y 20 e2e contra la base de test. Una prueba rompe a propósito el filtro y la lista blanca para comprobar que los tests lo detectan (se hizo a mano y se restauró).
+- Documentación de los endpoints en `docs/arquitectura.md`.
+
+#### Decisiones y por qué
+| Decisión | Alternativas consideradas | Por qué se eligió |
+|---|---|---|
+| Una sola consulta transaccional para la página y el total | Dos consultas sueltas | El total y los items salen del mismo instante |
+| Orden `createdAt desc` con desempate por `id` | Solo `createdAt` | Con fechas iguales (seed) la paginación podía repetir o saltar espacios |
+| `select` explícito en lugar de excluir campos | Traer todo y borrar `addressDetail` | Si se agrega un campo privado al schema, no queda expuesto por accidente |
+| `typeName` y `communeName` vacíos si faltan | Descartar el espacio | El schema los deja opcionales, pero un espacio activo ya pasó las reglas de publicación (ES-04) |
+| El detalle usa `:id` sin validar el formato | `ParseUUIDPipe` | Los espacios del seed tienen ids como `seed-space-1`; un id inexistente da 404 igual |
+| Los e2e dan fechas de creación lejanas a sus espacios | Depender del orden de inserción | El orden queda fijo y los espacios no activos tienen fechas aún más nuevas, así que un filtro roto los haría aparecer arriba |
+
+#### Archivos principales
+- `rentsmart-back/src/catalog/`: módulo, controlador, servicio, DTOs y prueba unitaria.
+- `rentsmart-back/test/catalog.e2e-spec.ts` y `test/app.e2e-spec.ts` (Swagger lista los endpoints nuevos).
+- `docs/arquitectura.md`.
+
+#### Cómo probarlo
+- Con `docker compose up -d db-test`: en `rentsmart-back`, `npm run lint`, `npm run build`, `npm test` y `npm run test:e2e` (Node 24).
+- `npm run seed` y `npm run start:dev`: `GET http://localhost:3000/api/catalog` devuelve los 10 espacios del seed y `GET /api/catalog/seed-space-1` su detalle; Swagger en `/docs`.
+
+#### Estado de verificación
+- Build: ✅
+- Lint: ✅
+- Tests unitarios: ✅ (5 archivos, 20 pruebas)
+- Tests e2e: ✅ (3 archivos, 29 pruebas)
+
+#### Pendientes y bloqueos
+- Depende de que se mergee el PR #92 (ES-01 y base de la API).
+- BU-03 (filtros y búsqueda) y BU-04 (orden) se agregan como parámetros de este mismo endpoint.
+- El front del detalle (BU-02) sigue pendiente; ya existe el contrato.
+
+#### Para el resto del equipo
+- C: el detalle público trae `schedule` (el horario semanal) y el `id` que necesita `<BookingWidget spaceId>`. La disponibilidad real (bloques libres) sigue siendo `GET /api/spaces/:id/availability` (DI-02).
+- Cualquier endpoint público nuevo debe usar `select` explícito y tener un test que compruebe que no filtra `addressDetail`.
+
+---
+
+### 2026-10-06 · B (xReNatS) · BU-03 filtros y búsqueda del catálogo (back)
+
+**Issues:** #29 (BU-03), parte del back
+**Rama / PR:** `feat/BU-03-catalog-filters-api`, apilada sobre `feat/BU-01-catalog-api` (#96) · sin PR todavía
+**Duración aproximada:** 1 h
+**Herramientas:** Claude Code
+
+#### Objetivo
+Que `GET /api/catalog` filtre por tipo, comuna, capacidad mínima, rango de precio y texto libre, para que el front deje la búsqueda en la URL.
+
+#### Qué se hizo
+- Parámetros opcionales y combinables de `GET /api/catalog`: `typeId`, `communeId`, `minCapacity`, `minPrice`, `maxPrice`, `priceUnit` y `q`. Todos deben cumplirse y `total` cuenta solo los que cumplen, así la paginación sigue bien.
+- Validan con `class-validator` y topes (los mismos que al publicar): un valor inválido o enorme da 400, no un 500 por desbordar el `Int` de Postgres. Un precio mínimo mayor que el máximo da 400 con mensaje.
+- `q` usa hasta 5 palabras y cada una debe aparecer en el nombre, la descripción, el tipo o la comuna, sin distinguir mayúsculas. **No busca en la dirección ni en su detalle**: así la búsqueda no sirve para averiguar el detalle privado (P-09). Hay un e2e que lo comprueba.
+- `contains` de Prisma no escapa los comodines de LIKE: buscar `%` listaba todo. Ahora se escapan `%`, `_` y la barra invertida (lo descubrió el e2e).
+- Swagger describe cada parámetro y la respuesta 400. `docs/arquitectura.md` documenta el contrato.
+- `priceUnit` (`hour` por defecto o `day`) elige si `minPrice` y `maxPrice` se aplican al precio por hora o por día (decidido con Renato el 06-10).
+- Pruebas nuevas unitarias y e2e. En esta rama, con Node 24, hay 54 unitarias y 88 e2e en total.
+
+#### Decisiones y por qué
+| Decisión | Alternativas consideradas | Por qué se eligió |
+|---|---|---|
+| `priceUnit` (`hour` o `day`) elige a qué precio se aplican `minPrice` y `maxPrice` | Aceptar cualquiera de los dos precios, o filtrar solo por hora | Los dos precios están en escalas distintas (miles contra decenas de miles) y mezclarlos confunde. Un espacio que no se arrienda en esa unidad queda fuera de un filtro de precio. Lo decidió Renato el 06-10 |
+| Cada palabra de `q` en cualquiera de cuatro campos | Una sola frase exacta, o también buscar en la dirección | Con "sala providencia" se encuentra una sala en Providencia. La dirección y su detalle quedan fuera por privacidad |
+| No ignora las tildes ("camara" no encuentra "Cámara") | Extensión `unaccent` de Postgres | Exigiría una migración, y el esquema es de A. Se puede ver después |
+
+#### Archivos principales
+- `rentsmart-back/src/catalog/`: `dto/list-catalog-query.dto`, `catalog.service`, `catalog.controller` y `catalog.service.spec`.
+- `rentsmart-back/test/catalog-filters.e2e-spec.ts`.
+- `docs/arquitectura.md`.
+
+#### Cómo probarlo
+Con una BD de test migrada, en `rentsmart-back` (Node 24): `npm run lint`, `npm test`, `npm run test:e2e` y `npm run build`. A mano, con el seed: `GET /api/catalog?typeId=1&maxPrice=14000&q=sala` en Swagger (http://localhost:3000/docs).
+
+#### Estado de verificación
+- Lint: ✅
+- Tests unitarios: ✅ (6 archivos, 54 pruebas)
+- Tests e2e: ✅ (6 archivos, 88 pruebas)
+- Build: ✅
+
+#### Pendientes y bloqueos
+- El orden de los resultados (BU-04) queda para después del 9 de octubre.
+- Filtrar por disponibilidad (BU-05) depende de las reservas de C.
+
+#### Para el resto del equipo
+- A (@AlejandroMG): no toca `schema.prisma`. Una búsqueda sin tildes (`unaccent`) requeriría una migración suya, si se quiere.
+
+---
