@@ -5,6 +5,7 @@ import request from 'supertest';
 import { App } from 'supertest/types';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { uploadsDir } from '../src/storage/storage.service';
+import { bearer } from './utils/auth';
 import { createTestApp } from './utils/create-test-app';
 
 // Cada test crea sus propios datos con un sufijo único, así no depende del seed ni choca con él.
@@ -32,7 +33,7 @@ describe('Mis espacios (e2e)', () => {
   let communeId: number;
   const spaceIds: string[] = [];
 
-  const as = (userId: string) => ({ 'x-user-id': userId });
+  const as = (userId: string) => bearer(app, userId);
   const server = () => app.getHttpServer();
   const mine = async (userId = ownerId) =>
     (await request(server()).get('/api/spaces/me').set(as(userId)).expect(200)).body as Summary[];

@@ -18,7 +18,7 @@ import {
   ApiConsumes,
   ApiCreatedResponse,
   ApiForbiddenResponse,
-  ApiHeader,
+  ApiBearerAuth,
   ApiNoContentResponse,
   ApiNotFoundResponse,
   ApiOkResponse,
@@ -29,7 +29,7 @@ import {
 } from '@nestjs/swagger';
 import type { AuthUser } from '../common/auth/auth-user';
 import { CurrentUser } from '../common/auth/current-user.decorator';
-import { DevAuthGuard } from '../common/auth/dev-auth.guard';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import {
   MAX_PHOTO_BYTES,
   PhotoDto,
@@ -38,17 +38,12 @@ import {
 } from './dto/photo.dto';
 import { PhotosService } from './photos.service';
 
-// TEMPORAL: DevAuthGuard se reemplaza por el JwtAuthGuard de A (CU-03) sin cambiar nada más.
 @ApiTags('Fotos del espacio')
-@ApiHeader({
-  name: 'x-user-id',
-  required: false,
-  description: 'Solo desarrollo: id del usuario que actúa. Se reemplaza por el token JWT.',
-})
+@ApiBearerAuth()
 @ApiUnauthorizedResponse({ description: 'Sin sesión' })
 @ApiForbiddenResponse({ description: 'El espacio es de otro usuario' })
 @ApiNotFoundResponse({ description: 'El espacio no existe' })
-@UseGuards(DevAuthGuard)
+@UseGuards(JwtAuthGuard)
 @Controller('spaces/:id/photos')
 export class PhotosController {
   constructor(private readonly service: PhotosService) {}
