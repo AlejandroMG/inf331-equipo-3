@@ -49,6 +49,9 @@ export class SpaceDto {
   @ApiProperty({ type: String, nullable: true })
   rules: string | null;
 
+  @ApiProperty({ type: String, nullable: true, description: 'Por qué un administrador bloqueó el espacio; null si no está bloqueado' })
+  blockedReason: string | null;
+
   @ApiProperty({ type: [Number] })
   amenityIds: number[];
 

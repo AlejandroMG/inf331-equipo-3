@@ -8,6 +8,7 @@ export const paths = {
   ownerSpaces: '/owner/spaces',
   ownerBookings: '/owner/bookings',
   ownerMetrics: '/owner/metrics',
+  favorites: '/favorites',
   login: '/login',
   register: '/register',
   admin: '/admin',
