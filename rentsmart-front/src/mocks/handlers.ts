@@ -118,7 +118,7 @@ const NO_MATCH = '\u0000'
 /**
  * Los filtros de GET /api/catalog (BU-03) sobre los datos de ejemplo, con las mismas reglas que el back: todos deben
  * cumplirse, el rango de precio es el de la hora o el del día (`priceUnit`) y cada palabra del texto debe estar en el
- * nombre, el tipo o la comuna.
+ * nombre, el tipo o la comuna. Al final, el orden pedido (`sort`).
  */
 function filterCatalog(params: URLSearchParams) {
   const nameOf = (list: Array<{ id: number; name: string }>, id: string | null) =>
@@ -131,7 +131,7 @@ function filterCatalog(params: URLSearchParams) {
   const priceKey = params.get('priceUnit') === 'day' ? 'pricePerDay' : 'pricePerHour'
   const words = (params.get('q') ?? '').toLowerCase().split(/\s+/).filter(Boolean)
 
-  return catalogData.filter((space) => {
+  const matches = catalogData.filter((space) => {
     const text = `${space.name} ${space.typeName} ${space.communeName}`.toLowerCase()
     const price = space[priceKey]
     return (
@@ -142,6 +142,17 @@ function filterCatalog(params: URLSearchParams) {
       (maxPrice === null || (price !== null && price <= maxPrice)) &&
       words.every((word) => text.includes(word))
     )
+  })
+
+  // BU-04: por precio (el de `priceUnit`), con los que no lo tienen al final en cualquier dirección. El orden de
+  // `sort` es estable: los precios iguales conservan el orden normal (los más recientes primero).
+  const sort = params.get('sort')
+  if (sort !== 'price_asc' && sort !== 'price_desc') return matches
+  const direction = sort === 'price_asc' ? 1 : -1
+  return [...matches].sort((a, b) => {
+    const [pa, pb] = [a[priceKey], b[priceKey]]
+    if (pa === null || pb === null) return pa === pb ? 0 : pa === null ? 1 : -1
+    return (pa - pb) * direction
   })
 }
 

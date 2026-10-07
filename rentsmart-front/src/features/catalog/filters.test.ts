@@ -4,13 +4,14 @@ import { hasFilters, MAX_SEARCH_LENGTH, noFilters, parseFilters, toSearchParams,
 const parse = (search: string) => parseFilters(new URLSearchParams(search))
 
 describe('parseFilters', () => {
-  it('sin parámetros no hay filtros, y el precio es por hora', () => {
+  it('sin parámetros no hay filtros, el precio es por hora y el orden es el de los más recientes', () => {
     expect(parse('')).toEqual(noFilters)
     expect(noFilters.priceUnit).toBe('hour')
+    expect(noFilters.sort).toBe('recent')
   })
 
   it('lee todos los filtros de la URL', () => {
-    expect(parse('q=sala&typeId=3&communeId=2&minCapacity=8&priceUnit=day&minPrice=30000&maxPrice=80000')).toEqual({
+    expect(parse('q=sala&typeId=3&communeId=2&minCapacity=8&priceUnit=day&minPrice=30000&maxPrice=80000&sort=price_desc')).toEqual({
       q: 'sala',
       typeId: 3,
       communeId: 2,
@@ -18,6 +19,7 @@ describe('parseFilters', () => {
       priceUnit: 'day',
       minPrice: 30000,
       maxPrice: 80000,
+      sort: 'price_desc',
     })
   })
 
@@ -45,6 +47,9 @@ describe('parseFilters', () => {
     ['maxPrice=1e3x'],
     ['priceUnit=week'],
     ['priceUnit='],
+    ['sort=cheap'],
+    ['sort='],
+    ['sort=PRICE_ASC'],
   ])('ignora el valor inválido de %s en vez de pasarlo a la API', (search) => {
     expect(parse(search)).toEqual(noFilters)
   })
@@ -67,6 +72,12 @@ describe('parseFilters', () => {
     expect(parse('minPrice=10000&maxPrice=10000')).toEqual({ ...noFilters, minPrice: 10000, maxPrice: 10000 })
   })
 
+  it('reconoce los tres órdenes', () => {
+    expect(parse('sort=recent').sort).toBe('recent')
+    expect(parse('sort=price_asc').sort).toBe('price_asc')
+    expect(parse('sort=price_desc').sort).toBe('price_desc')
+  })
+
   it('"day" es la única unidad distinta de la hora', () => {
     expect(parse('priceUnit=day').priceUnit).toBe('day')
     expect(parse('priceUnit=hour').priceUnit).toBe('hour')
@@ -85,6 +96,11 @@ describe('hasFilters', () => {
       ['maxPrice', 10000],
     ]
     for (const [key, value] of keys) expect(hasFilters({ ...noFilters, [key]: value })).toBe(true)
+  })
+
+  it('el orden no es un filtro', () => {
+    expect(hasFilters({ ...noFilters, sort: 'price_asc' })).toBe(false)
+    expect(hasFilters({ ...noFilters, sort: 'price_asc', typeId: 2 })).toBe(true)
   })
 
   it('la unidad del precio sola no filtra nada', () => {
@@ -107,6 +123,7 @@ describe('toSearchParams', () => {
       priceUnit: 'hour',
       minPrice: 5000,
       maxPrice: 20000,
+      sort: 'recent',
     }
 
     expect(toSearchParams(filters).toString()).toBe('q=sala+luminosa&typeId=3&minCapacity=8&minPrice=5000&maxPrice=20000')
@@ -118,6 +135,12 @@ describe('toSearchParams', () => {
       'priceUnit=day&minPrice=30000&maxPrice=80000',
     )
     expect(toSearchParams({ ...noFilters, priceUnit: 'hour', maxPrice: 20000 }).toString()).toBe('maxPrice=20000')
+  })
+
+  it('el orden se escribe solo si no es el normal, antes de la página', () => {
+    expect(toSearchParams({ ...noFilters, sort: 'recent' }).toString()).toBe('')
+    expect(toSearchParams({ ...noFilters, sort: 'price_asc' }).toString()).toBe('sort=price_asc')
+    expect(toSearchParams({ ...noFilters, typeId: 3, sort: 'price_desc' }, 2).toString()).toBe('typeId=3&sort=price_desc&page=2')
   })
 
   it('agrega la página desde la segunda', () => {
@@ -135,6 +158,7 @@ describe('toSearchParams', () => {
       priceUnit: 'day',
       minPrice: 30000,
       maxPrice: 120000,
+      sort: 'price_asc',
     }
 
     expect(parseFilters(new URLSearchParams(toSearchParams(filters).toString()))).toEqual(filters)

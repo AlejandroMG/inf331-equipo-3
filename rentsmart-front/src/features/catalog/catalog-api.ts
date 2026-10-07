@@ -21,10 +21,13 @@ export function fetchCatalog({ page, pageSize = CATALOG_PAGE_SIZE, filters = noF
       typeId: filters.typeId,
       communeId: filters.communeId,
       minCapacity: filters.minCapacity,
-      // La unidad solo cuenta junto con un precio; sin él no se manda.
-      priceUnit: filters.minPrice !== null || filters.maxPrice !== null ? filters.priceUnit : undefined,
+      // La unidad solo importa junto con un precio: un rango o un orden por precio. Sin eso no se manda.
+      priceUnit:
+        filters.minPrice !== null || filters.maxPrice !== null || filters.sort !== 'recent' ? filters.priceUnit : undefined,
       minPrice: filters.minPrice,
       maxPrice: filters.maxPrice,
+      // El orden normal (más recientes) es el de la API: solo se manda si se pidió otro.
+      sort: filters.sort === 'recent' ? undefined : filters.sort,
     },
     signal,
   })
