@@ -317,8 +317,33 @@ export const handlers = [
     }
     const email = body.email.trim().toLowerCase()
     return HttpResponse.json({
-      accessToken: 'mock-token',
-      user: { id: 'mock-user', email, name: 'Usuario de prueba', role: 'USER', isHost: false, createdAt: new Date().toISOString() },
+      // Con un email que empieza con "admin" se simula una cuenta de administrador.
+      accessToken: email.startsWith('admin') ? 'mock-admin-token' : 'mock-token',
+      user: {
+        id: 'mock-user',
+        email,
+        name: 'Usuario de prueba',
+        role: email.startsWith('admin') ? 'ADMIN' : 'USER',
+        isHost: false,
+        createdAt: new Date().toISOString(),
+      },
+    })
+  }),
+
+  // CU-03: usuario de la sesión. El token "mock-admin-token" es un ADMIN; cualquier otro token, un USER.
+  http.get('*/api/auth/me', ({ request }) => {
+    const authorization = request.headers.get('authorization')
+    if (!authorization) {
+      return HttpResponse.json({ message: 'Inicia sesión para continuar.' }, { status: 401 })
+    }
+    const admin = authorization === 'Bearer mock-admin-token'
+    return HttpResponse.json({
+      id: admin ? 'mock-admin' : 'mock-user',
+      email: admin ? 'admin@rentsmart.test' : 'usuario@rentsmart.test',
+      name: admin ? 'Admin de prueba' : 'Usuario de prueba',
+      role: admin ? 'ADMIN' : 'USER',
+      isHost: false,
+      createdAt: '2026-10-01T00:00:00.000Z',
     })
   }),
 ]

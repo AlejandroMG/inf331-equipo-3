@@ -2,6 +2,7 @@ import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { App } from 'supertest/types';
 import { PrismaService } from '../src/prisma/prisma.service';
+import { bearer } from './utils/auth';
 import { createTestApp } from './utils/create-test-app';
 
 // Cada test crea sus propios datos con un sufijo único, así no depende del seed ni choca con él.
@@ -26,7 +27,7 @@ describe('Espacios del propietario (e2e)', () => {
   let otherRegionCommuneId: number;
   let amenityIds: number[];
 
-  const as = (userId: string) => ({ 'x-user-id': userId });
+  const as = (userId: string) => bearer(app, userId);
 
   beforeAll(async () => {
     app = await createTestApp();

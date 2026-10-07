@@ -10,4 +10,5 @@ export const paths = {
   ownerMetrics: '/owner/metrics',
   login: '/login',
   register: '/register',
+  admin: '/admin',
 } as const

@@ -5,7 +5,9 @@ import { RequireAuth } from './components/RequireAuth'
 import { CatalogPage } from './features/catalog/CatalogPage'
 import { SpaceDetailPage } from './features/catalog/SpaceDetailPage'
 import { LoginPage } from './features/auth/LoginPage'
+import { PlaceholderPage } from './components/PlaceholderPage'
 import { RegisterPage } from './features/auth/RegisterPage'
+import { RequireRole } from './features/auth/RequireRole'
 import { ComponentsPage } from './features/dev/ComponentsPage'
 import { OwnerBookingsPage } from './features/owner/OwnerBookingsPage'
 import { OwnerMetricsPage } from './features/owner/OwnerMetricsPage'
@@ -32,6 +34,11 @@ export const routes: RouteObject[] = [
           { path: 'owner/bookings', element: <OwnerBookingsPage />, handle: { title: 'Reservas de mis espacios' } },
           { path: 'owner/metrics', element: <OwnerMetricsPage />, handle: { title: 'Métricas' } },
         ],
+      },
+      {
+        element: <RequireRole role="ADMIN" />,
+        // Lo reemplaza A con el panel real de administración (AD-01).
+        children: [{ path: 'admin', element: <PlaceholderPage title="Administración" story="AD-01" /> }],
       },
       ...(import.meta.env.DEV ? [{ path: 'dev/componentes', element: <ComponentsPage /> }] : []),
       { path: '*', element: <NotFoundPage />, handle: { title: 'Página no encontrada' } },
