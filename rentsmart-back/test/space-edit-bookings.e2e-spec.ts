@@ -2,6 +2,7 @@ import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { App } from 'supertest/types';
 import { PrismaService } from '../src/prisma/prisma.service';
+import { bearer } from './utils/auth';
 import { createTestApp } from './utils/create-test-app';
 
 // Cada test crea sus propios datos con un sufijo único, así no depende del seed ni choca con él.
@@ -16,7 +17,7 @@ describe('Editar un espacio con reservas (ES-05, e2e)', () => {
   let regionId: number;
   let communeId: number;
 
-  const as = (userId: string) => ({ 'x-user-id': userId });
+  const as = (userId: string) => bearer(app, userId);
   const patch = (id: string, body: Record<string, unknown>) =>
     request(app.getHttpServer()).patch(`/api/spaces/${id}`).set(as(ownerId)).send(body);
 
