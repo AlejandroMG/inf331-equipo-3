@@ -98,6 +98,8 @@ describe('CatalogService', () => {
       expect(select).not.toHaveProperty('addressDetail');
       expect(select).not.toHaveProperty('ownerId');
       expect(select).not.toHaveProperty('status');
+      expect(select).not.toHaveProperty('latitude');
+      expect(select).not.toHaveProperty('longitude');
     });
 
     describe('orden', () => {
@@ -340,6 +342,8 @@ describe('CatalogService', () => {
       name: 'Sala Alameda',
       description: 'Luminosa',
       address: 'Av. Libertador 1234',
+      latitude: -33.44891,
+      longitude: -70.66927,
       capacity: 10,
       pricePerHour: 12000,
       pricePerDay: null,
@@ -376,6 +380,7 @@ describe('CatalogService', () => {
         regionName: 'Región Metropolitana',
         communeName: 'Santiago',
         address: 'Av. Libertador 1234',
+        location: { latitude: -33.449, longitude: -70.669, radiusMeters: 150 },
         capacity: 10,
         pricePerHour: 12000,
         pricePerDay: null,
@@ -383,6 +388,34 @@ describe('CatalogService', () => {
         amenities: ['Aire acondicionado', 'Proyector', 'Wifi'],
         photos: [{ id: 'p1', url: 'https://fotos.test/1.jpg', position: 0 }],
         schedule: [{ weekday: 1, startTime: '09:00', endTime: '21:00' }],
+      });
+    });
+
+    it('muestra una ubicación aproximada y nunca el punto exacto', async () => {
+      prisma.space.findFirst.mockResolvedValue(space);
+
+      const detail = await service.findOne('abc');
+
+      expect(detail.location).toEqual({
+        latitude: -33.449,
+        longitude: -70.669,
+        radiusMeters: 150,
+      });
+      expect(detail).not.toHaveProperty('latitude');
+      expect(detail).not.toHaveProperty('longitude');
+      expect(JSON.stringify(detail)).not.toContain('44891');
+      expect(JSON.stringify(detail)).not.toContain('66927');
+    });
+
+    it('sin punto marcado en el mapa, la ubicación es null', async () => {
+      prisma.space.findFirst.mockResolvedValue({
+        ...space,
+        latitude: null,
+        longitude: null,
+      });
+
+      await expect(service.findOne('abc')).resolves.toMatchObject({
+        location: null,
       });
     });
 

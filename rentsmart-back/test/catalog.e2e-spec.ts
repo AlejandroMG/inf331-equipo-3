@@ -182,6 +182,7 @@ describe('Catálogo (e2e)', () => {
         regionName: `Región ${SUFFIX}`,
         communeName: `Comuna ${SUFFIX}`,
         address: 'Av. Pública 123',
+        location: null,
         capacity: 10,
         pricePerHour: 12000,
         pricePerDay: 90000,
