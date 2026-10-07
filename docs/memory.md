@@ -1593,54 +1593,38 @@ Dejar `JwtAuthGuard`, `RolesGuard` y `@CurrentUser()` listos para los demás mó
 
 ---
 
-### 2026-10-07 · B (xReNatS) · AD-02 API: administrar espacios y tipos de espacio
+### 2026-10-07 · B (xReNatS) · ES-05 editar un espacio: las reservas conservan su total
 
-**Issues:** #61 (AD-02)
-**Rama / PR:** `feat/AD-02-admin-api` · sin PR todavía (el front irá en otro PR)
-**Duración aproximada:** 1 h 30 min
+**Issues:** #24 (ES-05)
+**Rama / PR:** `feat/ES-05-editar-espacio` · sin PR todavía
+**Duración aproximada:** 30 min
 **Herramientas:** Claude Code
 
 #### Objetivo
-Que un administrador pueda despublicar un espacio con un motivo (y desbloquearlo) y crear y renombrar tipos de espacio. #61 depende de ES-06, que ya está, y del rol de administrador (CU-03, de A), que todavía no tiene su guard: se resolvió con uno mínimo y reemplazable.
+Cerrar ES-05. El formulario ya edita un espacio (la misma pantalla de publicar, con "Edita tu espacio"), y la API ya deja cambiar sus datos con las reglas de P-18. Faltaba lo único que pide el criterio: demostrar que un cambio de precio aplica solo a las reservas nuevas.
 
 #### Qué se hizo
-- **Base de datos:** `Space` agrega `blockedReason` y `blockedAt` (migración `space_block_reason`). Se llenan al bloquear y se borran al desbloquear.
-- **Espacios (`/api/admin/spaces`):** lista de todos los espacios con su propietario (filtros por estado y por texto), `block` con un motivo y `unblock`. Bloquear solo vale para espacios publicados o desactivados (un borrador no está publicado). Dos administradores a la vez no se pisan: el cambio de estado se hace solo si sigue en el estado que se leyó.
-- **Lo que ve el propietario:** `blockedReason` en `GET /api/spaces/me` y en `GET /api/spaces/:id`. El bloqueo ya impedía que el propietario cambiara el estado (403, ES-06).
-- **Tipos (`/api/admin/space-types`):** lista con cuántos espacios usa cada uno, crear y renombrar. El nombre no puede repetir otro (sin distinguir mayúsculas ni tildes) ni ser un alojamiento (P-08, con una lista corta de palabras evidentes: alojamiento, hotel, cabaña, departamento, habitación…).
-- **`AdminGuard`:** deja pasar solo a `ADMIN`; va después del guard de autenticación. Es temporal, igual que el `DevAuthGuard`: cuando A entregue el `RolesGuard` (CU-03) se reemplaza.
-- **Pruebas:** unitarias del guard y de los tipos, y 51 e2e (403 a un usuario común en cada ruta, filtros, bloquear y desbloquear de punta a punta con el catálogo y el propietario, 409 y 404, motivos inválidos, nombres repetidos y de alojamientos).
+- No hubo que cambiar código: `Booking` guarda `subtotal`, `fee` y `total` al crearse y no los calcula desde el precio del espacio, así que editar el precio no puede tocar una reserva que ya existe.
+- Se agregó `test/space-edit-bookings.e2e-spec.ts` (5 pruebas) que lo demuestra: con un espacio publicado y una reserva confirmada de 3 horas, cambiar el precio por hora y por día, quitar el precio por día, o editar el nombre, la descripción y la capacidad deja la reserva con el mismo subtotal, comisión, total y estado; el público ve el precio nuevo; y desactivar el espacio mantiene la reserva confirmada (criterio de ES-06).
 
 #### Decisiones y por qué
 | Decisión | Alternativas consideradas | Por qué se eligió |
 |---|---|---|
-| Los endpoints viven en `spaces` y `space-types`, bajo `/api/admin` | En el módulo `admin` de A | #61 es de B y usa su código (estados del espacio, tipos); así no se toca un módulo ajeno. A puede mover o reutilizar la ruta |
-| `AdminGuard` mínimo, reemplazable | Esperar el `RolesGuard` de A; copiar su diseño | No bloquea la historia y es un guard de 10 líneas; cuando exista el de A, se cambia el `@UseGuards` |
-| El motivo se guarda en `Space` (`blockedReason`) | Una tabla de historial de moderación | Es lo que pide la historia (despublicar con motivo) y lo que el propietario necesita ver. Un historial con quién y cuándo se puede sumar después |
-| Desbloquear deja el espacio `INACTIVE` | Devolverlo a `ACTIVE` | El propietario pudo editarlo o no haber corregido lo que causó el bloqueo: que decida él cuándo publicar de nuevo (y se vuelven a exigir las reglas para publicar) |
-| Un borrador no se bloquea | Bloquearlo también | No está publicado: no hay nada que despublicar |
-| Los tipos no se borran, solo se crean y renombran | Permitir borrar los que no se usan | La historia pide crear y editar, y un borrado con espacios dejaría datos huérfanos; se puede sumar para los que tienen 0 espacios |
-| Una lista corta de palabras de alojamiento | Una validación completa | Es una guarda contra el error evidente; quien decide qué tipos se agregan es el administrador |
+| Probar con reservas creadas directo en la base de datos | Esperar a la API de reservas (RE-02, de C) | El criterio se cumple por cómo está modelada `Booking`, no por código de reservas: la prueba no depende de nada de C, y cuando exista RE-02 sigue valiendo |
 
 #### Archivos principales
-- `rentsmart-back/prisma/schema.prisma` y `prisma/migrations/20261007180000_space_block_reason/`.
-- `rentsmart-back/src/common/auth/admin.guard.ts`.
-- `rentsmart-back/src/spaces/` (`admin-spaces.controller.ts`, `admin-spaces.service.ts`, `dto/admin-space.dto.ts`, `spaces.service.ts`, `spaces.module.ts`) y `src/space-types/` (`admin-space-types.*`, `dto/admin-space-type.dto.ts`, `space-types.module.ts`).
-- `rentsmart-back/test/admin.e2e-spec.ts` y `docs/arquitectura.md`.
+- `rentsmart-back/test/space-edit-bookings.e2e-spec.ts`.
 
 #### Cómo probarlo
-Con Node 24, en `rentsmart-back`: `npx prisma migrate deploy`, y `npm run lint`, `npm run build`, `npm test` y `npm run test:e2e`. A mano en Swagger (secciones de administración), con `x-user-id` de `admin@rentsmart.test` (el id sale de la base de datos): bloquear un espacio con un motivo y comprobar que sale del catálogo.
+En `rentsmart-back` (Node 24): `npm run lint`, `npm run build`, `npm test` y `npm run test:e2e`.
 
 #### Estado de verificación
-- Lint: ✅ · Build: ✅ · 187 unitarias ✅ · 258 e2e ✅ (Node 24, BD de test migrada y sin seed, como en el CI)
+- Lint: ✅ · Build: ✅ · e2e: ✅ (Node 24, BD de test migrada y sin seed)
 
 #### Pendientes y bloqueos
-- **Cambio de `schema.prisma`:** este PR necesita la revisión de A (@AlejandroMG), además de la de C.
-- Reemplazar `DevAuthGuard` y `AdminGuard` por el `JwtAuthGuard` y el `RolesGuard` de A (CU-03).
-- Avisar al propietario por correo cuando bloquean su espacio depende de los emails de C (RE-07); por ahora lo ve en su panel.
+- Cuando C entregue RE-02, conviene sumar una prueba que cree la reserva por la API y no por la base de datos.
 
 #### Para el resto del equipo
-- A (@AlejandroMG): este PR agrega dos columnas a `Space` (`blockedReason` y `blockedAt`, con migración). Además trae un `AdminGuard` mínimo que puedes reemplazar por tu `RolesGuard`, y las rutas `/api/admin/spaces` y `/api/admin/space-types` (de AD-02): tu módulo `admin` puede convivir con ellas.
-- C (@gonzzza-lol): bloquear un espacio no cancela sus reservas confirmadas; se mantienen, como al desactivarlo (ES-06).
+- C (@gonzzza-lol): al crear una reserva hay que guardar `subtotal`, `fee` y `total` calculados en ese momento (como ya prevé el modelo); es lo que hace que editar el precio de un espacio no afecte a las reservas existentes.
 
 ---
