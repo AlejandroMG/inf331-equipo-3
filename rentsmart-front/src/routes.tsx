@@ -29,8 +29,8 @@ export const routes: RouteObject[] = [
         children: [
           { path: 'publish/:spaceId?', element: <PublishSpacePage /> },
           { path: 'owner/spaces', element: <OwnerSpacesPage /> },
-          { path: 'owner/bookings', element: <OwnerBookingsPage /> },
-          { path: 'owner/metrics', element: <OwnerMetricsPage /> },
+          { path: 'owner/bookings', element: <OwnerBookingsPage />, handle: { title: 'Reservas de mis espacios' } },
+          { path: 'owner/metrics', element: <OwnerMetricsPage />, handle: { title: 'Métricas' } },
         ],
       },
       ...(import.meta.env.DEV ? [{ path: 'dev/componentes', element: <ComponentsPage /> }] : []),
