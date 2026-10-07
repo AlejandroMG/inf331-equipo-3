@@ -1485,7 +1485,7 @@ En `rentsmart-front` (Node 24): `npm run lint`, `npm test` y `npm run build`. A 
 
 #### Pendientes y bloqueos
 - El inicio de sesión y el registro (de A) siguen sin llevar el foco al primer campo con error al enviar con datos inválidos; los campos sí indican su error. Es el mismo arreglo del formulario de publicar.
-- Cuando entre el PR #102 (ordenar resultados), su selector "Ordenar por" necesita el mismo borde (`border-field`).
+- El selector "Ordenar por" de #102 (ya en `main`) usa ahora el mismo borde (`border-field`): se corrigió al sincronizar este PR con `main`.
 - No se revisó con un lector de pantalla real (NVDA o VoiceOver): la revisión fue automática y con el teclado.
 
 #### Para el resto del equipo
