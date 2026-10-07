@@ -22,6 +22,18 @@ export class CatalogScheduleDto {
   endTime: string;
 }
 
+/** Zona donde está el espacio: un círculo, no un punto (ES-07). */
+export class CatalogLocationDto {
+  @ApiProperty({ example: -33.449 })
+  latitude: number;
+
+  @ApiProperty({ example: -70.669 })
+  longitude: number;
+
+  @ApiProperty({ example: 150, description: 'Radio del círculo en metros; el espacio queda dentro de él' })
+  radiusMeters: number;
+}
+
 /**
  * Detalle público de un espacio. Incluye la dirección pública, pero nunca `addressDetail`:
  * solo lo ve quien tiene una reserva confirmada (P-09).
@@ -47,6 +59,13 @@ export class CatalogDetailDto {
 
   @ApiProperty({ type: String, nullable: true, description: 'Dirección pública' })
   address: string | null;
+
+  @ApiProperty({
+    type: CatalogLocationDto,
+    nullable: true,
+    description: 'Ubicación aproximada, si el propietario marcó el punto. Nunca trae el punto exacto',
+  })
+  location: CatalogLocationDto | null;
 
   @ApiProperty()
   capacity: number;

@@ -26,6 +26,8 @@ const OWNER_VIEW = {
   communeId: true,
   address: true,
   addressDetail: true,
+  latitude: true,
+  longitude: true,
   rules: true,
   createdAt: true,
   updatedAt: true,
@@ -46,6 +48,18 @@ function toDto(row: OwnerRow & { _count?: unknown }): SpaceDto {
   return { ...space, amenityIds: amenities.map((a) => a.amenityId) };
 }
 
+/** La latitud y la longitud van juntas: o el espacio tiene punto en el mapa, o no lo tiene (ES-07). */
+function checkCoordinates(
+  dto: CreateSpaceDto | UpdateSpaceDto,
+  current?: { latitude: number | null; longitude: number | null },
+): void {
+  const latitude = dto.latitude !== undefined ? dto.latitude : current?.latitude;
+  const longitude = dto.longitude !== undefined ? dto.longitude : current?.longitude;
+  if ((latitude == null) !== (longitude == null)) {
+    throw new BadRequestException('La latitud y la longitud van juntas');
+  }
+}
+
 /** Espacios del propietario: crear y editar el borrador mientras se publica (ES-02). */
 @Injectable()
 export class SpacesService {
@@ -54,6 +68,7 @@ export class SpacesService {
   async create(ownerId: string, dto: CreateSpaceDto): Promise<SpaceDto> {
     const { amenityIds, ...fields } = dto;
     const regionId = await this.checkReferences(dto);
+    checkCoordinates(dto);
     const space = await this.prisma.space.create({
       data: {
         ...fields,
@@ -79,6 +94,7 @@ export class SpacesService {
 
     const { amenityIds, ...fields } = dto;
     const regionId = await this.checkReferences(dto);
+    checkCoordinates(dto, current);
 
     // Un espacio publicado no puede quedar sin algo de lo necesario para publicar (un cambio de precio sí vale).
     if (current.status === SpaceStatus.ACTIVE) {

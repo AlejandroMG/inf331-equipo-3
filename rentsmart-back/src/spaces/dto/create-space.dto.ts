@@ -4,6 +4,7 @@ import {
   ArrayUnique,
   IsArray,
   IsInt,
+  IsNumber,
   IsOptional,
   IsString,
   Max,
@@ -13,6 +14,9 @@ import {
 } from 'class-validator';
 
 export const MAX_PRICE = 10_000_000;
+
+/** Caja que contiene a Chile (con la isla de Pascua y Juan Fernández): descarta los puntos que no pueden ser de aquí. */
+export const CHILE_BOUNDS = { minLat: -56, maxLat: -17, minLng: -110, maxLng: -66 } as const;
 
 /**
  * Datos de un espacio mientras se publica. Solo el nombre es obligatorio: el formulario por pasos
@@ -78,6 +82,30 @@ export class CreateSpaceDto {
   @IsString()
   @MaxLength(200)
   address?: string | null;
+
+  @ApiPropertyOptional({
+    type: Number,
+    nullable: true,
+    example: -33.4489,
+    description: 'Latitud del punto marcado en el mapa (dentro de Chile). Va junto con la longitud',
+  })
+  @IsOptional()
+  @IsNumber({ maxDecimalPlaces: 6 })
+  @Min(CHILE_BOUNDS.minLat)
+  @Max(CHILE_BOUNDS.maxLat)
+  latitude?: number | null;
+
+  @ApiPropertyOptional({
+    type: Number,
+    nullable: true,
+    example: -70.6693,
+    description: 'Longitud del punto marcado en el mapa (dentro de Chile). Va junto con la latitud',
+  })
+  @IsOptional()
+  @IsNumber({ maxDecimalPlaces: 6 })
+  @Min(CHILE_BOUNDS.minLng)
+  @Max(CHILE_BOUNDS.maxLng)
+  longitude?: number | null;
 
   @ApiPropertyOptional({
     type: String,
