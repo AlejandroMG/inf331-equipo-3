@@ -345,6 +345,100 @@ describe('PublishSpacePage', () => {
     expect(saves[0]).toMatchObject({ method: 'PATCH', url: '/api/spaces/draft-9', body: { name: 'Renombrado', capacity: 6 } })
   })
 
+  describe('punto en el mapa', () => {
+    const draftWithPoint = (point: { latitude: number | null; longitude: number | null }) =>
+      mswHttp.get('*/api/spaces/draft-7', () =>
+        HttpResponse.json({
+          id: 'draft-7', status: 'DRAFT', name: 'Con mapa', typeId: null, description: null, capacity: null,
+          pricePerHour: null, pricePerDay: null, regionId: 1, communeId: null, address: null, addressDetail: null,
+          ...point, rules: null, amenityIds: [], photos: [], createdAt: '2026-10-05T00:00:00.000Z', updatedAt: '2026-10-05T00:00:00.000Z',
+        }),
+      )
+
+    async function openStep2() {
+      await userEvent.type(screen.getByLabelText('Nombre del espacio'), 'Sala Alameda')
+      await next()
+      await screen.findByText('Paso 2 de 5 · Ubicación')
+    }
+
+    it('en el paso Ubicación hay un mapa y los campos de latitud y longitud, opcionales', async () => {
+      await openForm()
+      await openStep2()
+
+      expect(await screen.findByRole('region', { name: 'Mapa para marcar la ubicación del espacio' })).toBeInTheDocument()
+      expect(screen.getByLabelText('Latitud')).toHaveValue(null)
+      expect(screen.getByLabelText('Longitud')).toHaveValue(null)
+      expect(screen.queryByRole('button', { name: 'Quitar el punto' })).not.toBeInTheDocument()
+    })
+
+    it('escribir la latitud y la longitud las guarda con el borrador', async () => {
+      const saves = spyOnSaves()
+      await openForm()
+      await openStep2()
+
+      await userEvent.type(screen.getByLabelText('Latitud'), '-33.4489')
+      await userEvent.type(screen.getByLabelText('Longitud'), '-70.6693')
+      await next()
+
+      expect(await screen.findByText('Paso 3 de 5 · Precio y horario')).toBeInTheDocument()
+      expect(saves[1]).toMatchObject({ method: 'PATCH', body: { latitude: -33.4489, longitude: -70.6693 } })
+    })
+
+    it('un borrador que no marcó el punto se guarda con null en las dos', async () => {
+      const saves = spyOnSaves()
+      await openForm()
+      await openStep2()
+
+      expect(saves[0]).toMatchObject({ method: 'POST', body: { latitude: null, longitude: null } })
+    })
+
+    it('una coordenada fuera de Chile no se guarda y marca el campo', async () => {
+      await openForm()
+      await openStep2()
+      const saves = spyOnSaves()
+
+      await userEvent.type(screen.getByLabelText('Latitud'), '40.4')
+      await userEvent.type(screen.getByLabelText('Longitud'), '-70.6')
+      await next()
+
+      expect(await screen.findByText('La latitud debe estar entre -56 y -17, dentro de Chile.')).toBeInTheDocument()
+      expect(screen.getByLabelText('Latitud')).toHaveAttribute('aria-invalid', 'true')
+      expect(screen.getByText('Paso 2 de 5 · Ubicación')).toBeInTheDocument()
+      expect(saves).toEqual([])
+    })
+
+    it('con solo una de las dos pide la que falta', async () => {
+      await openForm()
+      await openStep2()
+
+      await userEvent.type(screen.getByLabelText('Latitud'), '-33.4')
+      await next()
+
+      expect(await screen.findByText('Falta la longitud: completa las dos o quita el punto.')).toBeInTheDocument()
+      expect(screen.getByLabelText('Longitud')).toHaveAttribute('aria-invalid', 'true')
+    })
+
+    it('al continuar un borrador carga el punto guardado, y "Quitar el punto" lo borra en el servidor', async () => {
+      const saves = spyOnSaves()
+      server.use(draftWithPoint({ latitude: -33.4489, longitude: -70.6693 }), mswHttp.patch('*/api/spaces/draft-7', () => HttpResponse.json({})))
+      await openForm('/publish/draft-7')
+      await userEvent.click(screen.getByRole('button', { name: 'Siguiente' }))
+      await screen.findByText('Paso 2 de 5 · Ubicación')
+
+      expect(screen.getByLabelText('Latitud')).toHaveValue(-33.4489)
+      expect(screen.getByLabelText('Longitud')).toHaveValue(-70.6693)
+
+      await userEvent.click(screen.getByRole('button', { name: 'Quitar el punto' }))
+      expect(screen.getByLabelText('Latitud')).toHaveValue(null)
+      expect(screen.getByLabelText('Longitud')).toHaveValue(null)
+      expect(screen.queryByRole('button', { name: 'Quitar el punto' })).not.toBeInTheDocument()
+
+      await next()
+      await screen.findByText('Paso 3 de 5 · Precio y horario')
+      expect(saves.at(-1)).toMatchObject({ method: 'PATCH', url: '/api/spaces/draft-7', body: { latitude: null, longitude: null } })
+    })
+  })
+
   it('un borrador que no existe o no es del usuario muestra un aviso con salida', async () => {
     renderPublish('/publish/no-existe')
 
