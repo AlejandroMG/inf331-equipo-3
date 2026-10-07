@@ -1593,51 +1593,38 @@ Dejar `JwtAuthGuard`, `RolesGuard` y `@CurrentUser()` listos para los demás mó
 
 ---
 
-### 2026-10-07 · B (xReNatS) · PN-02 y PN-04 API: reservas y métricas del propietario
+### 2026-10-07 · B (xReNatS) · ES-05 editar un espacio: las reservas conservan su total
 
-**Issues:** #49 (PN-02), #51 (PN-04)
-**Rama / PR:** `feat/PN-02-PN-04-owner-api` · sin PR todavía (el front irá en otro PR)
-**Duración aproximada:** 1 h 30 min
+**Issues:** #24 (ES-05)
+**Rama / PR:** `feat/ES-05-editar-espacio` · sin PR todavía
+**Duración aproximada:** 30 min
 **Herramientas:** Claude Code
 
 #### Objetivo
-Darle al panel del propietario las reservas de sus espacios (con el contacto del arrendatario en las confirmadas) y sus métricas del mes (ingresos y ocupación por espacio). #49 depende de RE-04 y #51 de las reservas, pero la tabla `Booking` ya existe en el schema, así que las dos historias se pueden hacer leyéndola, sin esperar la API de reservas de C.
+Cerrar ES-05. El formulario ya edita un espacio (la misma pantalla de publicar, con "Edita tu espacio"), y la API ya deja cambiar sus datos con las reglas de P-18. Faltaba lo único que pide el criterio: demostrar que un cambio de precio aplica solo a las reservas nuevas.
 
 #### Qué se hizo
-- **`GET /api/owner/bookings`:** las reservas de todos mis espacios, paginadas, con filtros por estado y por fecha de inicio, y orden. El contacto del arrendatario (`email`, `phone`) solo viene en las confirmadas.
-- **`GET /api/owner/metrics?month=`:** ingresos del mes y, por espacio, reservas, horas reservadas, horas arrendables y ocupación. Cuentan las reservas confirmadas y finalizadas que empiezan en el mes.
-- **Hora de Chile:** `src/common/santiago-time.ts` calcula el comienzo de un día y de un mes en `America/Santiago`, incluido el cambio de horario de verano (septiembre dura 719 h). Sin esto, la reserva del 31 de octubre a las 23:00 de Chile caería en noviembre.
-- **Módulo nuevo `owner`**, dentro del dominio de B (panel del propietario). Solo lee: no crea ni cambia reservas.
-- **Pruebas:** unitarias de la hora de Chile y de las métricas (la ocupación no pasa de 1, tramos que se suman, sin espacios) y 38 e2e (estados, fechas en hora de Chile, contacto solo en confirmadas, nunca las reservas de otro propietario, meses límite, parámetros inválidos).
+- No hubo que cambiar código: `Booking` guarda `subtotal`, `fee` y `total` al crearse y no los calcula desde el precio del espacio, así que editar el precio no puede tocar una reserva que ya existe.
+- Se agregó `test/space-edit-bookings.e2e-spec.ts` (5 pruebas) que lo demuestra: con un espacio publicado y una reserva confirmada de 3 horas, cambiar el precio por hora y por día, quitar el precio por día, o editar el nombre, la descripción y la capacidad deja la reserva con el mismo subtotal, comisión, total y estado; el público ve el precio nuevo; y desactivar el espacio mantiene la reserva confirmada (criterio de ES-06).
 
 #### Decisiones y por qué
 | Decisión | Alternativas consideradas | Por qué se eligió |
 |---|---|---|
-| Leer `Booking` directamente | Esperar los endpoints de reservas de C | La tabla y sus estados ya están en el schema; el panel es de B y el listado por propietario no está en ninguna historia de C. Solo lee, así que no pisa la lógica de reservas |
-| El ingreso es `subtotal` | `total` | Según P-13 la comisión (10 %) se suma al arrendatario: lo que recibe el propietario es el subtotal |
-| Cuentan `CONFIRMED` y `FINISHED` | También `PAID` o `PENDING` | Una reserva pagada pero todavía sin validar, o una pendiente, puede cancelarse; no es un ingreso seguro |
-| Una reserva es del mes en que **empieza** | Repartirla entre meses si cruza el límite | Es lo simple y lo esperable para un panel; una reserva que cruza la medianoche del último día es rara |
-| El contacto solo en reservas confirmadas | En todas | Igual que el detalle de la dirección (P-09): los datos personales se entregan cuando hay una reserva firme |
-| Días y meses en hora de Chile | UTC | El propietario piensa en días de Chile; en UTC la reserva de la noche del último día del mes cae en el mes siguiente |
-| Ocupación = horas reservadas sobre horas arrendables, con tope en 1 | Sin tope | Una reserva "por día" puede durar más que el horario del día; el tope evita un 130 % |
+| Probar con reservas creadas directo en la base de datos | Esperar a la API de reservas (RE-02, de C) | El criterio se cumple por cómo está modelada `Booking`, no por código de reservas: la prueba no depende de nada de C, y cuando exista RE-02 sigue valiendo |
 
 #### Archivos principales
-- `rentsmart-back/src/owner/` (`owner.module.ts`, `owner.controller.ts`, `owner-bookings.service.ts`, `owner-metrics.service.ts` y `dto/`).
-- `rentsmart-back/src/common/santiago-time.ts`, `src/app.module.ts` y `test/owner-panel.e2e-spec.ts`.
-- `docs/arquitectura.md`.
+- `rentsmart-back/test/space-edit-bookings.e2e-spec.ts`.
 
 #### Cómo probarlo
-Con Node 24, en `rentsmart-back`: `npm run lint`, `npm run build`, `npm test` y `npm run test:e2e`. A mano en Swagger (sección "Panel del propietario"): crear una reserva confirmada en la base de datos y abrir `GET /api/owner/bookings` y `GET /api/owner/metrics`.
+En `rentsmart-back` (Node 24): `npm run lint`, `npm run build`, `npm test` y `npm run test:e2e`.
 
 #### Estado de verificación
-- Lint: ✅ · Build: ✅ · 194 unitarias ✅ · 245 e2e ✅ (Node 24, BD de test migrada y sin seed, como en el CI)
+- Lint: ✅ · Build: ✅ · e2e: ✅ (Node 24, BD de test migrada y sin seed)
 
 #### Pendientes y bloqueos
-- Cuando C entregue RE-02 a RE-04, conviene sumar una prueba que cree las reservas por la API y no por la base de datos.
-- Reemplazar el `DevAuthGuard` por el `JwtAuthGuard` de A (CU-03), igual que en `spaces`.
+- Cuando C entregue RE-02, conviene sumar una prueba que cree la reserva por la API y no por la base de datos.
 
 #### Para el resto del equipo
-- C (@gonzzza-lol): este módulo lee `Booking` (`startAt`, `endAt`, `unit`, `subtotal`, `status`) y los datos del arrendatario. Si cambias esas columnas o el significado de un estado, avísame; y los estados `CONFIRMED` y `FINISHED` son los que cuentan como ingreso. Las reservas deben guardar `subtotal` sin la comisión.
-- A (@AlejandroMG): no toca `schema.prisma`.
+- C (@gonzzza-lol): al crear una reserva hay que guardar `subtotal`, `fee` y `total` calculados en ese momento (como ya prevé el modelo); es lo que hace que editar el precio de un espacio no afecte a las reservas existentes.
 
 ---
