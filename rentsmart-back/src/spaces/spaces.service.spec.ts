@@ -149,6 +149,137 @@ describe('SpacesService', () => {
     });
   });
 
+  describe('punto en el mapa', () => {
+    const point = { latitude: -33.4489, longitude: -70.6693 };
+    const dataOf = (mock: jest.Mock, call = 0) =>
+      (mock.mock.calls[call][0] as { data: Record<string, unknown> }).data;
+
+    it('crea el espacio con el punto que marcó el propietario', async () => {
+      prisma.space.create.mockResolvedValue(row);
+
+      await service.create('u1', { name: 'Sala', ...point });
+
+      expect(dataOf(prisma.space.create)).toMatchObject(point);
+    });
+
+    it('al crear rechaza una latitud sin longitud, y al revés', async () => {
+      await expect(
+        service.create('u1', { name: 'Sala', latitude: -33.4 }),
+      ).rejects.toThrow(BadRequestException);
+      await expect(
+        service.create('u1', { name: 'Sala', longitude: -70.6 }),
+      ).rejects.toThrow(BadRequestException);
+      expect(prisma.space.create).not.toHaveBeenCalled();
+    });
+
+    it('al crear, los dos en null equivalen a no marcar nada', async () => {
+      prisma.space.create.mockResolvedValue(row);
+
+      await service.create('u1', {
+        name: 'Sala',
+        latitude: null,
+        longitude: null,
+      });
+
+      expect(prisma.space.create).toHaveBeenCalled();
+    });
+
+    it('marca el punto en un espacio que no lo tenía', async () => {
+      prisma.space.findUnique.mockResolvedValue({
+        ...row,
+        ownerId: 'u1',
+        latitude: null,
+        longitude: null,
+      });
+      prisma.space.update.mockResolvedValue(row);
+
+      await service.update('u1', 's1', point);
+
+      expect(dataOf(prisma.space.update)).toMatchObject(point);
+    });
+
+    it('rechaza marcar solo la latitud si el espacio no tenía punto', async () => {
+      prisma.space.findUnique.mockResolvedValue({
+        ...row,
+        ownerId: 'u1',
+        latitude: null,
+        longitude: null,
+      });
+
+      await expect(
+        service.update('u1', 's1', { latitude: -33.4 }),
+      ).rejects.toThrow(BadRequestException);
+      expect(prisma.space.update).not.toHaveBeenCalled();
+    });
+
+    it('con un punto ya marcado deja mover solo una de las dos', async () => {
+      prisma.space.findUnique.mockResolvedValue({
+        ...row,
+        ownerId: 'u1',
+        ...point,
+      });
+      prisma.space.update.mockResolvedValue(row);
+
+      await service.update('u1', 's1', { latitude: -33.5 });
+
+      expect(dataOf(prisma.space.update)).toMatchObject({ latitude: -33.5 });
+    });
+
+    it('con un punto ya marcado no deja borrar solo una de las dos', async () => {
+      prisma.space.findUnique.mockResolvedValue({
+        ...row,
+        ownerId: 'u1',
+        ...point,
+      });
+
+      await expect(
+        service.update('u1', 's1', { latitude: null }),
+      ).rejects.toThrow(BadRequestException);
+      expect(prisma.space.update).not.toHaveBeenCalled();
+    });
+
+    it('con null en las dos se borra el punto', async () => {
+      prisma.space.findUnique.mockResolvedValue({
+        ...row,
+        ownerId: 'u1',
+        ...point,
+      });
+      prisma.space.update.mockResolvedValue(row);
+
+      await service.update('u1', 's1', { latitude: null, longitude: null });
+
+      expect(dataOf(prisma.space.update)).toMatchObject({
+        latitude: null,
+        longitude: null,
+      });
+    });
+
+    it('si la petición no habla del punto, no lo toca', async () => {
+      prisma.space.findUnique.mockResolvedValue({
+        ...row,
+        ownerId: 'u1',
+        ...point,
+      });
+      prisma.space.update.mockResolvedValue(row);
+
+      await service.update('u1', 's1', { description: 'Hola' });
+
+      const data = dataOf(prisma.space.update);
+      expect(data).not.toHaveProperty('latitude');
+      expect(data).not.toHaveProperty('longitude');
+    });
+
+    it('el propietario recibe el punto exacto', async () => {
+      prisma.space.findUnique.mockResolvedValue({
+        ...row,
+        ownerId: 'u1',
+        ...point,
+      });
+
+      await expect(service.findOne('u1', 's1')).resolves.toMatchObject(point);
+    });
+  });
+
   describe('update de un espacio publicado', () => {
     const active = {
       ...row,

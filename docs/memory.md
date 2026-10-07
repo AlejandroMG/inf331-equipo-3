@@ -1384,3 +1384,50 @@ Con `docker compose up -d db-test`, en `rentsmart-back` (Node 24): `npm run lint
 - C (@gonzzza-lol): cuando existan las reservas, el panel necesitará `GET /api/spaces/me` con las próximas reservas de cada espacio; avísame el contrato.
 
 ---
+
+### 2026-10-06 · B (xReNatS) · ES-07 API: punto del espacio en el mapa
+
+**Issues:** #26 (ES-07)
+**Rama / PR:** `feat/ES-07-mapa-api` · sin PR todavía (el front está en `feat/ES-07-mapa-front`, un PR aparte)
+**Duración aproximada:** 1 h
+**Herramientas:** Claude Code
+
+#### Objetivo
+Que el propietario pueda guardar el punto de su espacio en el mapa y que el detalle público entregue solo una zona aproximada. El issue no tenía criterios ("por definir al tomar la historia"): los definí con Renato y quedaron en P-19.
+
+#### Qué se hizo
+- **Base de datos:** `Space` agrega `latitude` y `longitude` (`Float?`) con la migración `20261006180000_space_coordinates`, que además crea un `CHECK` para que vayan juntas (las dos o ninguna). Con la migración aplicada, el esquema y la BD no tienen diferencias.
+- **API del propietario:** `POST` y `PATCH /api/spaces` aceptan `latitude` y `longitude`: opcionales, dentro de Chile (latitud de -56 a -17, longitud de -110 a -66, hasta 6 decimales) y siempre juntas (400 si llega una sola, también contando el valor ya guardado). `null` en las dos borra el punto. El dueño recibe el punto exacto en `GET /api/spaces/:id`.
+- **API pública:** `GET /api/catalog/:id` agrega `location: { latitude, longitude, radiusMeters } | null` con las coordenadas **redondeadas a 3 decimales** y un radio de 150 m. El punto exacto no sale de la API pública y la lista del catálogo no trae coordenadas. El redondeo está en `src/catalog/approximate-location.ts`; un test recorre Chile en una grilla y comprueba que el punto real queda siempre dentro del círculo (el peor caso está a unos 77 m).
+- **Pruebas:** 168 unitarias y 193 e2e. Las e2e comprueban el flujo completo (marcar, mover, borrar, rechazos) y que el punto exacto no aparece en ninguna parte del detalle público ni de la lista.
+
+#### Decisiones y por qué
+| Decisión | Alternativas consideradas | Por qué se eligió |
+|---|---|---|
+| El propietario marca el punto en un mapa | Geocodificar la dirección con Nominatim; usar solo el centro de la comuna | No depende de un servicio externo con límite de uso ni de que encuentre la dirección, y el punto queda donde el propietario dice. El centro de la comuna pondría todos los espacios de una comuna en el mismo lugar |
+| El público ve un círculo de ~150 m, con coordenadas redondeadas en la API | Mostrar el pin exacto | El issue pide una ubicación "aproximada"; redondear en la API (y no solo dibujar un círculo en el front) hace que el punto exacto no salga nunca del servidor. La dirección escrita sigue siendo pública (P-09) |
+| `latitude` y `longitude` van juntas, validado en el servicio y con un `CHECK` en la BD | Solo validar en el servicio | Un punto con una sola coordenada no sirve para nada; así ninguna ruta de código puede dejarlo a medias |
+| Dentro de Chile, por una caja de latitud y longitud | Validar contra la comuna elegida | Descarta los errores groseros (signo cambiado, coordenadas de otro país) sin necesitar coordenadas por comuna, que no existen en el seed |
+
+#### Archivos principales
+- `rentsmart-back/prisma/schema.prisma` y `prisma/migrations/20261006180000_space_coordinates/`: las dos columnas y el `CHECK`.
+- `rentsmart-back/src/spaces/` (`dto/create-space.dto.ts`, `dto/space.dto.ts`, `spaces.service.ts`) y `src/catalog/` (`approximate-location.ts`, `dto/catalog-detail.dto.ts`, `catalog.service.ts`).
+- `rentsmart-back/test/space-location.e2e-spec.ts`: el flujo completo y que el punto exacto no sale en lo público.
+- `docs/decisiones.md` (P-19) y `docs/arquitectura.md`.
+
+#### Cómo probarlo
+Con Node 24, en `rentsmart-back`: aplicar la migración (`npx prisma migrate deploy`) y correr `npm run lint`, `npm run build`, `npm test` y `npm run test:e2e`. A mano en Swagger: `PATCH /api/spaces/:id` con `latitude: -33.4489` y `longitude: -70.6693`; activar el espacio y abrir `GET /api/catalog/:id`: `location` trae `-33.449`, `-70.669` y `radiusMeters: 150`.
+
+#### Estado de verificación
+- Lint: ✅ · Build: ✅ · 168 unitarias ✅ · 193 e2e ✅ (Node 24, BD de test migrada y sin seed, como en el CI)
+
+#### Pendientes y bloqueos
+- **Cambio de `schema.prisma`:** este PR necesita la revisión de A (@AlejandroMG), además de la de C.
+- **Orden de merge:** va antes que el PR del front. El formulario del front manda `latitude` y `longitude`, y una API sin este PR las rechaza con 400 (`forbidNonWhitelisted`).
+- Las teselas públicas de OpenStreetMap sirven para el MVP; con tráfico real hay que cambiar `TILE_URL` (en el front) por un proveedor propio.
+
+#### Para el resto del equipo
+- A (@AlejandroMG): este PR cambia `schema.prisma` (dos columnas nuevas en `Space` y una migración con un `CHECK`). Por favor revísalo.
+- C (@gonzzza-lol): nada cambia en tu dominio. Si más adelante la reserva confirmada muestra la dirección completa, el punto exacto del propietario (`latitude` y `longitude`) está en la base de datos por si sirve.
+
+---
