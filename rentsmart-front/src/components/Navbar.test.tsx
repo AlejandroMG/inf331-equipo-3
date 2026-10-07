@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router'
 import { describe, expect, it } from 'vitest'
 import { getToken, setToken } from '../lib/token'
+import { fakeJwt } from '../test/jwt'
 import { Navbar } from './Navbar'
 
 function renderNavbar(path = '/') {
@@ -24,6 +25,33 @@ describe('Navbar', () => {
     expect(within(nav).getByRole('link', { name: 'Publicar tu espacio' })).toHaveAttribute('href', '/publish')
     expect(within(nav).getByRole('link', { name: 'Ingresar' })).toHaveAttribute('href', '/login')
     expect(within(nav).getByRole('link', { name: 'Crear cuenta' })).toHaveAttribute('href', '/register')
+  })
+
+  describe('administración', () => {
+    it('un administrador ve el enlace a la moderación', () => {
+      setToken(fakeJwt('ADMIN'))
+      renderNavbar()
+
+      const nav = screen.getByRole('navigation', { name: 'Principal' })
+
+      expect(within(nav).getByRole('link', { name: 'Administración' })).toHaveAttribute('href', '/admin/spaces')
+    })
+
+    it.each([
+      ['un usuario común', fakeJwt('USER')],
+      ['un token que no dice su rol', 'dev'],
+    ])('%s no lo ve', (_name, token) => {
+      setToken(token)
+      renderNavbar()
+
+      expect(screen.queryByRole('link', { name: 'Administración' })).not.toBeInTheDocument()
+    })
+
+    it('sin sesión tampoco', () => {
+      renderNavbar()
+
+      expect(screen.queryByRole('link', { name: 'Administración' })).not.toBeInTheDocument()
+    })
   })
 
   it('marca la página actual', () => {

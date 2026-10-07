@@ -1476,3 +1476,52 @@ Con Node 24, en `rentsmart-back`: aplicar la migración (`npx prisma migrate dep
 - C (@gonzzza-lol): nada cambia en tu dominio. Si más adelante la reserva confirmada muestra la dirección completa, el punto exacto del propietario (`latitude` y `longitude`) está en la base de datos por si sirve.
 
 ---
+
+### 2026-10-07 · B (xReNatS) · AD-02 front: moderación de espacios y tipos de espacio
+
+**Issues:** #61 (AD-02)
+**Rama / PR:** `feat/AD-02-admin-front` · sin PR todavía (la API está en `feat/AD-02-admin-api`, un PR aparte que debe entrar primero)
+**Duración aproximada:** 1 h 30 min
+**Herramientas:** Claude Code, Chrome con Puppeteer y axe-core
+
+#### Objetivo
+Las pantallas para que un administrador despublique espacios con un motivo y administre los tipos de espacio. La API está en el PR de AD-02.
+
+#### Qué se hizo
+- **"Administración de espacios"** (`/admin/spaces`): todos los espacios con su estado, tipo, comuna y propietario (nombre y email); filtros por estado y por texto (en la URL) y paginación. "Bloquear" abre un diálogo que pide el motivo (de 5 a 500 caracteres, con su error) y avisa que las reservas confirmadas se mantienen; "Desbloquear" pide confirmar y deja el espacio desactivado. La fila se actualiza con lo que devuelve el servidor y muestra el motivo.
+- **"Tipos de espacio"** (`/admin/space-types`): los tipos con cuántos espacios usa cada uno, un formulario para agregar uno y "Renombrar" en cada fila. Los errores del servidor (nombre repetido, alojamiento) salen junto al campo.
+- **Permisos:** `RequireAdmin` protege las dos rutas según el rol del token y `useRole()` lo lee (`src/lib/role.ts`); la barra muestra "Administración" solo a los administradores. La API vuelve a comprobarlo.
+- **Panel del propietario:** un espacio bloqueado muestra el motivo que dio el administrador.
+- **Mocks:** la API simulada tiene los endpoints de administración, con estado que se reinicia entre pruebas.
+- **Pruebas:** del rol (incluido el base64url con acentos y los tokens que no se entienden), de `RequireAdmin`, de la barra, de las dos pantallas (validación del motivo y del nombre, errores del servidor, filtros y URL, paginación, cancelar) y del motivo en el panel del propietario.
+
+#### Decisiones y por qué
+| Decisión | Alternativas consideradas | Por qué se eligió |
+|---|---|---|
+| El rol sale del contenido del JWT | Guardar el usuario al iniciar sesión (código de A); pedirlo a un endpoint | Es lo que hay en el token (`role`) y no toca los archivos de A. Solo decide qué se muestra: el navegador no es de fiar y la API responde 403 a quien no es administrador |
+| Una pantalla de "No tienes permiso" | Redirigir al inicio | Quien llegó por un enlace entiende qué pasó, y el usuario común nunca ve un panel que no puede usar |
+| La fila se actualiza con la respuesta del servidor | Recargar la lista | La lista no parpadea ni pierde la página y los filtros; la respuesta trae el estado y el motivo reales |
+| El diálogo de bloqueo se queda abierto si el servidor lo rechaza | Cerrarlo y avisar con un aviso | El motivo escrito no se pierde y el mensaje queda junto al campo |
+| La carpeta se llama `moderation`, no `admin` | `features/admin/` | `admin/` es de A (panel admin y usuarios): así no pisamos sus archivos |
+
+#### Archivos principales
+- `rentsmart-front/src/features/moderation/` (`AdminSpacesPage`, `AdminSpaceTypesPage`, `AdminNav`, `moderation-api.ts`, `types.ts` y sus pruebas).
+- `rentsmart-front/src/lib/role.ts`, `src/components/RequireAdmin.tsx`, `src/components/Navbar.tsx`, `src/routes.tsx`, `src/lib/paths.ts`, `src/test/jwt.ts`.
+- `rentsmart-front/src/features/owner/` (el motivo en `OwnerSpaceRow` y `types.ts`) y `src/mocks/handlers.ts`.
+
+#### Cómo probarlo
+En `rentsmart-front` (Node 24): `npm run lint`, `npm test` y `npm run build`. A mano, con la API de AD-02, iniciando sesión como `admin@rentsmart.test` (contraseña `Password123`, del seed): "Administración" en la barra, bloquear un espacio y comprobar que sale del catálogo y que el propietario ve el motivo.
+
+#### Estado de verificación
+- Lint: ✅ · Tests: ✅ (32 archivos, 399 pruebas, con Node 24) · Build: ✅
+- Chrome real: axe da 0 violaciones en "Espacios", en el diálogo de bloqueo y en "Tipos de espacio", a 1100 y a 375 px, sin desborde horizontal. Un usuario común ve "No tienes permiso" y no ve el enlace.
+
+#### Pendientes y bloqueos
+- **Orden de merge:** entra después del PR de la API de AD-02; sin él, las pantallas muestran el error de la carga.
+- Con el `DevAuthGuard` temporal la API actúa como el usuario del seed (que no es administrador): en local hay que mandar `x-user-id` de un administrador. Se arregla cuando A entregue el `JwtAuthGuard` (CU-03).
+
+#### Para el resto del equipo
+- A (@AlejandroMG): este PR agrega `src/lib/role.ts` (`useRole()` lee el rol del token) y `RequireAdmin`, que tu panel admin (AD-01) puede reutilizar. No toca tus archivos.
+- C (@gonzzza-lol): no toca tus módulos.
+
+---

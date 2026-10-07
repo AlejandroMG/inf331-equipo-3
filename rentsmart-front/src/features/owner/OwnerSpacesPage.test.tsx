@@ -18,6 +18,7 @@ const summary = (overrides: Partial<OwnerSpaceSummary> = {}): OwnerSpaceSummary 
   pricePerDay: null,
   coverUrl: null,
   missing: [],
+  blockedReason: null,
   updatedAt: '2026-10-05T12:00:00.000Z',
   ...overrides,
 })
@@ -134,6 +135,12 @@ describe('OwnerSpacesPage', () => {
     expect(screen.queryByRole('switch')).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: /Editar/ })).not.toBeInTheDocument()
     expect(tile('Bloqueados')).toHaveTextContent('1')
+  })
+
+  it('un espacio bloqueado muestra el motivo que dio el administrador', async () => {
+    await openPanel([summary({ status: 'BLOCKED', blockedReason: 'Las fotos no corresponden al espacio' })])
+
+    expect(screen.getByText(/Un administrador bloqueó esta publicación\. Motivo: Las fotos no corresponden al espacio/)).toBeInTheDocument()
   })
 
   describe('desactivar', () => {

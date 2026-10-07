@@ -6,6 +6,8 @@ export const paths = {
   /** Continuar un borrador: /publish/<id>. */
   publishDraft: (id: string) => `/publish/${id}`,
   ownerSpaces: '/owner/spaces',
+  adminSpaces: '/admin/spaces',
+  adminSpaceTypes: '/admin/space-types',
   login: '/login',
   register: '/register',
 } as const

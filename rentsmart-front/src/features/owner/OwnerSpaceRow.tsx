@@ -39,7 +39,10 @@ export function OwnerSpaceRow({ space, pending, onToggle }: OwnerSpaceRowProps) 
         </div>
         <p className="mt-1 text-sm text-muted">{metaText(space)}</p>
         {space.status === 'BLOCKED' ? (
-          <p className="mt-1.5 text-sm font-semibold text-accent-ink">Un administrador bloqueó esta publicación.</p>
+          <p className="mt-1.5 text-sm font-semibold text-accent-ink">
+            Un administrador bloqueó esta publicación.
+            {space.blockedReason && <> Motivo: {space.blockedReason}</>}
+          </p>
         ) : (
           space.missing.length > 0 && (
             <p className="mt-1.5 text-sm font-semibold text-accent-ink">Falta: {missingText(space.missing)}</p>

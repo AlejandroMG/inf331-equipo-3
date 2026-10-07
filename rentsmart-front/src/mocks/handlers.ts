@@ -3,6 +3,7 @@ import type { SpaceDetail } from '../features/catalog/types'
 import type { OwnerSpaceSummary } from '../features/owner/types'
 import type { MissingField } from '../features/spaces/form'
 import type { OwnerPhoto, OwnerSpace, SpacePayload } from '../features/spaces/types'
+import type { AdminSpace, AdminSpaceType } from '../features/moderation/types'
 import { catalogData } from './catalog-data'
 
 /** Detalle de ejemplo a partir de un espacio de la lista: horario de lunes a viernes y datos genéricos. */
@@ -40,12 +41,38 @@ const COMMUNES = [
   { id: 5, name: 'San Miguel' },
 ]
 
+/** Espacios y tipos de ejemplo para la administración (AD-02); se reinician entre pruebas. */
+const adminSpaces = new Map<string, AdminSpace>()
+const adminTypes: AdminSpaceType[] = []
+
+function resetMockAdmin() {
+  adminSpaces.clear()
+  for (const [i, name] of ['Sala Alameda', 'Estudio Luz Norte', 'Taller San Miguel'].entries()) {
+    adminSpaces.set(`admin-space-${i + 1}`, {
+      id: `admin-space-${i + 1}`,
+      name,
+      status: i === 2 ? 'DRAFT' : 'ACTIVE',
+      ownerName: 'Pía Propietaria',
+      ownerEmail: 'propietario@rentsmart.test',
+      typeName: 'Sala de reuniones',
+      communeName: 'Santiago',
+      blockedReason: null,
+      blockedAt: null,
+      updatedAt: '2026-10-05T12:00:00.000Z',
+    })
+  }
+  adminTypes.length = 0
+  adminTypes.push(...SPACE_TYPES.map((type) => ({ ...type, spaces: 1 })))
+}
+resetMockAdmin()
+
 /** Borradores creados con el POST simulado; permiten volver a abrirlos con GET y PATCH. */
 const drafts = new Map<string, OwnerSpace>()
 
 /** Vacía los borradores simulados (los tests lo llaman entre pruebas). */
 export function resetMockDrafts() {
   drafts.clear()
+  resetMockAdmin()
   photoCounter = 0
 }
 
@@ -91,6 +118,7 @@ function summaryOf(space: OwnerSpace): OwnerSpaceSummary {
     pricePerDay: space.pricePerDay,
     coverUrl: space.photos[0]?.url ?? null,
     missing: missingToPublish(space) as MissingField[],
+    blockedReason: null,
     updatedAt: space.updatedAt,
   }
 }
@@ -284,6 +312,52 @@ export const handlers = [
       return HttpResponse.json({ message: 'El espacio no existe', error: 'Not Found', statusCode: 404 }, { status: 404 })
     }
     return HttpResponse.json(detailOf(item))
+  }),
+
+  // AD-02: moderación de espacios y tipos (solo administradores en la API real).
+  http.get('*/api/admin/spaces', ({ request }) => {
+    const url = new URL(request.url)
+    const status = url.searchParams.get('status')
+    const q = (url.searchParams.get('q') ?? '').toLowerCase()
+    const items = [...adminSpaces.values()].filter(
+      (space) => (!status || space.status === status) && (!q || `${space.name} ${space.ownerName} ${space.ownerEmail}`.toLowerCase().includes(q)),
+    )
+    const page = Math.max(1, Number(url.searchParams.get('page')) || 1)
+    const pageSize = Math.max(1, Number(url.searchParams.get('pageSize')) || 20)
+    return HttpResponse.json({ items: items.slice((page - 1) * pageSize, page * pageSize), total: items.length, page, pageSize })
+  }),
+  http.post('*/api/admin/spaces/:id/block', async ({ params, request }) => {
+    const space = adminSpaces.get(String(params.id))
+    const { reason } = (await request.json()) as { reason: string }
+    if (!space) return HttpResponse.json({ message: 'El espacio no existe', statusCode: 404 }, { status: 404 })
+    if (space.status === 'DRAFT' || space.status === 'BLOCKED') return conflict(space.status === 'BLOCKED' ? 'El espacio ya está bloqueado' : 'Un borrador no está publicado: no hay nada que bloquear')
+    const blocked = { ...space, status: 'BLOCKED' as const, blockedReason: reason, blockedAt: new Date().toISOString() }
+    adminSpaces.set(space.id, blocked)
+    return HttpResponse.json(blocked)
+  }),
+  http.post('*/api/admin/spaces/:id/unblock', ({ params }) => {
+    const space = adminSpaces.get(String(params.id))
+    if (!space) return HttpResponse.json({ message: 'El espacio no existe', statusCode: 404 }, { status: 404 })
+    if (space.status !== 'BLOCKED') return conflict('El espacio no está bloqueado')
+    const unblocked = { ...space, status: 'INACTIVE' as const, blockedReason: null, blockedAt: null }
+    adminSpaces.set(space.id, unblocked)
+    return HttpResponse.json(unblocked)
+  }),
+  http.get('*/api/admin/space-types', () => HttpResponse.json(adminTypes)),
+  http.post('*/api/admin/space-types', async ({ request }) => {
+    const { name } = (await request.json()) as { name: string }
+    if (adminTypes.some((type) => type.name.toLowerCase() === name.toLowerCase())) return conflict('Ya existe un tipo de espacio con ese nombre')
+    const type = { id: Math.max(0, ...adminTypes.map((t) => t.id)) + 1, name, spaces: 0 }
+    adminTypes.push(type)
+    return HttpResponse.json(type, { status: 201 })
+  }),
+  http.patch('*/api/admin/space-types/:id', async ({ params, request }) => {
+    const type = adminTypes.find((t) => t.id === Number(params.id))
+    const { name } = (await request.json()) as { name: string }
+    if (!type) return HttpResponse.json({ message: 'El tipo de espacio no existe', statusCode: 404 }, { status: 404 })
+    if (adminTypes.some((t) => t.id !== type.id && t.name.toLowerCase() === name.toLowerCase())) return conflict('Ya existe un tipo de espacio con ese nombre')
+    type.name = name
+    return HttpResponse.json(type)
   }),
 
   // CU-01: registro. "existe@rentsmart.test" simula un email ya usado.

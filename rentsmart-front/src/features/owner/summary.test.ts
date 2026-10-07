@@ -12,6 +12,7 @@ const space = (overrides: Partial<OwnerSpaceSummary> = {}): OwnerSpaceSummary =>
   pricePerDay: null,
   coverUrl: null,
   missing: [],
+  blockedReason: null,
   updatedAt: '2026-10-05T12:00:00.000Z',
   ...overrides,
 })

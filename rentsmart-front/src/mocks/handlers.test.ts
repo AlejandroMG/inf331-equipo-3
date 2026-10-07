@@ -41,6 +41,7 @@ describe('endpoint simulado /api/spaces/me', () => {
       pricePerDay: null,
       coverUrl: null,
       missing: ['photos'],
+      blockedReason: null,
       updatedAt: expect.any(String),
     })
     expect(list[1].missing).toEqual(['type', 'description', 'capacity', 'commune', 'price', 'photos'])

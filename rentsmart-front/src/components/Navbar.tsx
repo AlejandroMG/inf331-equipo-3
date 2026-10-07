@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link, NavLink, useNavigate } from 'react-router'
 import { cn } from '../lib/cn'
 import { paths } from '../lib/paths'
+import { useRole } from '../lib/role'
 import { clearToken, useToken } from '../lib/token'
 import { Button, LinkButton } from './Button'
 import { CloseIcon, MenuIcon } from './icons'
@@ -38,6 +39,8 @@ export function Navbar() {
   const closeMenu = () => setMenuOpen(false)
   const navigate = useNavigate()
   const loggedIn = useToken() !== null
+  // Los administradores ven además el enlace a la moderación; la API es quien lo exige.
+  const visibleLinks = useRole() === 'ADMIN' ? [...links, { to: paths.adminSpaces, label: 'Administración', end: false }] : links
 
   const logout = () => {
     closeMenu()
@@ -54,7 +57,7 @@ export function Navbar() {
         </Link>
 
         <nav aria-label="Principal" className="hidden items-center gap-1 md:flex">
-          {links.map((link) => (
+          {visibleLinks.map((link) => (
             <NavLink key={link.to} to={link.to} end={link.end} className={navLinkClass}>
               {link.label}
             </NavLink>
@@ -92,7 +95,7 @@ export function Navbar() {
 
       {menuOpen && (
         <nav id="menu-movil" aria-label="Principal" className="flex flex-col gap-1 border-t border-line px-4 py-3 md:hidden">
-          {links.map((link) => (
+          {visibleLinks.map((link) => (
             <NavLink key={link.to} to={link.to} end={link.end} onClick={closeMenu} className={navLinkClass}>
               {link.label}
             </NavLink>
