@@ -1628,3 +1628,428 @@ En `rentsmart-back` (Node 24): `npm run lint`, `npm run build`, `npm test` y `np
 - C (@gonzzza-lol): al crear una reserva hay que guardar `subtotal`, `fee` y `total` calculados en ese momento (como ya prevé el modelo); es lo que hace que editar el precio de un espacio no afecte a las reservas existentes.
 
 ---
+
+### 2026-10-06 · B (xReNatS) · ES-07 front: mapa en el detalle y en el formulario de publicar
+
+**Issues:** #26 (ES-07)
+**Rama / PR:** `feat/ES-07-mapa-front` · sin PR todavía (la API está en `feat/ES-07-mapa-api`, un PR aparte que debe entrar primero)
+**Duración aproximada:** 1 h
+**Herramientas:** Claude Code, Chrome con Puppeteer y axe-core
+
+#### Objetivo
+Mostrar la ubicación aproximada de un espacio en un mapa (Leaflet y OpenStreetMap) y dejar que el propietario marque el punto al publicar. La decisión de producto está en P-19 (en el PR de la API).
+
+#### Qué se hizo
+- **Detalle:** en "Ubicación" se muestra un mapa con un círculo (no un pin) y la leyenda "El círculo marca la zona aproximada del espacio". Sin punto marcado no hay mapa.
+- **Formulario de publicar:** el paso 2 "Ubicación" tiene un mapa donde se toca el punto, más los campos de latitud y longitud y el botón "Quitar el punto". Los campos son la forma de hacerlo con teclado y validan que el punto esté en Chile y que vayan las dos coordenadas. Al guardar se mandan con hasta 6 decimales, y `null` en las dos borra el punto.
+- **Leaflet fuera del resto de la app:** los mapas se cargan bajo demanda (`LazyMaps.tsx`, un chunk de ~45 kB comprimido) y van dentro de un `ErrorBoundary`: si no cargan, el resto de la pantalla sigue. Los botones de zoom miden 44 px y se llaman "Acercar" y "Alejar".
+- **Pruebas:** 360 en 31 archivos. Los mapas se prueban con Leaflet de verdad en jsdom, y un archivo aparte simula que el mapa no descarga.
+
+#### Decisiones y por qué
+| Decisión | Alternativas consideradas | Por qué se eligió |
+|---|---|---|
+| Mapas con carga bajo demanda y un `ErrorBoundary` | Importar Leaflet directamente | Leaflet pesa ~45 kB comprimido y solo lo usan dos pantallas; un chunk viejo o sin red no debe romper el detalle |
+| Campos de latitud y longitud junto al mapa | Solo el mapa | Un mapa no se puede operar con teclado: los campos son la alternativa accesible (WCAG 2.1.1) |
+| En el teléfono el mapa del detalle no se arrastra con un dedo (`dragging` apagado en móvil) y la rueda del mouse no hace zoom | Dejar los valores por defecto | Con el arrastre activo, el mapa atrapa el scroll de la página; se sigue pudiendo acercar con los botones y con dos dedos |
+| `className` como propiedad del círculo | `pathOptions={{ className }}` | `pathOptions` de react-leaflet se aplica después de crear el elemento y Leaflet solo lee `className` al crearlo: el círculo salía con el azul por defecto. Lo detectó un test |
+
+#### Archivos principales
+- `rentsmart-front/src/features/map/` (`LazyMaps`, `LocationMap`, `LocationPicker`, `map-config`) y `src/features/spaces/LocationField.tsx`.
+- `rentsmart-front/src/features/spaces/` (`form.ts`, `types.ts`, `SpaceWizard.tsx`), `src/features/catalog/` (`SpaceDetailPage.tsx`, `types.ts`), `src/mocks/handlers.ts` (ubicaciones de ejemplo) y `src/index.css` (colores del círculo y del pin, botones de zoom de 44 px).
+- `rentsmart-front/package.json`: dependencias nuevas `leaflet` y `react-leaflet`, y `@types/leaflet` de desarrollo.
+
+#### Cómo probarlo
+En `rentsmart-front` (Node 24): `npm run lint`, `npm test` y `npm run build`. A mano, con la API del PR de ES-07 (o con los mocks): en `/publish`, paso 2, tocar el mapa (o escribir latitud y longitud) y guardar; abrir el detalle de un espacio con punto: se ve el círculo, y sin punto no hay mapa.
+
+#### Estado de verificación
+- Lint: ✅ · Tests: ✅ (31 archivos, 360 pruebas, con Node 24) · Build: ✅
+- Chrome real: el círculo sale con los colores de la marca y 76 px de ancho a zoom 15; los botones de zoom miden 44 px; en el teléfono el dedo no queda atrapado en el mapa; un clic en el formulario llena las coordenadas y dibuja el pin. axe: 0 violaciones en el detalle con mapa y en el paso 2 (sin y con punto), a 1100 y a 375 px, sin desborde horizontal.
+
+#### Pendientes y bloqueos
+- **Orden de merge:** entra después del PR de la API de ES-07. Sin él, el formulario manda `latitude` y `longitude` y la API los rechaza con 400.
+- Las teselas públicas de OpenStreetMap sirven para el MVP; con tráfico real hay que cambiar `TILE_URL` (`map-config.ts`) por un proveedor propio.
+- Las tarjetas del catálogo no muestran mapa, y no hay búsqueda por cercanía: queda fuera de esta historia.
+- No se probó con un lector de pantalla real (NVDA o VoiceOver). El mapa tiene nombre y los campos de coordenadas son la alternativa, pero falta oírlo.
+
+#### Para el resto del equipo
+- A (@AlejandroMG) y C (@gonzzza-lol): no toca sus módulos. Las pantallas nuevas con mapa deberían usar `LazyMaps` (no importar Leaflet directo) para no cargarlo en todas partes.
+
+---
+
+### 2026-10-07 · B (xReNatS) · BU-07 historial de búsquedas recientes
+
+**Issues:** #33 (BU-07)
+**Rama / PR:** `feat/BU-07-historial-busquedas` · sin PR todavía
+**Duración aproximada:** 1 h
+**Herramientas:** Claude Code, Chrome con Puppeteer y axe-core
+
+#### Objetivo
+Que el catálogo recuerde las últimas búsquedas y se puedan repetir desde un panel. El issue tenía un solo criterio: "repetir una búsqueda desde el panel".
+
+#### Qué se hizo
+- **Panel "Búsquedas recientes"** bajo el buscador: un enlace por búsqueda, dicha en palabras (`“cocina” · Providencia`, `Sala de reuniones · hasta $90.000 por día`), más "Borrar historial". La búsqueda que está en pantalla se marca como actual. Sin historial no se muestra.
+- **Cuándo se guarda:** una búsqueda con filtros que encuentra algo y se queda 3 segundos en pantalla. Así no queda un rastro por cada paso de armarla ni se guardan las que no dan resultados. Se guardan las últimas 6, sin repetir (repetirla la sube al principio), sin la página ni el orden.
+- **Dónde:** en el navegador (`localStorage`). Se lee validado: JSON roto, entradas inválidas o con valores fuera de rango se descartan, y sin almacenamiento el catálogo sigue funcionando.
+- **Pruebas:** nuevas, del módulo y del panel, y del catálogo con reloj simulado (se guarda al rato y no antes, no se guarda sin resultados ni sin filtros, repetir desde el panel aplica los filtros, borrar vacía el historial).
+
+#### Decisiones y por qué
+| Decisión | Alternativas consideradas | Por qué se eligió |
+|---|---|---|
+| Historial en el navegador | Guardarlo en la cuenta (endpoint y tabla nuevos) | El catálogo es público y no pide sesión; un historial en el servidor exigiría cuenta, un cambio de `schema.prisma` (de A) y datos personales. Para el MVP basta con el navegador, y se puede pasar al servidor después |
+| Se guarda lo que se queda 3 segundos en pantalla y encuentra algo | Guardar cada vez que cambia un filtro; guardar solo al enviar el buscador | Armar una búsqueda cambia varios filtros seguidos y llenaría el historial de pasos intermedios; guardar solo el buscador dejaría fuera las búsquedas por filtros |
+| La búsqueda es la URL de sus filtros, sin orden ni página | Guardar también el orden | El orden se elige sobre los resultados y no cambia de qué búsqueda se trata; así dos búsquedas iguales con distinto orden no ocupan dos lugares |
+| Cada búsqueda es un enlace | Un botón que cambia los filtros | Funciona como el resto del catálogo (la URL es el estado): se puede abrir en otra pestaña y el botón Atrás vuelve |
+
+#### Archivos principales
+- `rentsmart-front/src/features/catalog/search-history.ts` (guardar, leer validado, describir en palabras), `RecentSearches.tsx` (el panel) y `CatalogPage.tsx` (cuándo guardar).
+- Pruebas: `search-history.test.ts`, `RecentSearches.test.tsx` y `CatalogPage.history.test.tsx`.
+
+#### Cómo probarlo
+En `rentsmart-front` (Node 24): `npm run lint`, `npm test` y `npm run build`. A mano: buscar "cocina", dejarlo 3 segundos, y volver al catálogo sin filtros: aparece en "Búsquedas recientes"; al hacer clic se aplica de nuevo.
+
+#### Estado de verificación
+- Lint: ✅ · Tests: ✅ (31 archivos, 380 pruebas, con Node 24) · Build: ✅
+- Chrome real: el panel se ve en escritorio y en móvil, y axe da 0 violaciones en las dos vistas, sin desborde horizontal.
+
+#### Pendientes y bloqueos
+- El historial no cruza dispositivos. Si se quisiera, haría falta una tabla en `schema.prisma` (de A) y sesión real (CU-03).
+
+#### Para el resto del equipo
+- Sin cambios para A ni C: es solo front y no toca sus módulos.
+
+---
+
+### 2026-10-07 · B (xReNatS) · BU-08 API de favoritos
+
+**Issues:** #34 (BU-08)
+**Rama / PR:** `feat/BU-08-favoritos-api` · sin PR todavía (el front está en `feat/BU-08-favoritos-front`, un PR aparte)
+**Duración aproximada:** 1 h
+**Herramientas:** Claude Code
+
+#### Objetivo
+Que un usuario pueda guardar espacios como favoritos y listarlos. El issue no tenía criterios ("por definir al tomar la historia"): los definí yo y quedan anotados en el issue.
+
+#### Qué se hizo
+- **Base de datos:** modelo `Favorite` (`userId`, `spaceId`, `createdAt`; clave compuesta, así un espacio se guarda una sola vez por usuario) con la migración `favorites`. Borrar el espacio o el usuario borra sus favoritos (`ON DELETE CASCADE`). Con la migración aplicada, el esquema y la BD no tienen diferencias.
+- **API** (en el módulo `catalog`): `GET /api/favorites` (tarjetas del catálogo paginadas, el último guardado primero), `GET /api/favorites/ids`, `PUT /api/favorites/:spaceId` y `DELETE /api/favorites/:spaceId`. Los dos últimos son idempotentes y responden 204. Solo se pueden guardar espacios activos (404 si no), hasta 200 por usuario (409).
+- **Un espacio que se desactiva** deja de verse en los favoritos pero no se pierde: reaparece si se vuelve a activar.
+- **Refactor chico:** el `select` y el mapeo de una tarjeta del catálogo ahora son `CATALOG_ITEM_SELECT` y `toCatalogItem`, y los usan el catálogo y los favoritos. Así lo que no sale del catálogo público tampoco sale de los favoritos.
+- **Pruebas:** unitarias del servicio y 24 e2e: guardar, repetir, guardar a la vez, 404, listas separadas por usuario, quitar, desactivar y reactivar, paginación, parámetros inválidos, que no salgan el detalle privado ni las coordenadas, y el borrado en cascada.
+
+#### Decisiones y por qué
+| Decisión | Alternativas consideradas | Por qué se eligió |
+|---|---|---|
+| Favoritos en la cuenta (tabla `Favorite`) | Solo en el navegador (como el historial de BU-07) | Los favoritos se esperan en cualquier dispositivo y se pierden si se borran los datos del navegador; además hay cuenta y login. Cambia `schema.prisma` (de A): por eso va en un PR aparte |
+| `PUT` y `DELETE` idempotentes con 204 | `POST` que falla si ya existe | El corazón del front se actualiza al instante y puede repetir la petición; que repetir no falle simplifica el front y las carreras |
+| `GET /api/favorites/ids` aparte de la lista | Que el catálogo traiga `isFavorite` en cada tarjeta | El catálogo es público y no pide sesión; así sigue igual y solo quien tiene sesión pide sus ids |
+| Tope de 200 favoritos | Sin tope | Evita una lista sin fondo y consultas enormes; 200 es de sobra para el uso real |
+| Dentro del módulo `catalog` | Un módulo `favorites` nuevo | Es del dominio de B (búsqueda y catálogo), comparte el `select` de las tarjetas y no suma un módulo |
+| Mientras no haya `JwtAuthGuard` usa el `DevAuthGuard` | Esperar a A | Es la misma solución temporal de `spaces`; cambiarlo es reemplazar el guard en `favorites.controller.ts` (CU-03) |
+
+#### Archivos principales
+- `rentsmart-back/prisma/schema.prisma` y `prisma/migrations/20261007120000_favorites/`.
+- `rentsmart-back/src/catalog/` (`favorites.service.ts`, `favorites.controller.ts`, `dto/list-favorites-query.dto.ts`, `catalog.service.ts`, `catalog.module.ts`) y `test/favorites.e2e-spec.ts`.
+- `docs/arquitectura.md`.
+
+#### Cómo probarlo
+Con Node 24, en `rentsmart-back`: `npx prisma migrate deploy`, y `npm run lint`, `npm run build`, `npm test` y `npm run test:e2e`. A mano en Swagger (`/docs`, sección Favoritos): `PUT /api/favorites/{id}` de un espacio activo, y `GET /api/favorites` lo lista.
+
+#### Estado de verificación
+- Lint: ✅ · Build: ✅ · unitarias ✅ · e2e ✅ (Node 24, BD de test migrada y sin seed, como en el CI)
+
+#### Pendientes y bloqueos
+- **Cambio de `schema.prisma`:** este PR necesita la revisión de A (@AlejandroMG), además de la de C.
+- **Orden de merge:** va antes que el PR del front de favoritos.
+- Reemplazar el `DevAuthGuard` por el `JwtAuthGuard` de A (CU-03), igual que en `spaces`.
+
+#### Para el resto del equipo
+- A (@AlejandroMG): este PR agrega la tabla `Favorite` a `schema.prisma` (con la migración `favorites`) y relaciones en `User` y `Space`. Por favor revísalo.
+- C (@gonzzza-lol): nada cambia en tu dominio.
+
+---
+
+### 2026-10-07 · B (xReNatS) · BU-08 favoritos en el front
+
+**Issues:** #34 (BU-08)
+**Rama / PR:** `feat/BU-08-favoritos-front` · sin PR todavía (la API está en `feat/BU-08-favoritos-api`, un PR aparte que debe entrar primero)
+**Duración aproximada:** 1 h 30 min
+**Herramientas:** Claude Code, Chrome con Puppeteer y axe-core
+
+#### Objetivo
+Que se pueda guardar un espacio como favorito desde el catálogo y el detalle, y ver la lista en "Mis favoritos". La API y la decisión de guardarlos en la cuenta están en el PR de la API.
+
+#### Qué se hizo
+- **Corazón en cada tarjeta** del catálogo (de 44 px, sobre la foto) y botón "Guardar en favoritos" en el detalle. Son botones de dos estados (`aria-pressed`) y su nombre no cambia al activarse. Sin sesión llevan a iniciarla y, al volver, regresan a la pantalla de donde se vino.
+- **Se ve al instante.** Marcar o desmarcar cambia el corazón sin esperar al servidor; si lo rechaza (por ejemplo, el tope de 200), se deshace y sale un aviso. Dos clics seguidos no mandan dos peticiones.
+- **"Mis favoritos"** (`/favorites`, ruta privada y un enlace "Favoritos" en la barra): las tarjetas, el último guardado primero, con su total, paginadas, y un mensaje cuando no hay ninguno. Quitar uno desde ahí lo saca de la lista al instante.
+- **Estado compartido:** `FavoritesProvider` carga los ids al iniciar sesión y los olvida al cerrarla, así el corazón de una tarjeta, el del detalle y la lista dicen lo mismo. Si no cargan, el catálogo funciona igual.
+- **La tarjeta cambió de estructura:** el corazón es un botón y no puede ir dentro del enlace (HTML inválido), así que es hermano del enlace y se posiciona sobre la foto. Toda la tarjeta sigue llevando al detalle.
+- **Mocks:** la API simulada (MSW) tiene los cuatro endpoints, con estado que se reinicia entre pruebas.
+- **Pruebas:** 19 de favoritos (con sesión, sin sesión, deshacer, sesión que se cierra, la página y su paginación), una de la tarjeta y una de la barra.
+
+#### Decisiones y por qué
+| Decisión | Alternativas consideradas | Por qué se eligió |
+|---|---|---|
+| Actualización optimista con deshacer | Esperar al servidor antes de cambiar el corazón | El corazón debe responder al instante; la petición casi siempre sale bien y, si no, se deshace y se avisa |
+| Un contexto con los ids de la sesión | Que cada tarjeta consulte por su cuenta; un campo `isFavorite` en el catálogo | Una sola petición para toda la pantalla, el catálogo público queda igual y las pantallas no se contradicen |
+| El corazón como hermano del enlace de la tarjeta | Un botón dentro del enlace; una tarjeta como `<article>` con un enlace extendido | Un botón dentro de un enlace es HTML inválido y lo leen mal los lectores de pantalla; así no se cambia cómo se ve ni cómo se hace clic en la tarjeta |
+| Nombre fijo y `aria-pressed` | Cambiar el texto entre "Guardar" y "Quitar" | Un botón de dos estados no debe cambiar de nombre al activarse (se anunciaría dos veces el cambio) |
+| Sin sesión, el corazón lleva a iniciarla | Esconderlo | Es la invitación natural a crear una cuenta, y vuelve a la pantalla de origen |
+
+#### Archivos principales
+- `rentsmart-front/src/features/favorites/` (`FavoritesProvider`, `favorites-context`, `favorites-api`, `FavoriteButton`, `FavoritesPage` y `favorites.test.tsx`).
+- `rentsmart-front/src/features/catalog/` (`SpaceCard.tsx`, `SpaceDetailPage.tsx`), `src/components/Navbar.tsx`, `src/routes.tsx`, `src/lib/paths.ts`, `src/App.tsx` y `src/mocks/handlers.ts`.
+
+#### Cómo probarlo
+En `rentsmart-front` (Node 24): `npm run lint`, `npm test` y `npm run build`. A mano (con la API de BU-08 o con `VITE_USE_MOCKS=true`, con sesión, por ejemplo `localStorage.setItem('rentsmart_token', 'dev')`): tocar el corazón de una tarjeta, abrir "Favoritos" y quitarlo desde ahí.
+
+#### Estado de verificación
+- Lint: ✅ · Tests: ✅ (29 archivos, 363 pruebas, con Node 24) · Build: ✅
+- Chrome real: el corazón mide 44 px; axe da 0 violaciones en el catálogo con favoritos marcados, en "Mis favoritos" y en el detalle, a 1100 y a 375 px, sin desborde horizontal.
+
+#### Pendientes y bloqueos
+- **Orden de merge:** entra después del PR de la API de BU-08; sin él, los corazones fallan con un aviso.
+- Con el `DevAuthGuard` temporal la API usa siempre el usuario del seed, aunque haya iniciado sesión otra persona; se arregla cuando A entregue el `JwtAuthGuard` (CU-03).
+- Cuando entre #103 (QA-02), la nueva pantalla debería declarar su título con `handle.title` en `routes.tsx` y el corazón usar `border-field`.
+
+#### Para el resto del equipo
+- A (@AlejandroMG) y C (@gonzzza-lol): no toca sus módulos.
+
+---
+
+### 2026-10-07 · B (xReNatS) · PN-02 y PN-04 API: reservas y métricas del propietario
+
+**Issues:** #49 (PN-02), #51 (PN-04)
+**Rama / PR:** `feat/PN-02-PN-04-owner-api` · sin PR todavía (el front irá en otro PR)
+**Duración aproximada:** 1 h 30 min
+**Herramientas:** Claude Code
+
+#### Objetivo
+Darle al panel del propietario las reservas de sus espacios (con el contacto del arrendatario en las confirmadas) y sus métricas del mes (ingresos y ocupación por espacio). #49 depende de RE-04 y #51 de las reservas, pero la tabla `Booking` ya existe en el schema, así que las dos historias se pueden hacer leyéndola, sin esperar la API de reservas de C.
+
+#### Qué se hizo
+- **`GET /api/owner/bookings`:** las reservas de todos mis espacios, paginadas, con filtros por estado y por fecha de inicio, y orden. El contacto del arrendatario (`email`, `phone`) solo viene en las confirmadas.
+- **`GET /api/owner/metrics?month=`:** ingresos del mes y, por espacio, reservas, horas reservadas, horas arrendables y ocupación. Cuentan las reservas confirmadas y finalizadas que empiezan en el mes.
+- **Hora de Chile:** `src/common/santiago-time.ts` calcula el comienzo de un día y de un mes en `America/Santiago`, incluido el cambio de horario de verano (septiembre dura 719 h). Sin esto, la reserva del 31 de octubre a las 23:00 de Chile caería en noviembre.
+- **Módulo nuevo `owner`**, dentro del dominio de B (panel del propietario). Solo lee: no crea ni cambia reservas.
+- **Pruebas:** unitarias de la hora de Chile y de las métricas (la ocupación no pasa de 1, tramos que se suman, sin espacios) y 38 e2e (estados, fechas en hora de Chile, contacto solo en confirmadas, nunca las reservas de otro propietario, meses límite, parámetros inválidos).
+
+#### Decisiones y por qué
+| Decisión | Alternativas consideradas | Por qué se eligió |
+|---|---|---|
+| Leer `Booking` directamente | Esperar los endpoints de reservas de C | La tabla y sus estados ya están en el schema; el panel es de B y el listado por propietario no está en ninguna historia de C. Solo lee, así que no pisa la lógica de reservas |
+| El ingreso es `subtotal` | `total` | Según P-13 la comisión (10 %) se suma al arrendatario: lo que recibe el propietario es el subtotal |
+| Cuentan `CONFIRMED` y `FINISHED` | También `PAID` o `PENDING` | Una reserva pagada pero todavía sin validar, o una pendiente, puede cancelarse; no es un ingreso seguro |
+| Una reserva es del mes en que **empieza** | Repartirla entre meses si cruza el límite | Es lo simple y lo esperable para un panel; una reserva que cruza la medianoche del último día es rara |
+| El contacto solo en reservas confirmadas | En todas | Igual que el detalle de la dirección (P-09): los datos personales se entregan cuando hay una reserva firme |
+| Días y meses en hora de Chile | UTC | El propietario piensa en días de Chile; en UTC la reserva de la noche del último día del mes cae en el mes siguiente |
+| Ocupación = horas reservadas sobre horas arrendables, con tope en 1 | Sin tope | Una reserva "por día" puede durar más que el horario del día; el tope evita un 130 % |
+
+#### Archivos principales
+- `rentsmart-back/src/owner/` (`owner.module.ts`, `owner.controller.ts`, `owner-bookings.service.ts`, `owner-metrics.service.ts` y `dto/`).
+- `rentsmart-back/src/common/santiago-time.ts`, `src/app.module.ts` y `test/owner-panel.e2e-spec.ts`.
+- `docs/arquitectura.md`.
+
+#### Cómo probarlo
+Con Node 24, en `rentsmart-back`: `npm run lint`, `npm run build`, `npm test` y `npm run test:e2e`. A mano en Swagger (sección "Panel del propietario"): crear una reserva confirmada en la base de datos y abrir `GET /api/owner/bookings` y `GET /api/owner/metrics`.
+
+#### Estado de verificación
+- Lint: ✅ · Build: ✅ · 194 unitarias ✅ · 245 e2e ✅ (Node 24, BD de test migrada y sin seed, como en el CI)
+
+#### Pendientes y bloqueos
+- Cuando C entregue RE-02 a RE-04, conviene sumar una prueba que cree las reservas por la API y no por la base de datos.
+- Reemplazar el `DevAuthGuard` por el `JwtAuthGuard` de A (CU-03), igual que en `spaces`.
+
+#### Para el resto del equipo
+- C (@gonzzza-lol): este módulo lee `Booking` (`startAt`, `endAt`, `unit`, `subtotal`, `status`) y los datos del arrendatario. Si cambias esas columnas o el significado de un estado, avísame; y los estados `CONFIRMED` y `FINISHED` son los que cuentan como ingreso. Las reservas deben guardar `subtotal` sin la comisión.
+- A (@AlejandroMG): no toca `schema.prisma`.
+
+---
+
+### 2026-10-07 · B (xReNatS) · PN-02 y PN-04 front: reservas y métricas del propietario
+
+**Issues:** #49 (PN-02), #51 (PN-04) y, de #48 (PN-01), las próximas reservas
+**Rama / PR:** `feat/PN-02-PN-04-owner-front` · sin PR todavía (la API está en `feat/PN-02-PN-04-owner-api`, un PR aparte que debe entrar primero)
+**Duración aproximada:** 1 h 30 min
+**Herramientas:** Claude Code, Chrome con Puppeteer y axe-core
+
+#### Objetivo
+Mostrarle al propietario las reservas de sus espacios y sus métricas del mes. La API está en el PR de PN-02 y PN-04.
+
+#### Qué se hizo
+- **Navegación del panel** (`OwnerNav`): "Mis espacios", "Reservas" y "Métricas", con la página actual marcada (`aria-current`).
+- **"Reservas"** (`/owner/bookings`, PN-02): las reservas de todos mis espacios como tarjetas, con el espacio, el estado, el horario en hora de Chile, el arrendatario y lo que recibe el propietario. En las confirmadas, el contacto del arrendatario como enlaces (`mailto:` y `tel:`). Filtros por estado, desde, hasta y orden, paginación, y los filtros en la URL.
+- **"Métricas"** (`/owner/metrics`, PN-04): los ingresos y las reservas del mes, y por espacio sus ingresos y su ocupación con una barra y "6 de 68 horas arrendables". Mes anterior y siguiente, y el mes en la URL. Un espacio sin horario explica por qué no hay ocupación.
+- **"Mis espacios"** (#48): el recuadro "Próximas reservas", que decía que llegarían con la reserva en línea, ahora lista las 3 próximas confirmadas (desde hoy, hora de Chile) y enlaza a todas.
+- **Hora de Chile en todo:** las fechas llegan en UTC y se muestran con `America/Santiago`; "hoy" y "el mes actual" también (a las 23:30 de Chile del 30 de septiembre, en UTC ya es octubre).
+- **Pruebas:** de los formatos, de cada pantalla (filtros, URL, estados vacíos, errores con "Reintentar", paginación, contacto solo en confirmadas) y del panel de espacios.
+
+#### Decisiones y por qué
+| Decisión | Alternativas consideradas | Por qué se eligió |
+|---|---|---|
+| Tres pantallas con una navegación común | Todo en "Mis espacios" | Cada una tiene sus filtros y su URL, se puede enlazar y el panel de espacios no se llena |
+| Los filtros y el mes en la URL | Estado local | Igual que el catálogo: se puede recargar, compartir y volver atrás |
+| El título de cada reserva es un `h2` | `h3` | La página no tiene otro nivel entre el título y las tarjetas; con `h3` axe marcaba el salto de encabezados |
+| La ocupación con una barra decorativa y el porcentaje en texto | Una barra de progreso sola | La barra no es información accesible por sí sola: el texto ("Ocupación 9 % · 6 de 68 horas") lo dice todo y la barra queda oculta a los lectores de pantalla |
+| Enlaces `mailto:` y `tel:` con 44 px de alto | Texto plano | Es lo que el propietario va a hacer con el contacto, y es un objetivo táctil cómodo |
+
+#### Archivos principales
+- `rentsmart-front/src/features/owner/` (`OwnerBookingsPage`, `OwnerMetricsPage`, `OwnerNav`, `BookingCard`, `UpcomingBookings`, `booking-format.ts`, `owner-api.ts`, `types.ts`, `OwnerSpacesPage.tsx` y sus pruebas).
+- `rentsmart-front/src/routes.tsx`, `src/lib/paths.ts` y `src/mocks/handlers.ts`.
+
+#### Cómo probarlo
+En `rentsmart-front` (Node 24): `npm run lint`, `npm test` y `npm run build`. A mano, con la API de PN-02 y PN-04 y con sesión: crear una reserva confirmada en la base de datos y abrir "Reservas", "Métricas" y "Mis espacios".
+
+#### Estado de verificación
+- Lint: ✅ · Tests: ✅ (31 archivos, 416 pruebas, con Node 24) · Build: ✅
+- Chrome real, con datos de ejemplo: axe da 0 violaciones en las tres pantallas, a 1100 y a 375 px, sin desborde horizontal.
+
+#### Pendientes y bloqueos
+- **Orden de merge:** entra después del PR de la API de PN-02 y PN-04; sin él, las pantallas muestran el error "No pudimos cargar".
+- Con el `DevAuthGuard` temporal la API usa siempre el usuario del seed; se arregla cuando A entregue el `JwtAuthGuard` (CU-03).
+- Cuando entre #103 (QA-02), las pantallas nuevas deberían declarar su título con `handle.title` en `routes.tsx`.
+
+#### Para el resto del equipo
+- A (@AlejandroMG) y C (@gonzzza-lol): no toca sus módulos.
+
+---
+
+### 2026-10-07 · B (xReNatS) · AD-02 API: administrar espacios y tipos de espacio
+
+**Issues:** #61 (AD-02)
+**Rama / PR:** `feat/AD-02-admin-api` · sin PR todavía (el front irá en otro PR)
+**Duración aproximada:** 1 h 30 min
+**Herramientas:** Claude Code
+
+#### Objetivo
+Que un administrador pueda despublicar un espacio con un motivo (y desbloquearlo) y crear y renombrar tipos de espacio. #61 depende de ES-06, que ya está, y del rol de administrador (CU-03, de A), que todavía no tiene su guard: se resolvió con uno mínimo y reemplazable.
+
+#### Qué se hizo
+- **Base de datos:** `Space` agrega `blockedReason` y `blockedAt` (migración `space_block_reason`). Se llenan al bloquear y se borran al desbloquear.
+- **Espacios (`/api/admin/spaces`):** lista de todos los espacios con su propietario (filtros por estado y por texto), `block` con un motivo y `unblock`. Bloquear solo vale para espacios publicados o desactivados (un borrador no está publicado). Dos administradores a la vez no se pisan: el cambio de estado se hace solo si sigue en el estado que se leyó.
+- **Lo que ve el propietario:** `blockedReason` en `GET /api/spaces/me` y en `GET /api/spaces/:id`. El bloqueo ya impedía que el propietario cambiara el estado (403, ES-06).
+- **Tipos (`/api/admin/space-types`):** lista con cuántos espacios usa cada uno, crear y renombrar. El nombre no puede repetir otro (sin distinguir mayúsculas ni tildes) ni ser un alojamiento (P-08, con una lista corta de palabras evidentes: alojamiento, hotel, cabaña, departamento, habitación…).
+- **`AdminGuard`:** deja pasar solo a `ADMIN`; va después del guard de autenticación. Es temporal, igual que el `DevAuthGuard`: cuando A entregue el `RolesGuard` (CU-03) se reemplaza.
+- **Pruebas:** unitarias del guard y de los tipos, y 51 e2e (403 a un usuario común en cada ruta, filtros, bloquear y desbloquear de punta a punta con el catálogo y el propietario, 409 y 404, motivos inválidos, nombres repetidos y de alojamientos).
+
+#### Decisiones y por qué
+| Decisión | Alternativas consideradas | Por qué se eligió |
+|---|---|---|
+| Los endpoints viven en `spaces` y `space-types`, bajo `/api/admin` | En el módulo `admin` de A | #61 es de B y usa su código (estados del espacio, tipos); así no se toca un módulo ajeno. A puede mover o reutilizar la ruta |
+| `AdminGuard` mínimo, reemplazable | Esperar el `RolesGuard` de A; copiar su diseño | No bloquea la historia y es un guard de 10 líneas; cuando exista el de A, se cambia el `@UseGuards` |
+| El motivo se guarda en `Space` (`blockedReason`) | Una tabla de historial de moderación | Es lo que pide la historia (despublicar con motivo) y lo que el propietario necesita ver. Un historial con quién y cuándo se puede sumar después |
+| Desbloquear deja el espacio `INACTIVE` | Devolverlo a `ACTIVE` | El propietario pudo editarlo o no haber corregido lo que causó el bloqueo: que decida él cuándo publicar de nuevo (y se vuelven a exigir las reglas para publicar) |
+| Un borrador no se bloquea | Bloquearlo también | No está publicado: no hay nada que despublicar |
+| Los tipos no se borran, solo se crean y renombran | Permitir borrar los que no se usan | La historia pide crear y editar, y un borrado con espacios dejaría datos huérfanos; se puede sumar para los que tienen 0 espacios |
+| Una lista corta de palabras de alojamiento | Una validación completa | Es una guarda contra el error evidente; quien decide qué tipos se agregan es el administrador |
+
+#### Archivos principales
+- `rentsmart-back/prisma/schema.prisma` y `prisma/migrations/20261007180000_space_block_reason/`.
+- `rentsmart-back/src/common/auth/admin.guard.ts`.
+- `rentsmart-back/src/spaces/` (`admin-spaces.controller.ts`, `admin-spaces.service.ts`, `dto/admin-space.dto.ts`, `spaces.service.ts`, `spaces.module.ts`) y `src/space-types/` (`admin-space-types.*`, `dto/admin-space-type.dto.ts`, `space-types.module.ts`).
+- `rentsmart-back/test/admin.e2e-spec.ts` y `docs/arquitectura.md`.
+
+#### Cómo probarlo
+Con Node 24, en `rentsmart-back`: `npx prisma migrate deploy`, y `npm run lint`, `npm run build`, `npm test` y `npm run test:e2e`. A mano en Swagger (secciones de administración), con `x-user-id` de `admin@rentsmart.test` (el id sale de la base de datos): bloquear un espacio con un motivo y comprobar que sale del catálogo.
+
+#### Estado de verificación
+- Lint: ✅ · Build: ✅ · 187 unitarias ✅ · 258 e2e ✅ (Node 24, BD de test migrada y sin seed, como en el CI)
+
+#### Pendientes y bloqueos
+- **Cambio de `schema.prisma`:** este PR necesita la revisión de A (@AlejandroMG), además de la de C.
+- Reemplazar `DevAuthGuard` y `AdminGuard` por el `JwtAuthGuard` y el `RolesGuard` de A (CU-03).
+- Avisar al propietario por correo cuando bloquean su espacio depende de los emails de C (RE-07); por ahora lo ve en su panel.
+
+#### Para el resto del equipo
+- A (@AlejandroMG): este PR agrega dos columnas a `Space` (`blockedReason` y `blockedAt`, con migración). Además trae un `AdminGuard` mínimo que puedes reemplazar por tu `RolesGuard`, y las rutas `/api/admin/spaces` y `/api/admin/space-types` (de AD-02): tu módulo `admin` puede convivir con ellas.
+- C (@gonzzza-lol): bloquear un espacio no cancela sus reservas confirmadas; se mantienen, como al desactivarlo (ES-06).
+
+---
+
+### 2026-10-07 · B (xReNatS) · AD-02 front: moderación de espacios y tipos de espacio
+
+**Issues:** #61 (AD-02)
+**Rama / PR:** `feat/AD-02-admin-front` · sin PR todavía (la API está en `feat/AD-02-admin-api`, un PR aparte que debe entrar primero)
+**Duración aproximada:** 1 h 30 min
+**Herramientas:** Claude Code, Chrome con Puppeteer y axe-core
+
+#### Objetivo
+Las pantallas para que un administrador despublique espacios con un motivo y administre los tipos de espacio. La API está en el PR de AD-02.
+
+#### Qué se hizo
+- **"Administración de espacios"** (`/admin/spaces`): todos los espacios con su estado, tipo, comuna y propietario (nombre y email); filtros por estado y por texto (en la URL) y paginación. "Bloquear" abre un diálogo que pide el motivo (de 5 a 500 caracteres, con su error) y avisa que las reservas confirmadas se mantienen; "Desbloquear" pide confirmar y deja el espacio desactivado. La fila se actualiza con lo que devuelve el servidor y muestra el motivo.
+- **"Tipos de espacio"** (`/admin/space-types`): los tipos con cuántos espacios usa cada uno, un formulario para agregar uno y "Renombrar" en cada fila. Los errores del servidor (nombre repetido, alojamiento) salen junto al campo.
+- **Permisos:** `RequireAdmin` protege las dos rutas según el rol del token y `useRole()` lo lee (`src/lib/role.ts`); la barra muestra "Administración" solo a los administradores. La API vuelve a comprobarlo.
+- **Panel del propietario:** un espacio bloqueado muestra el motivo que dio el administrador.
+- **Mocks:** la API simulada tiene los endpoints de administración, con estado que se reinicia entre pruebas.
+- **Pruebas:** del rol (incluido el base64url con acentos y los tokens que no se entienden), de `RequireAdmin`, de la barra, de las dos pantallas (validación del motivo y del nombre, errores del servidor, filtros y URL, paginación, cancelar) y del motivo en el panel del propietario.
+
+#### Decisiones y por qué
+| Decisión | Alternativas consideradas | Por qué se eligió |
+|---|---|---|
+| El rol sale del contenido del JWT | Guardar el usuario al iniciar sesión (código de A); pedirlo a un endpoint | Es lo que hay en el token (`role`) y no toca los archivos de A. Solo decide qué se muestra: el navegador no es de fiar y la API responde 403 a quien no es administrador |
+| Una pantalla de "No tienes permiso" | Redirigir al inicio | Quien llegó por un enlace entiende qué pasó, y el usuario común nunca ve un panel que no puede usar |
+| La fila se actualiza con la respuesta del servidor | Recargar la lista | La lista no parpadea ni pierde la página y los filtros; la respuesta trae el estado y el motivo reales |
+| El diálogo de bloqueo se queda abierto si el servidor lo rechaza | Cerrarlo y avisar con un aviso | El motivo escrito no se pierde y el mensaje queda junto al campo |
+| La carpeta se llama `moderation`, no `admin` | `features/admin/` | `admin/` es de A (panel admin y usuarios): así no pisamos sus archivos |
+
+#### Archivos principales
+- `rentsmart-front/src/features/moderation/` (`AdminSpacesPage`, `AdminSpaceTypesPage`, `AdminNav`, `moderation-api.ts`, `types.ts` y sus pruebas).
+- `rentsmart-front/src/lib/role.ts`, `src/components/RequireAdmin.tsx`, `src/components/Navbar.tsx`, `src/routes.tsx`, `src/lib/paths.ts`, `src/test/jwt.ts`.
+- `rentsmart-front/src/features/owner/` (el motivo en `OwnerSpaceRow` y `types.ts`) y `src/mocks/handlers.ts`.
+
+#### Cómo probarlo
+En `rentsmart-front` (Node 24): `npm run lint`, `npm test` y `npm run build`. A mano, con la API de AD-02, iniciando sesión como `admin@rentsmart.test` (contraseña `Password123`, del seed): "Administración" en la barra, bloquear un espacio y comprobar que sale del catálogo y que el propietario ve el motivo.
+
+#### Estado de verificación
+- Lint: ✅ · Tests: ✅ (32 archivos, 399 pruebas, con Node 24) · Build: ✅
+- Chrome real: axe da 0 violaciones en "Espacios", en el diálogo de bloqueo y en "Tipos de espacio", a 1100 y a 375 px, sin desborde horizontal. Un usuario común ve "No tienes permiso" y no ve el enlace.
+
+#### Pendientes y bloqueos
+- **Orden de merge:** entra después del PR de la API de AD-02; sin él, las pantallas muestran el error de la carga.
+- Con el `DevAuthGuard` temporal la API actúa como el usuario del seed (que no es administrador): en local hay que mandar `x-user-id` de un administrador. Se arregla cuando A entregue el `JwtAuthGuard` (CU-03).
+
+#### Para el resto del equipo
+- A (@AlejandroMG): este PR agrega `src/lib/role.ts` (`useRole()` lee el rol del token) y `RequireAdmin`, que tu panel admin (AD-01) puede reutilizar. No toca tus archivos.
+- C (@gonzzza-lol): no toca tus módulos.
+
+---
+
+### 2026-10-07 · B (xReNatS) · Sincronización con CU-03 y bitácora de B en un solo PR
+
+**Issues:** #26, #34, #49, #51, #61, #33 (los PR #106 a #114)
+**Rama / PR:** `docs/bitacora-b`
+**Duración aproximada:** 1 h
+**Herramientas:** Claude Code
+
+#### Objetivo
+Dejar los PR de B (#106 a #114) mergeables tras entrar CU-03 (#104) y #107, y evitar que `docs/memory.md` vuelva a ser motivo de conflicto entre ellos.
+
+#### Qué se hizo
+- **Auth de CU-03:** las APIs de favoritos (#109), panel del propietario (#111) y administración (#113) pasaron de `DevAuthGuard` a `JwtAuthGuard`; #113 usa `@Roles('ADMIN')` con `RolesGuard` y se borró el `AdminGuard` propio. Los e2e usan `bearer()` en vez de `x-user-id`.
+- **Front de administración (#114):** usa `RequireRole` y `useCurrentUser` de A. Se quitaron `useRole`, `RequireAdmin` y `fakeJwt`. `/admin` redirige a `/admin/spaces` hasta que exista el panel de AD-01.
+- **Navbar (#110):** "Favoritos" se muestra solo con sesión, dentro del `linksFor` de A.
+- **Bitácora:** las entradas de sesión de los PR #106, #108 a #114 ya no están en sus ramas; están todas en este PR.
+
+#### Decisiones y por qué
+| Decisión | Alternativas | Por qué |
+|---|---|---|
+| Un solo PR con las entradas de bitácora de B | Una entrada por PR (como hasta ahora) | Cada PR agregaba texto al final de `docs/memory.md`; al entrar uno, todos los demás quedaban en conflicto en ese archivo y había que resolverlo en cada uno. Así solo choca este PR, y una vez |
+
+#### Archivos principales
+- `docs/memory.md`: las entradas de #106, #108 a #114 y esta.
+
+#### Cómo probarlo
+No aplica: es solo documentación.
+
+#### Estado de verificación
+- Los nueve PR quedaron sin conflictos con `main` y con el CI verde antes de este cambio.
+
+#### Pendientes y bloqueos
+- Mergear este PR al final, después de los otros, para que el orden de la bitácora siga el de los merges.
+
+#### Para el resto del equipo
+- A (@AlejandroMG): las entradas de B hablan de `DevAuthGuard` porque eran verdad al escribirlas; ya no existe en `main`.
+- Quien abra un PR nuevo puede hacer lo mismo si quiere evitar conflictos: dejar su entrada en un PR aparte o en el último en entrar.
+
+---
