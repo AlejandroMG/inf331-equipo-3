@@ -8,9 +8,11 @@ import { useRequest } from '../../lib/useRequest'
 import { missingFromError } from '../spaces/form'
 import { changeSpaceStatus } from '../spaces/spaces-api'
 import { fetchMySpaces } from './owner-api'
+import { OwnerNav } from './OwnerNav'
 import { OwnerSpaceRow } from './OwnerSpaceRow'
 import { countByStatus, missingText } from './summary'
 import type { OwnerSpaceSummary } from './types'
+import { UpcomingBookings } from './UpcomingBookings'
 
 function Tile({ value, label }: { value: number; label: string }) {
   return (
@@ -92,6 +94,9 @@ export function OwnerSpacesPage() {
         </div>
         <LinkButton to={paths.publish}>Publicar nuevo espacio</LinkButton>
       </div>
+      <div className="mt-6">
+        <OwnerNav />
+      </div>
 
       {loading && (
         <div role="status" aria-label="Cargando tus espacios" className="mt-8">
@@ -153,11 +158,7 @@ export function OwnerSpacesPage() {
               <h2 id="reservas" className="font-display text-[22px] font-bold">
                 Próximas reservas
               </h2>
-              {/* Las reservas son de otro módulo (RE-02 a RE-04); cuando existan, se listan aquí. */}
-              <p className="text-sm leading-relaxed text-muted">
-                Todavía no hay reservas para mostrar. Cuando se habilite la reserva en línea, las próximas de tus espacios
-                aparecerán aquí.
-              </p>
+              <UpcomingBookings />
             </section>
           </div>
         </>

@@ -301,6 +301,16 @@ export const handlers = [
     return HttpResponse.json(detailOf(item))
   }),
 
+  // PN-02 y PN-04: reservas y métricas del propietario. Sin reservas simuladas: las pantallas muestran su estado vacío.
+  http.get('*/api/owner/bookings', ({ request }) => {
+    const url = new URL(request.url)
+    return HttpResponse.json({ items: [], total: 0, page: Number(url.searchParams.get('page')) || 1, pageSize: Number(url.searchParams.get('pageSize')) || 20 })
+  }),
+  http.get('*/api/owner/metrics', ({ request }) => {
+    const month = new URL(request.url).searchParams.get('month') ?? '2026-10'
+    return HttpResponse.json({ month, income: 0, bookings: 0, spaces: [] })
+  }),
+
   // BU-08: favoritos. Los ids van antes que ':spaceId' para que "ids" no se tome por un espacio.
   http.get('*/api/favorites/ids', () => HttpResponse.json(favoriteIds)),
   http.get('*/api/favorites', ({ request }) => {
