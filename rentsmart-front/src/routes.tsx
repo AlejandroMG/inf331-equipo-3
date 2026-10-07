@@ -7,6 +7,8 @@ import { SpaceDetailPage } from './features/catalog/SpaceDetailPage'
 import { LoginPage } from './features/auth/LoginPage'
 import { RegisterPage } from './features/auth/RegisterPage'
 import { ComponentsPage } from './features/dev/ComponentsPage'
+import { OwnerBookingsPage } from './features/owner/OwnerBookingsPage'
+import { OwnerMetricsPage } from './features/owner/OwnerMetricsPage'
 import { OwnerSpacesPage } from './features/owner/OwnerSpacesPage'
 import { PublishSpacePage } from './features/spaces/PublishSpacePage'
 
@@ -27,6 +29,8 @@ export const routes: RouteObject[] = [
         children: [
           { path: 'publish/:spaceId?', element: <PublishSpacePage /> },
           { path: 'owner/spaces', element: <OwnerSpacesPage /> },
+          { path: 'owner/bookings', element: <OwnerBookingsPage /> },
+          { path: 'owner/metrics', element: <OwnerMetricsPage /> },
         ],
       },
       ...(import.meta.env.DEV ? [{ path: 'dev/componentes', element: <ComponentsPage /> }] : []),

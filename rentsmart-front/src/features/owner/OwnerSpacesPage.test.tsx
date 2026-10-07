@@ -247,10 +247,71 @@ describe('OwnerSpacesPage', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 
-  it('deja en claro que las reservas llegarán con la reserva en línea', async () => {
+  describe('próximas reservas', () => {
+    const upcoming = (items: unknown[]) => {
+      const queries: URLSearchParams[] = []
+      server.use(
+        mswHttp.get('*/api/owner/bookings', ({ request }) => {
+          queries.push(new URL(request.url).searchParams)
+          return HttpResponse.json({ items, total: items.length, page: 1, pageSize: 3 })
+        }),
+      )
+      return queries
+    }
+
+    it('lista las próximas reservas confirmadas, con el espacio, el horario, el arrendatario y lo que recibe', async () => {
+      upcoming([
+        {
+          id: 'b1', spaceId: 's1', spaceName: 'Sala Alameda', renterName: 'Camila Rojas', startAt: '2026-10-05T16:00:00.000Z',
+          endAt: '2026-10-05T19:00:00.000Z', unit: 'HOUR', subtotal: 36000, status: 'CONFIRMED', contact: null,
+        },
+      ])
+      await openPanel([summary()])
+
+      const section = screen.getByRole('region', { name: 'Próximas reservas' })
+
+      expect(await within(section).findByText('lun, 5 oct · 13:00 a 16:00')).toBeInTheDocument()
+      expect(within(section).getByText('Camila Rojas · $36.000')).toBeInTheDocument()
+      expect(within(section).getByRole('link', { name: 'Ver todas las reservas' })).toHaveAttribute('href', '/owner/bookings')
+    })
+
+    it('pide solo las 3 próximas confirmadas, desde hoy y las más cercanas primero', async () => {
+      const queries = upcoming([])
+      await openPanel([summary()])
+      await screen.findByText(/No tienes reservas próximas/)
+
+      expect(queries[0].get('status')).toBe('CONFIRMED')
+      expect(queries[0].get('sort')).toBe('asc')
+      expect(queries[0].get('pageSize')).toBe('3')
+      expect(queries[0].get('from')).toMatch(/^20\d{2}-\d{2}-\d{2}$/)
+    })
+
+    it('sin reservas próximas lo dice, y el enlace a todas sigue ahí', async () => {
+      upcoming([])
+      await openPanel([summary()])
+
+      const section = screen.getByRole('region', { name: 'Próximas reservas' })
+
+      expect(await within(section).findByText(/No tienes reservas próximas/)).toBeInTheDocument()
+      expect(within(section).getByRole('link', { name: 'Ver todas las reservas' })).toBeInTheDocument()
+    })
+
+    it('si no cargan, el panel de espacios sigue funcionando y lo avisa en su sección', async () => {
+      server.use(mswHttp.get('*/api/owner/bookings', () => HttpResponse.json({ message: 'Falló' }, { status: 500 })))
+      await openPanel([summary()])
+
+      expect(await screen.findByText('No pudimos cargar tus próximas reservas.')).toBeInTheDocument()
+      expect(screen.getByRole('heading', { level: 3, name: 'Sala Alameda' })).toBeInTheDocument()
+    })
+  })
+
+  it('tiene la navegación del panel con "Mis espacios" como la página actual', async () => {
     await openPanel([summary()])
 
-    expect(screen.getByRole('heading', { level: 2, name: 'Próximas reservas' })).toBeInTheDocument()
-    expect(screen.getByText(/Todavía no hay reservas para mostrar/)).toBeInTheDocument()
+    const nav = screen.getByRole('navigation', { name: 'Panel del propietario' })
+
+    expect(within(nav).getByRole('link', { name: 'Mis espacios' })).toHaveAttribute('aria-current', 'page')
+    expect(within(nav).getByRole('link', { name: 'Reservas' })).toHaveAttribute('href', '/owner/bookings')
+    expect(within(nav).getByRole('link', { name: 'Métricas' })).toHaveAttribute('href', '/owner/metrics')
   })
 })
