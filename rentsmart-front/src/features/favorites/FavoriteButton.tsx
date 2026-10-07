@@ -59,8 +59,8 @@ export function FavoriteButton({ spaceId, name, variant = 'icon', className }: F
       className={cn(
         'inline-flex items-center justify-center gap-2 text-accent-ink',
         variant === 'icon'
-          ? 'size-11 rounded-full border border-line bg-white/95 shadow-sm hover:bg-white'
-          : 'min-h-11 rounded-xl border border-line bg-white px-4 text-[15px] font-semibold text-ink hover:bg-surface',
+          ? 'size-11 rounded-full border border-field bg-white/95 shadow-sm hover:bg-white'
+          : 'min-h-11 rounded-xl border border-field bg-white px-4 text-[15px] font-semibold text-ink hover:bg-surface',
         className,
       )}
     >
