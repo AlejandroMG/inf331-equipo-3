@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router'
 import { Button } from '../../components/Button'
 import { Pagination } from '../../components/Pagination'
@@ -5,7 +6,9 @@ import { usePageTitle } from '../../lib/page-title'
 import { CATALOG_PAGE_SIZE } from './catalog-api'
 import { FilterBar } from './FilterBar'
 import { hasFilters, noFilters, parseFilters, toSearchParams, type CatalogFilters } from './filters'
+import { RecentSearches } from './RecentSearches'
 import { SearchBox } from './SearchBox'
+import { clearHistory, readHistory, saveSearch, SAVE_AFTER_MS, searchKey } from './search-history'
 import { SortSelect } from './SortSelect'
 import { SpaceCard } from './SpaceCard'
 import { useCatalog, useFilterOptions } from './useCatalog'
@@ -39,6 +42,16 @@ export function CatalogPage() {
   const { data: options } = useFilterOptions()
   const totalPages = data ? Math.max(1, Math.ceil(data.total / data.pageSize)) : 1
 
+  // Búsquedas recientes (BU-07): se guarda la que se queda en pantalla un rato y encuentra algo, no cada paso de armarla.
+  const [recent, setRecent] = useState(readHistory)
+  const currentKey = searchKey(filters)
+  const found = data !== undefined && data.total > 0
+  useEffect(() => {
+    if (!found) return
+    const timer = setTimeout(() => setRecent(saveSearch(parseFilters(new URLSearchParams(currentKey)))), SAVE_AFTER_MS)
+    return () => clearTimeout(timer)
+  }, [found, currentKey])
+
   // Cambiar un filtro vuelve a la primera página: la actual podría no existir con el nuevo resultado.
   const applyFilters = (changes: Partial<CatalogFilters>) => setSearchParams(toSearchParams({ ...filters, ...changes }))
   // Limpiar los filtros deja el orden que se había elegido.
@@ -56,6 +69,7 @@ export function CatalogPage() {
             aprobación.
           </p>
           <SearchBox key={filters.q} value={filters.q} onSearch={(q) => applyFilters({ q })} />
+          <RecentSearches entries={recent} currentKey={currentKey} options={options} onClear={() => setRecent(clearHistory())} />
         </div>
       </section>
 
