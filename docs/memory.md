@@ -1385,6 +1385,162 @@ Con `docker compose up -d db-test`, en `rentsmart-back` (Node 24): `npm run lint
 
 ---
 
+### 2026-10-06 · B (xReNatS) · BU-04 ordenar resultados del catálogo
+
+**Issues:** #30 (BU-04)
+**Rama / PR:** `feat/BU-04-ordenar-resultados` · sin PR todavía
+**Duración aproximada:** 1 h
+**Herramientas:** Claude Code
+
+#### Objetivo
+Que el catálogo se pueda ordenar por precio y por los más recientes, y que el orden quede en la URL junto a los filtros.
+
+#### Qué se hizo
+- **API:** `GET /api/catalog?sort=` con `recent` (por defecto), `price_asc` y `price_desc`; otro valor da 400. El precio es el de `priceUnit` (por hora, o por día) y los espacios que no se arriendan en esa unidad van **al final en las dos direcciones**. Siempre se desempata por fecha y por id, así la paginación es estable aunque haya precios iguales. El orden no cambia qué espacios salen ni el total.
+- **Front:** selector "Ordenar por" junto al contador de resultados, con "Más recientes", "Precio por hora: menor a mayor" y "Precio por hora: mayor a menor" (dice "por día" si la unidad del precio es el día). El orden vive en la URL (`?sort=price_asc`), no cuenta como filtro, sobrevive a "Limpiar filtros", y los enlaces de la paginación lo conservan. Cambiarlo vuelve a la página 1. El mock ordena igual que el back.
+- Un test encontró un defecto antes de subir: el front solo mandaba `priceUnit` junto con un rango de precio, así que ordenar por precio por día sin rango ordenaba por hora. Ahora la unidad también viaja cuando se ordena por precio.
+- Pruebas: 6 unitarias y 14 e2e nuevas en el back (157 y 190 en total), y 19 en el front (343 en 28 archivos), todas con Node 24.
+
+#### Decisiones y por qué
+| Decisión | Alternativas consideradas | Por qué se eligió |
+|---|---|---|
+| El orden por precio sigue la unidad del filtro de precio (hora o día) | Un orden aparte por cada unidad | Ya hay un selector de unidad; así no se agrega otro control y el precio que se ordena es el mismo que se filtra |
+| Los espacios sin precio en esa unidad van al final en las dos direcciones | Primero al ordenar de mayor a menor | Un espacio sin precio por hora no es el más caro; en `price_desc` aparecería arriba y confundiría |
+| "Mejor calificados" no se implementa todavía | Un orden falso o desactivado | No existen reseñas ni calificación (A, después del 9 de octubre). Queda pendiente en #30 |
+
+#### Archivos principales
+- Back: `rentsmart-back/src/catalog/` (`dto/list-catalog-query.dto`, `catalog.service` y su spec) y `test/catalog-sort.e2e-spec.ts`.
+- Front: `rentsmart-front/src/features/catalog/` (`SortSelect`, `CatalogPage`, `filters`, `catalog-api` y sus pruebas) y `src/mocks/handlers.ts`.
+- `docs/arquitectura.md`.
+
+#### Cómo probarlo
+Back (Node 24, `JWT_SECRET` y BD de test migrada): `npm run lint`, `npm test`, `npm run test:e2e` y `npm run build`. Front: `npm run lint`, `npm test` y `npm run build`. A mano, con el seed: abrir `/`, elegir "Precio por hora: menor a mayor", cambiar a "Por día" y comprobar que el orden sigue al precio por día.
+
+#### Estado de verificación
+- Back: lint ✅ · 157 unitarias ✅ · 190 e2e ✅ · build ✅
+- Front: lint ✅ · 343 tests (28 archivos) ✅ · build ✅
+- A mano, contra el back real con el seed: orden por hora y por día, nulos al final, 400 con un orden inválido y 375 px sin desbordes ✅
+
+#### Pendientes y bloqueos
+- Ordenar por calificación depende de las reseñas (A). Cuando existan, se agrega `rating` a `sort` y una opción al selector.
+- Hay un error de tipos que ya estaba en `main`, en `rentsmart-back/src/spaces/spaces.service.spec.ts` (línea 125): `tsc` lo marca, pero ni el lint ni los tests ni el build lo ven.
+
+#### Para el resto del equipo
+- A (@AlejandroMG): cuando exista la calificación de los espacios (reseñas), avísame para agregar el orden "mejor calificados".
+
+---
+
+### 2026-10-06 · B (xReNatS) · ES-07 API: punto del espacio en el mapa
+
+**Issues:** #26 (ES-07)
+**Rama / PR:** `feat/ES-07-mapa-api` · sin PR todavía (el front está en `feat/ES-07-mapa-front`, un PR aparte)
+**Duración aproximada:** 1 h
+**Herramientas:** Claude Code
+
+#### Objetivo
+Que el propietario pueda guardar el punto de su espacio en el mapa y que el detalle público entregue solo una zona aproximada. El issue no tenía criterios ("por definir al tomar la historia"): los definí con Renato y quedaron en P-19.
+
+#### Qué se hizo
+- **Base de datos:** `Space` agrega `latitude` y `longitude` (`Float?`) con la migración `20261006180000_space_coordinates`, que además crea un `CHECK` para que vayan juntas (las dos o ninguna). Con la migración aplicada, el esquema y la BD no tienen diferencias.
+- **API del propietario:** `POST` y `PATCH /api/spaces` aceptan `latitude` y `longitude`: opcionales, dentro de Chile (latitud de -56 a -17, longitud de -110 a -66, hasta 6 decimales) y siempre juntas (400 si llega una sola, también contando el valor ya guardado). `null` en las dos borra el punto. El dueño recibe el punto exacto en `GET /api/spaces/:id`.
+- **API pública:** `GET /api/catalog/:id` agrega `location: { latitude, longitude, radiusMeters } | null` con las coordenadas **redondeadas a 3 decimales** y un radio de 150 m. El punto exacto no sale de la API pública y la lista del catálogo no trae coordenadas. El redondeo está en `src/catalog/approximate-location.ts`; un test recorre Chile en una grilla y comprueba que el punto real queda siempre dentro del círculo (el peor caso está a unos 77 m).
+- **Pruebas:** 168 unitarias y 193 e2e. Las e2e comprueban el flujo completo (marcar, mover, borrar, rechazos) y que el punto exacto no aparece en ninguna parte del detalle público ni de la lista.
+
+#### Decisiones y por qué
+| Decisión | Alternativas consideradas | Por qué se eligió |
+|---|---|---|
+| El propietario marca el punto en un mapa | Geocodificar la dirección con Nominatim; usar solo el centro de la comuna | No depende de un servicio externo con límite de uso ni de que encuentre la dirección, y el punto queda donde el propietario dice. El centro de la comuna pondría todos los espacios de una comuna en el mismo lugar |
+| El público ve un círculo de ~150 m, con coordenadas redondeadas en la API | Mostrar el pin exacto | El issue pide una ubicación "aproximada"; redondear en la API (y no solo dibujar un círculo en el front) hace que el punto exacto no salga nunca del servidor. La dirección escrita sigue siendo pública (P-09) |
+| `latitude` y `longitude` van juntas, validado en el servicio y con un `CHECK` en la BD | Solo validar en el servicio | Un punto con una sola coordenada no sirve para nada; así ninguna ruta de código puede dejarlo a medias |
+| Dentro de Chile, por una caja de latitud y longitud | Validar contra la comuna elegida | Descarta los errores groseros (signo cambiado, coordenadas de otro país) sin necesitar coordenadas por comuna, que no existen en el seed |
+
+#### Archivos principales
+- `rentsmart-back/prisma/schema.prisma` y `prisma/migrations/20261006180000_space_coordinates/`: las dos columnas y el `CHECK`.
+- `rentsmart-back/src/spaces/` (`dto/create-space.dto.ts`, `dto/space.dto.ts`, `spaces.service.ts`) y `src/catalog/` (`approximate-location.ts`, `dto/catalog-detail.dto.ts`, `catalog.service.ts`).
+- `rentsmart-back/test/space-location.e2e-spec.ts`: el flujo completo y que el punto exacto no sale en lo público.
+- `docs/decisiones.md` (P-19) y `docs/arquitectura.md`.
+
+#### Cómo probarlo
+Con Node 24, en `rentsmart-back`: aplicar la migración (`npx prisma migrate deploy`) y correr `npm run lint`, `npm run build`, `npm test` y `npm run test:e2e`. A mano en Swagger: `PATCH /api/spaces/:id` con `latitude: -33.4489` y `longitude: -70.6693`; activar el espacio y abrir `GET /api/catalog/:id`: `location` trae `-33.449`, `-70.669` y `radiusMeters: 150`.
+
+#### Estado de verificación
+- Lint: ✅ · Build: ✅ · 168 unitarias ✅ · 193 e2e ✅ (Node 24, BD de test migrada y sin seed, como en el CI)
+
+#### Pendientes y bloqueos
+- **Cambio de `schema.prisma`:** este PR necesita la revisión de A (@AlejandroMG), además de la de C.
+- **Orden de merge:** va antes que el PR del front. El formulario del front manda `latitude` y `longitude`, y una API sin este PR las rechaza con 400 (`forbidNonWhitelisted`).
+- Las teselas públicas de OpenStreetMap sirven para el MVP; con tráfico real hay que cambiar `TILE_URL` (en el front) por un proveedor propio.
+
+#### Para el resto del equipo
+- A (@AlejandroMG): este PR cambia `schema.prisma` (dos columnas nuevas en `Space` y una migración con un `CHECK`). Por favor revísalo.
+- C (@gonzzza-lol): nada cambia en tu dominio. Si más adelante la reserva confirmada muestra la dirección completa, el punto exacto del propietario (`latitude` y `longitude`) está en la base de datos por si sirve.
+
+---
+
+### 2026-10-06 · B (xReNatS) · QA-02 revisión móvil y de accesibilidad
+
+**Issues:** #65 (QA-02)
+**Rama / PR:** `feat/QA-02-responsive-accesibilidad` · sin PR todavía
+**Duración aproximada:** 2 h
+**Herramientas:** Claude Code, Lighthouse 12 y axe-core en Chrome
+
+#### Objetivo
+Comprobar que todas las pantallas se usan a 375 px y que el catálogo y el detalle llegan a 90 en la accesibilidad de Lighthouse, y corregir lo que apareciera.
+
+#### Cómo se revisó
+- **Lighthouse** (accesibilidad y buenas prácticas) sobre el build de producción: catálogo, detalle, inicio de sesión y registro, en móvil y escritorio.
+- **axe-core en Chrome real** (Puppeteer), a 375 px y a 1280 px, sobre 39 pantallas y estados: catálogo con filtros y sin resultados, detalle con fotos, sin fotos y que no existe, inicio de sesión y registro con errores, 404, menú móvil, panel con el diálogo de confirmación y los cinco pasos del formulario de publicar. De paso se midió el desborde horizontal, los objetivos táctiles menores de 44 px, los encabezados, los puntos de referencia, el foco visible con el teclado y el reflujo a 320 px.
+- Pruebas de comportamiento: foco al abrir y cerrar el diálogo, foco al enviar con errores, título de la pestaña, foco y scroll al navegar.
+
+#### Resultado antes de corregir
+- **Ya estaba bien:** Lighthouse daba 100 en accesibilidad en las cuatro pantallas que pide el issue; axe no encontró violaciones; no hay desborde ni a 375 ni a 320 px; el foco se ve con el teclado; el diálogo devuelve el foco al interruptor; los contrastes de texto de la paleta cumplen AA.
+- **Faltaba:** 82 objetivos táctiles de menos de 44 px en móvil (el logo de la cabecera de 34 px, los enlaces del pie de 23 px y el enlace "Catálogo" de las migas de 17 px); todas las pantallas se titulaban "RentSmart"; al navegar con el teclado el foco caía al principio de la página; el scroll se quedaba donde estaba al abrir un espacio; el interruptor de publicar tenía un nombre accesible que no contenía su texto visible (WCAG 2.5.3); el borde de los campos tenía 1,32:1 de contraste (WCAG 1.4.11 pide 3:1); y al fallar el formulario de publicar el foco no iba al error.
+
+#### Qué se hizo
+- Objetivos táctiles de 44 px de alto en el logo, los enlaces del pie y las migas.
+- Título de la pestaña por pantalla ("Mis espacios · RentSmart", el nombre del espacio en el detalle, etc.): las pantallas fijas lo declaran en su ruta (`handle.title`) y las que dependen de datos usan `usePageTitle`.
+- Al pasar a otra pantalla el foco va al contenido y el scroll vuelve arriba (y se recupera al volver atrás con `<ScrollRestoration />`). Cambiar solo los filtros o la página no mueve el foco, y guardar el primer borrador del formulario tampoco.
+- El interruptor de publicar se llama "Activo Sala X" o "Inactivo Sala X": el texto visible más el nombre del espacio.
+- Borde de los campos y del interruptor apagado en `#7d8c89` (3,5:1 sobre blanco), con el token `--color-field`.
+- Al fallar la validación, el formulario de publicar enfoca el primer campo con error. Las animaciones de carga respetan "reducir movimiento".
+- Prueba automática de accesibilidad (`src/test/a11y.test.tsx`) con `axe-core` (nueva dependencia de desarrollo) sobre las rutas reales, con su cabecera y pie: 13 casos. En jsdom no hay estilos, así que el contraste y el tamaño de los objetivos se revisan en un navegador.
+- Pruebas: 28 nuevas (352 en 29 archivos).
+
+#### Resultado después de corregir
+- Lighthouse: **100 en accesibilidad y 100 en buenas prácticas** en catálogo, detalle, inicio de sesión y registro, en móvil y escritorio.
+- axe en Chrome: **0 violaciones** en las 39 pantallas y estados; objetivos táctiles pequeños: de 82 a **0**; sin desborde ni a 375 ni a 320 px; sin problemas de foco visible.
+
+#### Decisiones y por qué
+| Decisión | Alternativas consideradas | Por qué se eligió |
+|---|---|---|
+| Oscurecer el borde de los campos (de `#d9e2df` a `#7d8c89`) | Dejar el borde suave del prototipo | WCAG 1.4.11 (AA) pide 3:1 para identificar un control; con 1,32:1 un campo vacío casi no se ve. Es el único cambio visible respecto del prototipo aprobado |
+| El foco va al contenido al cambiar de pantalla | No mover el foco | Sin esto, quien navega con teclado o lector de pantalla vuelve al principio sin enterarse. No se mueve con solo cambiar filtros o página ni al guardar el primer borrador |
+| El nombre del interruptor sigue al estado ("Activo X" / "Inactivo X") | Un nombre fijo ("Publicación de X") | WCAG 2.5.3: quien dicta "activo" por voz debe encontrar el control. Cambia lo que había decidido en el panel, donde preferí un nombre fijo |
+| `axe-core` en las pruebas, sin una librería envoltorio | `vitest-axe` o `jest-axe` | Una sola dependencia de desarrollo y el mismo motor que usa Lighthouse |
+
+#### Archivos principales
+- `rentsmart-front/src/components/` (`AppLayout`, `Navbar`, `Footer`, `Input`, `Select`, `Textarea`), `src/lib/page-title.ts` y `src/routes.tsx`.
+- `rentsmart-front/src/features/` (`catalog/SpaceDetailPage`, `catalog/FilterBar`, `owner/OwnerSpaceRow`, `spaces/SpaceWizard`) y `src/index.css`.
+- `rentsmart-front/src/test/a11y.test.tsx` y las pruebas de rutas, del panel y del formulario.
+
+#### Cómo probarlo
+En `rentsmart-front` (Node 24): `npm run lint`, `npm test` y `npm run build`. A mano: abrir el catálogo a 375 px y comprobar el pie y la cabecera, recorrer con Tab y Enter hasta un espacio (el foco queda en el contenido y la pestaña cambia de título) y, en el formulario de publicar, pulsar Siguiente sin nombre (el foco va al campo).
+
+#### Estado de verificación
+- Lint: ✅ · Tests: ✅ (29 archivos, 352 pruebas, con Node 24) · Build: ✅
+- Lighthouse: ✅ 100 y 100 · axe en Chrome: ✅ 0 violaciones en 39 pantallas · 375 y 320 px: ✅
+
+#### Pendientes y bloqueos
+- El inicio de sesión y el registro (de A) siguen sin llevar el foco al primer campo con error al enviar con datos inválidos; los campos sí indican su error. Es el mismo arreglo del formulario de publicar.
+- El selector "Ordenar por" de #102 (ya en `main`) usa ahora el mismo borde (`border-field`): se corrigió al sincronizar este PR con `main`.
+- No se revisó con un lector de pantalla real (NVDA o VoiceOver): la revisión fue automática y con el teclado.
+
+#### Para el resto del equipo
+- A (@AlejandroMG): el título de `/login` y `/register` se declara en `routes.tsx`, sin tocar sus archivos. Si quieres que el formulario lleve el foco al primer error, es mover el foco al primer `[aria-invalid="true"]` tras un envío inválido, como en `SpaceWizard`.
+- C (@gonzzza-lol): las pantallas nuevas deberían usar `usePageTitle` y objetivos de 44 px; la prueba `a11y.test.tsx` se puede extender con la suya.
+
+---
+
 ### 2026-10-06 · A (AlejandroMG) · CU-03 roles y permisos en la API y el front
 
 **Issues:** #14 (CU-03)

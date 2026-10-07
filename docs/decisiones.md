@@ -121,6 +121,14 @@ Decisiones abiertas: ver [al final](#decisiones-abiertas).
 - **Alternativas descartadas:** exigir solo lo que decía `producto.md` y tolerar tipo o comuna vacíos en el catálogo (queda como respaldo, pero esos espacios no saldrían en los filtros).
 - **Consecuencias:** `POST /api/spaces/:id/publish` y `PATCH /api/spaces/:id/status` responden 409 con `missing` (`type`, `description`, `capacity`, `commune`, `price`, `photos`, `schedule`). El formulario del front debe agregar tipo y comuna a la lista "Para publicar necesitas".
 
+## P-19 · Ubicación en el mapa: el propietario marca el punto y el público ve una zona aproximada
+
+- **Estado:** Decidida, 06-10-2026 · Issue [#26](https://github.com/AlejandroMG/inf331-equipo-3/issues/26) (ES-07)
+- **Contexto:** P-09 dejó el mapa como extra (ES-07) y `Space` solo tenía la dirección escrita.
+- **Decisión:** el propietario puede marcar el punto de su espacio en un mapa (Leaflet con teselas de OpenStreetMap) al publicar; es opcional. El detalle público muestra un círculo de unos 150 m, no un pin: la API redondea las coordenadas a 3 decimales (~110 m) y el punto real queda siempre dentro del círculo. La dirección escrita sigue siendo pública (P-09). Las coordenadas exactas solo las ve el dueño.
+- **Alternativas descartadas:** geocodificar la dirección con Nominatim (depende de un servicio externo con límite de uso y no siempre encuentra direcciones chilenas); usar solo el centro de la comuna (todos los espacios de una comuna caerían en el mismo punto); mostrar el pin exacto (el issue pide una ubicación "aproximada").
+- **Consecuencias:** `Space` agrega `latitude` y `longitude` (`Float?`, siempre juntas: lo exige un `CHECK` de la BD). Es un cambio de `schema.prisma` y lo revisa A. Los endpoints públicos nunca devuelven el punto exacto y un test e2e lo comprueba. Las teselas públicas de OSM tienen una política de uso razonable: sirven para el MVP, y con tráfico real hay que cambiar `TILE_URL` por un proveedor propio.
+
 ## T-01 · Dominios verticales por integrante
 
 - **Estado:** Decidida, 25-09-2026

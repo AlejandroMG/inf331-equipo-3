@@ -108,6 +108,8 @@ describe('Espacios del propietario (e2e)', () => {
         communeId: null,
         address: null,
         addressDetail: null,
+        latitude: null,
+        longitude: null,
         rules: null,
         amenityIds: [],
         photos: [],

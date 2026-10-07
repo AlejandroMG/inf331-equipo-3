@@ -1,14 +1,16 @@
 import { useSearchParams } from 'react-router'
 import { Button } from '../../components/Button'
 import { Pagination } from '../../components/Pagination'
+import { usePageTitle } from '../../lib/page-title'
 import { CATALOG_PAGE_SIZE } from './catalog-api'
 import { FilterBar } from './FilterBar'
 import { hasFilters, noFilters, parseFilters, toSearchParams, type CatalogFilters } from './filters'
 import { SearchBox } from './SearchBox'
+import { SortSelect } from './SortSelect'
 import { SpaceCard } from './SpaceCard'
 import { useCatalog, useFilterOptions } from './useCatalog'
 
-// La página y los filtros viven en la URL (?typeId=8&page=2): se puede recargar, compartir y volver atrás.
+// La página, los filtros y el orden viven en la URL (?typeId=8&sort=price_asc&page=2): se puede recargar, compartir y volver atrás.
 function parsePage(value: string | null): number {
   const page = Number(value)
   return Number.isInteger(page) && page >= 1 ? page : 1
@@ -17,17 +19,18 @@ function parsePage(value: string | null): number {
 function SkeletonCard() {
   return (
     <div aria-hidden="true" className="overflow-hidden rounded-card border border-line bg-white">
-      <div className="h-44 animate-pulse bg-line/60" />
+      <div className="h-44 motion-safe:animate-pulse bg-line/60" />
       <div className="flex flex-col gap-2 p-4">
-        <div className="h-3 w-1/3 animate-pulse rounded bg-line/60" />
-        <div className="h-5 w-3/4 animate-pulse rounded bg-line/60" />
-        <div className="h-3 w-1/2 animate-pulse rounded bg-line/60" />
+        <div className="h-3 w-1/3 motion-safe:animate-pulse rounded bg-line/60" />
+        <div className="h-5 w-3/4 motion-safe:animate-pulse rounded bg-line/60" />
+        <div className="h-3 w-1/2 motion-safe:animate-pulse rounded bg-line/60" />
       </div>
     </div>
   )
 }
 
 export function CatalogPage() {
+  usePageTitle('Espacios para arrendar')
   const [searchParams, setSearchParams] = useSearchParams()
   const page = parsePage(searchParams.get('page'))
   const filters = parseFilters(searchParams)
@@ -38,7 +41,8 @@ export function CatalogPage() {
 
   // Cambiar un filtro vuelve a la primera página: la actual podría no existir con el nuevo resultado.
   const applyFilters = (changes: Partial<CatalogFilters>) => setSearchParams(toSearchParams({ ...filters, ...changes }))
-  const clearFilters = () => setSearchParams(toSearchParams(noFilters))
+  // Limpiar los filtros deja el orden que se había elegido.
+  const clearFilters = () => setSearchParams(toSearchParams({ ...noFilters, sort: filters.sort }))
 
   return (
     <>
@@ -60,11 +64,14 @@ export function CatalogPage() {
 
         <div className="mb-4 mt-8 flex flex-wrap items-baseline justify-between gap-3">
           <h2 className="font-display text-[26px] font-bold">Espacios disponibles</h2>
-          {data && (
-            <p className="text-[15px] text-muted" aria-live="polite">
-              {data.total === 1 ? '1 espacio' : `${data.total} espacios`}
-            </p>
-          )}
+          <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+            {data && (
+              <p className="text-[15px] text-muted" aria-live="polite">
+                {data.total === 1 ? '1 espacio' : `${data.total} espacios`}
+              </p>
+            )}
+            <SortSelect value={filters.sort} priceUnit={filters.priceUnit} onChange={(sort) => applyFilters({ sort })} />
+          </div>
         </div>
 
         {loading && (

@@ -1,6 +1,6 @@
 import '@testing-library/jest-dom/vitest'
 import { cleanup } from '@testing-library/react'
-import { afterAll, afterEach, beforeAll } from 'vitest'
+import { afterAll, afterEach, beforeAll, vi } from 'vitest'
 import { resetMockDrafts } from '../mocks/handlers'
 import { server } from '../mocks/server'
 
@@ -14,6 +14,9 @@ afterEach(() => {
   localStorage.clear()
 })
 afterAll(() => server.close())
+
+// jsdom no implementa window.scrollTo (lo usa <ScrollRestoration />).
+window.scrollTo = vi.fn()
 
 // jsdom no implementa <dialog>.showModal() ni close(): se simulan con el atributo `open`.
 HTMLDialogElement.prototype.showModal = function showModal() {

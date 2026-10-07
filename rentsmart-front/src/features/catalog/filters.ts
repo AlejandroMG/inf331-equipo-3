@@ -7,7 +7,14 @@ const MAX_PRICE = 10_000_000
 /** A qué precio se aplica el rango: el de la hora o el del día. */
 export type PriceUnit = 'hour' | 'day'
 
-/** Los filtros del catálogo. `null` es "sin filtro". Los precios son CLP y se miden en `priceUnit`. */
+/** Cómo se ordena la lista (BU-04): los más recientes primero, o por precio de menor a mayor o de mayor a menor. */
+export type CatalogSort = 'recent' | 'price_asc' | 'price_desc'
+const SORTS: readonly CatalogSort[] = ['recent', 'price_asc', 'price_desc']
+
+/**
+ * Los filtros del catálogo y su orden. `null` es "sin filtro". Los precios son CLP y se miden en `priceUnit`, que
+ * también es el precio por el que ordenan `price_asc` y `price_desc`.
+ */
 export interface CatalogFilters {
   q: string
   typeId: number | null
@@ -16,6 +23,7 @@ export interface CatalogFilters {
   priceUnit: PriceUnit
   minPrice: number | null
   maxPrice: number | null
+  sort: CatalogSort
 }
 
 export const noFilters: CatalogFilters = {
@@ -26,6 +34,7 @@ export const noFilters: CatalogFilters = {
   priceUnit: 'hour',
   minPrice: null,
   maxPrice: null,
+  sort: 'recent',
 }
 
 /** Un entero entre 1 y `max`, escrito en la URL; cualquier otra cosa es "sin filtro". */
@@ -50,10 +59,12 @@ export function parseFilters(params: URLSearchParams): CatalogFilters {
     priceUnit: params.get('priceUnit') === 'day' ? 'day' : 'hour',
     minPrice,
     maxPrice,
+    // Un orden que no se conoce se ignora, como cualquier otro valor inválido.
+    sort: SORTS.find((sort) => sort === params.get('sort')) ?? 'recent',
   }
 }
 
-/** Si hay algo filtrando. La unidad del precio sola no filtra nada: solo cuenta junto con un precio. */
+/** Si hay algo filtrando. La unidad del precio y el orden no filtran nada: no cuentan como filtros. */
 export function hasFilters(filters: CatalogFilters): boolean {
   return (
     filters.q !== '' ||
@@ -66,7 +77,8 @@ export function hasFilters(filters: CatalogFilters): boolean {
 }
 
 /**
- * La URL de una búsqueda: solo los filtros con valor y, desde la segunda, la página. Sirve para compartirla.
+ * La URL de una búsqueda: solo los filtros con valor, el orden si no es el normal y, desde la segunda, la página.
+ * Sirve para compartirla.
  * La unidad se escribe cuando es "por día" (por hora es lo normal), aunque todavía no haya precios, para que el
  * selector se quede donde la persona lo dejó.
  */
@@ -79,6 +91,7 @@ export function toSearchParams(filters: CatalogFilters, page = 1): URLSearchPara
   if (filters.priceUnit === 'day') params.set('priceUnit', 'day')
   if (filters.minPrice !== null) params.set('minPrice', String(filters.minPrice))
   if (filters.maxPrice !== null) params.set('maxPrice', String(filters.maxPrice))
+  if (filters.sort !== 'recent') params.set('sort', filters.sort)
   if (page > 1) params.set('page', String(page))
   return params
 }

@@ -40,6 +40,12 @@ export class SpaceDto {
   @ApiProperty({ type: String, nullable: true })
   addressDetail: string | null;
 
+  @ApiProperty({ type: Number, nullable: true, description: 'Punto exacto que marcó el propietario' })
+  latitude: number | null;
+
+  @ApiProperty({ type: Number, nullable: true, description: 'Punto exacto que marcó el propietario' })
+  longitude: number | null;
+
   @ApiProperty({ type: String, nullable: true })
   rules: string | null;
 
