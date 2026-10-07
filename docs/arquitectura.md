@@ -119,6 +119,20 @@ Módulo `catalog`, sin sesión. Solo muestra espacios `ACTIVE`: borradores, inac
 - **Orden (BU-04):** `sort` = `recent` (por defecto, los más recientes primero), `price_asc` (de menor a mayor) o `price_desc` (de mayor a menor). Cualquier otro valor da 400. El precio es el de `priceUnit` (por hora, salvo que se pida `day`), y los espacios que no se arriendan en esa unidad van **al final en las dos direcciones**. Siempre se desempata por fecha (más reciente primero) y por id, así la paginación es estable aunque haya precios iguales. El orden no cambia qué espacios se listan ni el `total`.
 - Ordenar por calificación llegará con las reseñas (A, después del 9 de octubre): hoy no existe ese dato.
 
+### Favoritos (BU-08)
+
+Dentro del módulo `catalog`. Requieren sesión (hoy con el `DevAuthGuard` temporal) y cada usuario ve solo los suyos.
+
+| Endpoint | Qué hace |
+|---|---|
+| `GET /api/favorites?page=&pageSize=` | Mis favoritos como tarjetas del catálogo (`{ items, total, page, pageSize }`), el último guardado primero. Solo los que siguen activos. Mismos topes de `page` y `pageSize` que el catálogo; cualquier otro parámetro da 400 |
+| `GET /api/favorites/ids` | Solo los ids de mis favoritos activos, para marcar el corazón en el catálogo sin pedir cada espacio |
+| `PUT /api/favorites/:spaceId` | Guarda un espacio. 204, e idempotente (guardar uno que ya es favorito no cambia nada). 404 si no existe o no está activo; 409 al llegar a 200 favoritos |
+| `DELETE /api/favorites/:spaceId` | Lo quita. 204, e idempotente |
+
+- Un espacio que se desactiva deja de verse en los favoritos pero no se pierde: reaparece si se vuelve a activar. Borrar el espacio o el usuario borra sus favoritos (`ON DELETE CASCADE`).
+- Las tarjetas salen del mismo `select` y de la misma función que el catálogo (`CATALOG_ITEM_SELECT` y `toCatalogItem`, en `catalog.service.ts`): lo que no sale del catálogo público (`addressDetail`, coordenadas, `ownerId`) tampoco sale de aquí.
+
 ### Espacios del propietario (ES-02)
 
 Módulo `spaces`. Requieren sesión y solo el dueño accede a su espacio (403 si es de otro, 404 si no existe).
@@ -181,6 +195,7 @@ rentsmart-front/src/
 - Pruebas: `npm test` ejecuta Vitest con jsdom, Testing Library y MSW. Los handlers de la API simulada están en `src/mocks/handlers.ts` y los usan tanto los tests (`src/mocks/server.ts`) como el navegador (`src/mocks/browser.ts`, con `VITE_USE_MOCKS=true`). El setup (`src/test/setup.ts`) falla cualquier petición sin handler y simula `<dialog>`, que jsdom no implementa. Los tests viven junto al código (`*.test.ts` y `*.test.tsx`).
 - Catálogo y detalle (BU-01, BU-02): el contrato de `GET /api/catalog` y `GET /api/catalog/:id` está en [Catálogo público](#catálogo-público-bu-01-bu-02) (sección del back). El front usa los tipos de `src/features/catalog/types.ts` y el mismo contrato en `src/mocks/handlers.ts`. `useRequest` (`src/lib/useRequest.ts`) carga datos con cancelación, estado de carga y "Reintentar"; úsalo en las pantallas nuevas.
 - Favoritos (BU-08): `FavoritesProvider` (en `App.tsx`) guarda en un contexto los ids de los favoritos de la sesión (`GET /api/favorites/ids`, solo con sesión) y se olvida de ellos al cerrarla; `FavoriteButton` es el corazón de las tarjetas y el botón "Guardar en favoritos" del detalle. Marcar o desmarcar se ve al instante y se deshace, con un aviso, si el servidor lo rechaza. Sin sesión, el corazón lleva a iniciarla y regresa a la pantalla. "Mis favoritos" (`/favorites`, privada) lista las tarjetas con `GET /api/favorites`. El corazón no puede ir dentro del enlace de la tarjeta (un botón dentro de un enlace no es HTML válido): es su hermano, encima de la foto. Sin `FavoritesProvider` (por ejemplo, en la prueba de una tarjeta suelta) nada aparece guardado.
+- Búsquedas recientes (BU-07): el catálogo guarda en este navegador (`localStorage`, clave `rentsmart_recent_searches`) las últimas 6 búsquedas con filtros que dieron resultados y se quedaron 3 segundos en pantalla, para repetirlas desde "Búsquedas recientes" bajo el buscador. Cada una es la URL de sus filtros, sin el orden ni la página, y no se repite. No viaja al servidor ni cruza dispositivos, y se lee validada: lo que no se entiende se descarta. La lógica está en `src/features/catalog/search-history.ts`.
 - Mapas (ES-07): Leaflet con react-leaflet y las teselas de OpenStreetMap (`src/features/map/`). `LazyMaps.tsx` los carga bajo demanda (Leaflet pesa ~45 kB comprimido y queda fuera del resto de la aplicación) y los envuelve en un `ErrorBoundary`: si no cargan, el resto de la pantalla sigue. `LocationMap` dibuja el círculo del detalle público y `LocationPicker`, el mapa donde el propietario marca el punto; este último es solo una ayuda, porque las mismas coordenadas se escriben en los campos de latitud y longitud (la forma de hacerlo con teclado). Las teselas públicas de OSM tienen una [política de uso razonable](https://operations.osmfoundation.org/policies/tiles/): sirven para el MVP, y con tráfico real hay que cambiar `TILE_URL` (`map-config.ts`) por un proveedor propio. El contrato de `location` y de `latitude` y `longitude` está en [Catálogo público](#catálogo-público-bu-01-bu-02-bu-03) y [Espacios del propietario](#espacios-del-propietario-es-02).
 - Mientras A no entregue el login (CU-02), para entrar a una ruta privada en local: `localStorage.setItem('rentsmart_token', 'dev')` en la consola del navegador.
 
@@ -194,6 +209,7 @@ Borrador para F-03 ([#3](https://github.com/AlejandroMG/inf331-equipo-3/issues/3
 | `Region` · `Commune` | Lista cerrada cargada por el seed | B |
 | `SpaceType` · `Amenity` | Catálogos administrables; `SpaceAmenity` como tabla intermedia | B |
 | `Space` | ownerId, typeId, name, description, capacity, pricePerHour?, pricePerDay?, regionId, communeId, address (pública), addressDetail (privada), latitude? y longitude? (punto del mapa: exacto y solo del dueño; van juntos), rules, status (`DRAFT` · `ACTIVE` · `INACTIVE` · `BLOCKED`) | B |
+| `Favorite` | userId, spaceId (clave compuesta), createdAt; se borra con el usuario o el espacio | B |
 | `SpacePhoto` | spaceId, storagePath, url, position | B |
 | `AvailabilityRule` | spaceId, weekday (0–6), startTime, endTime (hora local, bloques de 1 h) | C |
 | `Booking` | spaceId, renterId, startAt, endAt, unit (`HOUR` · `DAY`), subtotal, fee, total, status, expiresAt, stripeCheckoutSessionId | C |

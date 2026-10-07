@@ -72,6 +72,7 @@ model User {
   bookings      Booking[]      @relation("Renter")
   bookingEvents BookingEvent[]
   reviews       Review[]
+  favorites     Favorite[]
 }
 
 // ---------------------------------------------------------------------------
@@ -152,6 +153,7 @@ model Space {
   rulesWeek AvailabilityRule[]
   bookings  Booking[]
   reviews   Review[]
+  favorites Favorite[]
 
   // Consultas del catálogo: solo activos, filtrados por comuna y tipo.
   @@index([status, communeId])
@@ -279,4 +281,17 @@ model Review {
   createdAt DateTime @default(now())
 
   @@index([spaceId])
+}
+
+// Espacios que un usuario guardó como favoritos (BU-08). Un espacio solo se guarda una vez por usuario.
+model Favorite {
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  spaceId   String
+  space     Space    @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@id([userId, spaceId])
+  // La lista de favoritos de un usuario, los guardados más recientemente primero.
+  @@index([userId, createdAt])
 }
