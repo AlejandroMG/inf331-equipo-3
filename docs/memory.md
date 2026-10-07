@@ -1477,6 +1477,70 @@ Con Node 24, en `rentsmart-back`: aplicar la migración (`npx prisma migrate dep
 
 ---
 
+### 2026-10-06 · B (xReNatS) · QA-02 revisión móvil y de accesibilidad
+
+**Issues:** #65 (QA-02)
+**Rama / PR:** `feat/QA-02-responsive-accesibilidad` · sin PR todavía
+**Duración aproximada:** 2 h
+**Herramientas:** Claude Code, Lighthouse 12 y axe-core en Chrome
+
+#### Objetivo
+Comprobar que todas las pantallas se usan a 375 px y que el catálogo y el detalle llegan a 90 en la accesibilidad de Lighthouse, y corregir lo que apareciera.
+
+#### Cómo se revisó
+- **Lighthouse** (accesibilidad y buenas prácticas) sobre el build de producción: catálogo, detalle, inicio de sesión y registro, en móvil y escritorio.
+- **axe-core en Chrome real** (Puppeteer), a 375 px y a 1280 px, sobre 39 pantallas y estados: catálogo con filtros y sin resultados, detalle con fotos, sin fotos y que no existe, inicio de sesión y registro con errores, 404, menú móvil, panel con el diálogo de confirmación y los cinco pasos del formulario de publicar. De paso se midió el desborde horizontal, los objetivos táctiles menores de 44 px, los encabezados, los puntos de referencia, el foco visible con el teclado y el reflujo a 320 px.
+- Pruebas de comportamiento: foco al abrir y cerrar el diálogo, foco al enviar con errores, título de la pestaña, foco y scroll al navegar.
+
+#### Resultado antes de corregir
+- **Ya estaba bien:** Lighthouse daba 100 en accesibilidad en las cuatro pantallas que pide el issue; axe no encontró violaciones; no hay desborde ni a 375 ni a 320 px; el foco se ve con el teclado; el diálogo devuelve el foco al interruptor; los contrastes de texto de la paleta cumplen AA.
+- **Faltaba:** 82 objetivos táctiles de menos de 44 px en móvil (el logo de la cabecera de 34 px, los enlaces del pie de 23 px y el enlace "Catálogo" de las migas de 17 px); todas las pantallas se titulaban "RentSmart"; al navegar con el teclado el foco caía al principio de la página; el scroll se quedaba donde estaba al abrir un espacio; el interruptor de publicar tenía un nombre accesible que no contenía su texto visible (WCAG 2.5.3); el borde de los campos tenía 1,32:1 de contraste (WCAG 1.4.11 pide 3:1); y al fallar el formulario de publicar el foco no iba al error.
+
+#### Qué se hizo
+- Objetivos táctiles de 44 px de alto en el logo, los enlaces del pie y las migas.
+- Título de la pestaña por pantalla ("Mis espacios · RentSmart", el nombre del espacio en el detalle, etc.): las pantallas fijas lo declaran en su ruta (`handle.title`) y las que dependen de datos usan `usePageTitle`.
+- Al pasar a otra pantalla el foco va al contenido y el scroll vuelve arriba (y se recupera al volver atrás con `<ScrollRestoration />`). Cambiar solo los filtros o la página no mueve el foco, y guardar el primer borrador del formulario tampoco.
+- El interruptor de publicar se llama "Activo Sala X" o "Inactivo Sala X": el texto visible más el nombre del espacio.
+- Borde de los campos y del interruptor apagado en `#7d8c89` (3,5:1 sobre blanco), con el token `--color-field`.
+- Al fallar la validación, el formulario de publicar enfoca el primer campo con error. Las animaciones de carga respetan "reducir movimiento".
+- Prueba automática de accesibilidad (`src/test/a11y.test.tsx`) con `axe-core` (nueva dependencia de desarrollo) sobre las rutas reales, con su cabecera y pie: 13 casos. En jsdom no hay estilos, así que el contraste y el tamaño de los objetivos se revisan en un navegador.
+- Pruebas: 28 nuevas (352 en 29 archivos).
+
+#### Resultado después de corregir
+- Lighthouse: **100 en accesibilidad y 100 en buenas prácticas** en catálogo, detalle, inicio de sesión y registro, en móvil y escritorio.
+- axe en Chrome: **0 violaciones** en las 39 pantallas y estados; objetivos táctiles pequeños: de 82 a **0**; sin desborde ni a 375 ni a 320 px; sin problemas de foco visible.
+
+#### Decisiones y por qué
+| Decisión | Alternativas consideradas | Por qué se eligió |
+|---|---|---|
+| Oscurecer el borde de los campos (de `#d9e2df` a `#7d8c89`) | Dejar el borde suave del prototipo | WCAG 1.4.11 (AA) pide 3:1 para identificar un control; con 1,32:1 un campo vacío casi no se ve. Es el único cambio visible respecto del prototipo aprobado |
+| El foco va al contenido al cambiar de pantalla | No mover el foco | Sin esto, quien navega con teclado o lector de pantalla vuelve al principio sin enterarse. No se mueve con solo cambiar filtros o página ni al guardar el primer borrador |
+| El nombre del interruptor sigue al estado ("Activo X" / "Inactivo X") | Un nombre fijo ("Publicación de X") | WCAG 2.5.3: quien dicta "activo" por voz debe encontrar el control. Cambia lo que había decidido en el panel, donde preferí un nombre fijo |
+| `axe-core` en las pruebas, sin una librería envoltorio | `vitest-axe` o `jest-axe` | Una sola dependencia de desarrollo y el mismo motor que usa Lighthouse |
+
+#### Archivos principales
+- `rentsmart-front/src/components/` (`AppLayout`, `Navbar`, `Footer`, `Input`, `Select`, `Textarea`), `src/lib/page-title.ts` y `src/routes.tsx`.
+- `rentsmart-front/src/features/` (`catalog/SpaceDetailPage`, `catalog/FilterBar`, `owner/OwnerSpaceRow`, `spaces/SpaceWizard`) y `src/index.css`.
+- `rentsmart-front/src/test/a11y.test.tsx` y las pruebas de rutas, del panel y del formulario.
+
+#### Cómo probarlo
+En `rentsmart-front` (Node 24): `npm run lint`, `npm test` y `npm run build`. A mano: abrir el catálogo a 375 px y comprobar el pie y la cabecera, recorrer con Tab y Enter hasta un espacio (el foco queda en el contenido y la pestaña cambia de título) y, en el formulario de publicar, pulsar Siguiente sin nombre (el foco va al campo).
+
+#### Estado de verificación
+- Lint: ✅ · Tests: ✅ (29 archivos, 352 pruebas, con Node 24) · Build: ✅
+- Lighthouse: ✅ 100 y 100 · axe en Chrome: ✅ 0 violaciones en 39 pantallas · 375 y 320 px: ✅
+
+#### Pendientes y bloqueos
+- El inicio de sesión y el registro (de A) siguen sin llevar el foco al primer campo con error al enviar con datos inválidos; los campos sí indican su error. Es el mismo arreglo del formulario de publicar.
+- El selector "Ordenar por" de #102 (ya en `main`) usa ahora el mismo borde (`border-field`): se corrigió al sincronizar este PR con `main`.
+- No se revisó con un lector de pantalla real (NVDA o VoiceOver): la revisión fue automática y con el teclado.
+
+#### Para el resto del equipo
+- A (@AlejandroMG): el título de `/login` y `/register` se declara en `routes.tsx`, sin tocar sus archivos. Si quieres que el formulario lleve el foco al primer error, es mover el foco al primer `[aria-invalid="true"]` tras un envío inválido, como en `SpaceWizard`.
+- C (@gonzzza-lol): las pantallas nuevas deberían usar `usePageTitle` y objetivos de 44 px; la prueba `a11y.test.tsx` se puede extender con la suya.
+
+---
+
 ### 2026-10-07 · B (xReNatS) · AD-02 API: administrar espacios y tipos de espacio
 
 **Issues:** #61 (AD-02)
