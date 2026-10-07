@@ -1593,50 +1593,38 @@ Dejar `JwtAuthGuard`, `RolesGuard` y `@CurrentUser()` listos para los demás mó
 
 ---
 
-### 2026-10-07 · B (xReNatS) · PN-02 y PN-04 front: reservas y métricas del propietario
+### 2026-10-07 · B (xReNatS) · ES-05 editar un espacio: las reservas conservan su total
 
-**Issues:** #49 (PN-02), #51 (PN-04) y, de #48 (PN-01), las próximas reservas
-**Rama / PR:** `feat/PN-02-PN-04-owner-front` · sin PR todavía (la API está en `feat/PN-02-PN-04-owner-api`, un PR aparte que debe entrar primero)
-**Duración aproximada:** 1 h 30 min
-**Herramientas:** Claude Code, Chrome con Puppeteer y axe-core
+**Issues:** #24 (ES-05)
+**Rama / PR:** `feat/ES-05-editar-espacio` · sin PR todavía
+**Duración aproximada:** 30 min
+**Herramientas:** Claude Code
 
 #### Objetivo
-Mostrarle al propietario las reservas de sus espacios y sus métricas del mes. La API está en el PR de PN-02 y PN-04.
+Cerrar ES-05. El formulario ya edita un espacio (la misma pantalla de publicar, con "Edita tu espacio"), y la API ya deja cambiar sus datos con las reglas de P-18. Faltaba lo único que pide el criterio: demostrar que un cambio de precio aplica solo a las reservas nuevas.
 
 #### Qué se hizo
-- **Navegación del panel** (`OwnerNav`): "Mis espacios", "Reservas" y "Métricas", con la página actual marcada (`aria-current`).
-- **"Reservas"** (`/owner/bookings`, PN-02): las reservas de todos mis espacios como tarjetas, con el espacio, el estado, el horario en hora de Chile, el arrendatario y lo que recibe el propietario. En las confirmadas, el contacto del arrendatario como enlaces (`mailto:` y `tel:`). Filtros por estado, desde, hasta y orden, paginación, y los filtros en la URL.
-- **"Métricas"** (`/owner/metrics`, PN-04): los ingresos y las reservas del mes, y por espacio sus ingresos y su ocupación con una barra y "6 de 68 horas arrendables". Mes anterior y siguiente, y el mes en la URL. Un espacio sin horario explica por qué no hay ocupación.
-- **"Mis espacios"** (#48): el recuadro "Próximas reservas", que decía que llegarían con la reserva en línea, ahora lista las 3 próximas confirmadas (desde hoy, hora de Chile) y enlaza a todas.
-- **Hora de Chile en todo:** las fechas llegan en UTC y se muestran con `America/Santiago`; "hoy" y "el mes actual" también (a las 23:30 de Chile del 30 de septiembre, en UTC ya es octubre).
-- **Pruebas:** de los formatos, de cada pantalla (filtros, URL, estados vacíos, errores con "Reintentar", paginación, contacto solo en confirmadas) y del panel de espacios.
+- No hubo que cambiar código: `Booking` guarda `subtotal`, `fee` y `total` al crearse y no los calcula desde el precio del espacio, así que editar el precio no puede tocar una reserva que ya existe.
+- Se agregó `test/space-edit-bookings.e2e-spec.ts` (5 pruebas) que lo demuestra: con un espacio publicado y una reserva confirmada de 3 horas, cambiar el precio por hora y por día, quitar el precio por día, o editar el nombre, la descripción y la capacidad deja la reserva con el mismo subtotal, comisión, total y estado; el público ve el precio nuevo; y desactivar el espacio mantiene la reserva confirmada (criterio de ES-06).
 
 #### Decisiones y por qué
 | Decisión | Alternativas consideradas | Por qué se eligió |
 |---|---|---|
-| Tres pantallas con una navegación común | Todo en "Mis espacios" | Cada una tiene sus filtros y su URL, se puede enlazar y el panel de espacios no se llena |
-| Los filtros y el mes en la URL | Estado local | Igual que el catálogo: se puede recargar, compartir y volver atrás |
-| El título de cada reserva es un `h2` | `h3` | La página no tiene otro nivel entre el título y las tarjetas; con `h3` axe marcaba el salto de encabezados |
-| La ocupación con una barra decorativa y el porcentaje en texto | Una barra de progreso sola | La barra no es información accesible por sí sola: el texto ("Ocupación 9 % · 6 de 68 horas") lo dice todo y la barra queda oculta a los lectores de pantalla |
-| Enlaces `mailto:` y `tel:` con 44 px de alto | Texto plano | Es lo que el propietario va a hacer con el contacto, y es un objetivo táctil cómodo |
+| Probar con reservas creadas directo en la base de datos | Esperar a la API de reservas (RE-02, de C) | El criterio se cumple por cómo está modelada `Booking`, no por código de reservas: la prueba no depende de nada de C, y cuando exista RE-02 sigue valiendo |
 
 #### Archivos principales
-- `rentsmart-front/src/features/owner/` (`OwnerBookingsPage`, `OwnerMetricsPage`, `OwnerNav`, `BookingCard`, `UpcomingBookings`, `booking-format.ts`, `owner-api.ts`, `types.ts`, `OwnerSpacesPage.tsx` y sus pruebas).
-- `rentsmart-front/src/routes.tsx`, `src/lib/paths.ts` y `src/mocks/handlers.ts`.
+- `rentsmart-back/test/space-edit-bookings.e2e-spec.ts`.
 
 #### Cómo probarlo
-En `rentsmart-front` (Node 24): `npm run lint`, `npm test` y `npm run build`. A mano, con la API de PN-02 y PN-04 y con sesión: crear una reserva confirmada en la base de datos y abrir "Reservas", "Métricas" y "Mis espacios".
+En `rentsmart-back` (Node 24): `npm run lint`, `npm run build`, `npm test` y `npm run test:e2e`.
 
 #### Estado de verificación
-- Lint: ✅ · Tests: ✅ (31 archivos, 416 pruebas, con Node 24) · Build: ✅
-- Chrome real, con datos de ejemplo: axe da 0 violaciones en las tres pantallas, a 1100 y a 375 px, sin desborde horizontal.
+- Lint: ✅ · Build: ✅ · e2e: ✅ (Node 24, BD de test migrada y sin seed)
 
 #### Pendientes y bloqueos
-- **Orden de merge:** entra después del PR de la API de PN-02 y PN-04; sin él, las pantallas muestran el error "No pudimos cargar".
-- Con el `DevAuthGuard` temporal la API usa siempre el usuario del seed; se arregla cuando A entregue el `JwtAuthGuard` (CU-03).
-- Cuando entre #103 (QA-02), las pantallas nuevas deberían declarar su título con `handle.title` en `routes.tsx`.
+- Cuando C entregue RE-02, conviene sumar una prueba que cree la reserva por la API y no por la base de datos.
 
 #### Para el resto del equipo
-- A (@AlejandroMG) y C (@gonzzza-lol): no toca sus módulos.
+- C (@gonzzza-lol): al crear una reserva hay que guardar `subtotal`, `fee` y `total` calculados en ese momento (como ya prevé el modelo); es lo que hace que editar el precio de un espacio no afecte a las reservas existentes.
 
 ---
