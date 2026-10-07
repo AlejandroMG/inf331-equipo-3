@@ -26,6 +26,9 @@ export interface OwnerSpace {
   address: string | null
   /** Detalle privado: solo lo ve el dueño y quien tenga una reserva confirmada. */
   addressDetail: string | null
+  /** Punto exacto que marcó el propietario en el mapa; solo lo ve él. Van juntos o ninguno. */
+  latitude: number | null
+  longitude: number | null
   rules: string | null
   amenityIds: number[]
   /** Por posición; la primera es la portada. */
@@ -46,6 +49,8 @@ export interface SpacePayload {
   communeId: number | null
   address: string | null
   addressDetail: string | null
+  latitude: number | null
+  longitude: number | null
   rules: string | null
   amenityIds: number[]
 }
@@ -61,6 +66,9 @@ export interface SpaceForm {
   communeId: string
   address: string
   addressDetail: string
+  /** Coordenadas como las escribe la persona ("-33.4489"); vacías si no marcó el punto. */
+  latitude: string
+  longitude: string
   pricePerHour: string
   pricePerDay: string
 }

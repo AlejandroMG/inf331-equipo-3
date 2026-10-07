@@ -9,6 +9,7 @@ import { PlaceholderPage } from './components/PlaceholderPage'
 import { RegisterPage } from './features/auth/RegisterPage'
 import { RequireRole } from './features/auth/RequireRole'
 import { ComponentsPage } from './features/dev/ComponentsPage'
+import { FavoritesPage } from './features/favorites/FavoritesPage'
 import { OwnerSpacesPage } from './features/owner/OwnerSpacesPage'
 import { PublishSpacePage } from './features/spaces/PublishSpacePage'
 
@@ -29,6 +30,7 @@ export const routes: RouteObject[] = [
         children: [
           { path: 'publish/:spaceId?', element: <PublishSpacePage /> },
           { path: 'owner/spaces', element: <OwnerSpacesPage /> },
+          { path: 'favorites', element: <FavoritesPage />, handle: { title: 'Mis favoritos' } },
         ],
       },
       {
