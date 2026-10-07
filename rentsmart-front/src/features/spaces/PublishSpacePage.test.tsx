@@ -41,6 +41,17 @@ async function openForm(path?: string) {
 const next = () => userEvent.click(screen.getByRole('button', { name: 'Siguiente' }))
 
 describe('PublishSpacePage', () => {
+  it('si el nombre falta, el foco pasa al campo con el error para que un lector de pantalla lo anuncie', async () => {
+    await openForm()
+
+    await next()
+
+    const name = await screen.findByLabelText('Nombre del espacio')
+    expect(name).toHaveAttribute('aria-invalid', 'true')
+    expect(name).toHaveFocus()
+    expect(screen.getByText('Ponle un nombre a tu espacio.')).toBeInTheDocument()
+  })
+
   it('muestra el paso 1 con los tipos y el equipamiento que trae la API', async () => {
     await openForm()
 
