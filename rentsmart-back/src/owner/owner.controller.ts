@@ -1,7 +1,7 @@
 import { Controller, Get, Query, UseGuards } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
-  ApiHeader,
+  ApiBearerAuth,
   ApiOkResponse,
   ApiOperation,
   ApiTags,
@@ -9,23 +9,17 @@ import {
 } from '@nestjs/swagger';
 import type { AuthUser } from '../common/auth/auth-user';
 import { CurrentUser } from '../common/auth/current-user.decorator';
-import { DevAuthGuard } from '../common/auth/dev-auth.guard';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { ListOwnerBookingsQueryDto } from './dto/list-owner-bookings-query.dto';
 import { OwnerBookingsPageDto } from './dto/owner-booking.dto';
 import { OwnerMetricsDto, OwnerMetricsQueryDto } from './dto/owner-metrics.dto';
 import { OwnerBookingsService } from './owner-bookings.service';
 import { OwnerMetricsService } from './owner-metrics.service';
 
-// TEMPORAL: DevAuthGuard se reemplaza por el JwtAuthGuard de A (CU-03) sin cambiar nada más.
 @ApiTags('Panel del propietario')
-@ApiHeader({
-  name: 'x-user-id',
-  required: false,
-  description:
-    'Solo desarrollo: id del usuario que actúa. Sin él, el propietario del seed. Se reemplaza por el token JWT.',
-})
+@ApiBearerAuth()
 @ApiUnauthorizedResponse({ description: 'Sin sesión' })
-@UseGuards(DevAuthGuard)
+@UseGuards(JwtAuthGuard)
 @Controller('owner')
 export class OwnerController {
   constructor(

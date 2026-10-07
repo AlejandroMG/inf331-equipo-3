@@ -2,6 +2,7 @@ import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { App } from 'supertest/types';
 import { PrismaService } from '../src/prisma/prisma.service';
+import { bearer } from './utils/auth';
 import { createTestApp } from './utils/create-test-app';
 
 // Cada test crea sus propios datos con un sufijo único, así no depende del seed ni choca con él.
@@ -43,7 +44,7 @@ describe('Panel del propietario (e2e)', () => {
   const ids: Record<string, string> = {};
   const bookingIds: Record<string, string> = {};
 
-  const as = (userId: string) => ({ 'x-user-id': userId });
+  const as = (userId: string) => bearer(app, userId);
   const server = () => app.getHttpServer();
   const bookings = (query = '', userId = ownerId) => request(server()).get(`/api/owner/bookings${query}`).set(as(userId));
   const metrics = (query = '', userId = ownerId) => request(server()).get(`/api/owner/metrics${query}`).set(as(userId));
@@ -131,8 +132,8 @@ describe('Panel del propietario (e2e)', () => {
 
   describe('sin sesión', () => {
     it('un usuario que no existe da 401', async () => {
-      await request(server()).get('/api/owner/bookings').set({ 'x-user-id': 'no-existe' }).expect(401);
-      await request(server()).get('/api/owner/metrics').set({ 'x-user-id': 'no-existe' }).expect(401);
+      await request(server()).get('/api/owner/bookings').set(bearer(app, 'no-existe')).expect(401);
+      await request(server()).get('/api/owner/metrics').set(bearer(app, 'no-existe')).expect(401);
     });
   });
 
