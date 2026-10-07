@@ -19,15 +19,15 @@ describe('rutas', () => {
   it('la raíz muestra el catálogo con el layout', () => {
     renderAt('/')
 
-    expect(screen.getByRole('heading', { level: 1, name: 'Catálogo de espacios' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 1, name: 'Encuentra el espacio justo, por hora o por día' })).toBeInTheDocument()
     expect(screen.getByRole('banner')).toBeInTheDocument()
     expect(screen.getByRole('contentinfo')).toBeInTheDocument()
   })
 
-  it('el detalle de un espacio es público', () => {
+  it('el detalle de un espacio es público', async () => {
     renderAt('/spaces/seed-space-1')
 
-    expect(screen.getByRole('heading', { level: 1, name: 'Detalle del espacio' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { level: 1, name: 'Sala Alameda' })).toBeInTheDocument()
   })
 
   it.each(['/publish', '/owner/spaces'])('sin sesión, %s redirige a /login y recuerda la ruta pedida', async (path) => {
@@ -38,12 +38,12 @@ describe('rutas', () => {
     expect(router.state.location.state).toEqual({ from: path })
   })
 
-  it('con sesión, las rutas privadas abren', () => {
+  it('con sesión, las rutas privadas abren', async () => {
     setToken('abc')
 
     renderAt('/publish')
 
-    expect(screen.getByRole('heading', { level: 1, name: 'Publica tu espacio' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { level: 1, name: 'Publica tu espacio' })).toBeInTheDocument()
   })
 
   it('una ruta inexistente muestra el 404 con un enlace al inicio', () => {
