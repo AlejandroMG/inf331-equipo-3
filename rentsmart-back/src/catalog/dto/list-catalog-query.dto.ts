@@ -11,6 +11,9 @@ export const MAX_SEARCH_LENGTH = 100;
 /** La unidad a la que se aplica el filtro de precio: el precio por hora o el precio por día. */
 export const PRICE_UNITS = ['hour', 'day'] as const;
 export type PriceUnit = (typeof PRICE_UNITS)[number];
+/** Cómo se ordena la lista: más recientes primero, o por precio de menor a mayor o de mayor a menor. */
+export const CATALOG_SORTS = ['recent', 'price_asc', 'price_desc'] as const;
+export type CatalogSort = (typeof CATALOG_SORTS)[number];
 // Los ids son Int de Postgres; sin tope, un número enorme haría fallar la consulta con un 500.
 const MAX_ID = 2_147_483_647;
 
@@ -65,7 +68,7 @@ export class ListCatalogQueryDto {
   })
   @IsOptional()
   @IsIn(PRICE_UNITS)
-  priceUnit: PriceUnit = 'hour';
+  priceUnit?: PriceUnit;
 
   @ApiPropertyOptional({
     minimum: 0,
@@ -117,4 +120,14 @@ export class ListCatalogQueryDto {
   @IsString()
   @MaxLength(MAX_SEARCH_LENGTH)
   q?: string;
+
+  @ApiPropertyOptional({
+    enum: CATALOG_SORTS,
+    default: 'recent',
+    description:
+      'Orden de los resultados: los más recientes primero (por defecto) o por precio, de menor a mayor o de mayor a menor. El precio es el de priceUnit (por hora, salvo que se pida por día); los espacios que no se arriendan en esa unidad van al final. Ordenar por calificación llegará con las reseñas',
+  })
+  @IsOptional()
+  @IsIn(CATALOG_SORTS)
+  sort?: CatalogSort;
 }
