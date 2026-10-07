@@ -6,6 +6,7 @@ import {
 import type { Prisma } from '../generated/prisma/client';
 import { SpaceStatus } from '../generated/prisma/enums';
 import { PrismaService } from '../prisma/prisma.service';
+import { approximateLocation } from './approximate-location';
 import { CatalogDetailDto } from './dto/catalog-detail.dto';
 import { CatalogPageDto } from './dto/catalog-page.dto';
 import {
@@ -160,6 +161,8 @@ export class CatalogService {
         name: true,
         description: true,
         address: true,
+        latitude: true,
+        longitude: true,
         capacity: true,
         pricePerHour: true,
         pricePerDay: true,
@@ -187,6 +190,7 @@ export class CatalogService {
       regionName: space.commune?.region.name ?? '',
       communeName: space.commune?.name ?? '',
       address: space.address,
+      location: approximateLocation(space.latitude, space.longitude),
       capacity: space.capacity ?? 0,
       pricePerHour: space.pricePerHour,
       pricePerDay: space.pricePerDay,

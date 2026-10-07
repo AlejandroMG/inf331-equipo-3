@@ -138,6 +138,10 @@ model Space {
   address       String?
   // Depto, oficina e indicaciones: solo lo ve quien tiene una reserva CONFIRMED (P-09).
   addressDetail String?
+  // Punto que el propietario marcó en el mapa (ES-07). Es exacto y solo lo ve él: el público recibe una versión redondeada.
+  // Van juntos: o están los dos o ninguno.
+  latitude      Float?
+  longitude     Float?
   rules         String?
   status        SpaceStatus @default(DRAFT)
   createdAt     DateTime    @default(now())
