@@ -33,8 +33,8 @@ export const routes: RouteObject[] = [
           {
             element: <RequireAdmin />,
             children: [
-              { path: 'admin/spaces', element: <AdminSpacesPage /> },
-              { path: 'admin/space-types', element: <AdminSpaceTypesPage /> },
+              { path: 'admin/spaces', element: <AdminSpacesPage />, handle: { title: 'Administración de espacios' } },
+              { path: 'admin/space-types', element: <AdminSpaceTypesPage />, handle: { title: 'Tipos de espacio' } },
             ],
           },
         ],
