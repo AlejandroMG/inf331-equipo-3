@@ -1,5 +1,5 @@
 import { useId } from 'react'
-import { LinkButton } from '../../components/Button'
+import { Button, LinkButton } from '../../components/Button'
 import { cn } from '../../lib/cn'
 import { paths } from '../../lib/paths'
 import { metaText, missingText } from './summary'
@@ -18,10 +18,12 @@ interface OwnerSpaceRowProps {
   pending: boolean
   /** Se pidió activar o desactivar; el que llama decide si pide confirmación. */
   onToggle: (space: OwnerSpaceSummary) => void
+  /** Se pidió eliminar; el que llama pide confirmación. */
+  onDelete: (space: OwnerSpaceSummary) => void
 }
 
-/** Un espacio en el panel: portada, estado, lo que le falta y los accesos a editar y a activar o desactivar. */
-export function OwnerSpaceRow({ space, pending, onToggle }: OwnerSpaceRowProps) {
+/** Un espacio en el panel: portada, estado, lo que le falta y los accesos a editar, activar o desactivar y eliminar. */
+export function OwnerSpaceRow({ space, pending, onToggle, onDelete }: OwnerSpaceRowProps) {
   const status = STATUS[space.status]
   const titleId = useId()
   const stateId = useId()
@@ -77,6 +79,18 @@ export function OwnerSpaceRow({ space, pending, onToggle }: OwnerSpaceRowProps) 
           <LinkButton variant="secondary" size="sm" to={paths.publishDraft(space.id)} aria-label={`${space.status === 'DRAFT' ? 'Completar' : 'Editar'} ${space.name}`}>
             {space.status === 'DRAFT' ? 'Completar' : 'Editar'}
           </LinkButton>
+        )}
+        {space.status !== 'BLOCKED' && (
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={pending}
+            onClick={() => onDelete(space)}
+            aria-label={`Eliminar ${space.name}`}
+            className="text-accent-ink"
+          >
+            Eliminar
+          </Button>
         )}
       </div>
     </li>
