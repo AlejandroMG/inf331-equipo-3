@@ -120,6 +120,21 @@ Módulo `catalog`, sin sesión. Solo muestra espacios `ACTIVE`: borradores, inac
 - **Orden (BU-04):** `sort` = `recent` (por defecto, los más recientes primero), `price_asc` (de menor a mayor) o `price_desc` (de mayor a menor). Cualquier otro valor da 400. El precio es el de `priceUnit` (por hora, salvo que se pida `day`), y los espacios que no se arriendan en esa unidad van **al final en las dos direcciones**. Siempre se desempata por fecha (más reciente primero) y por id, así la paginación es estable aunque haya precios iguales. El orden no cambia qué espacios se listan ni el `total`.
 - Ordenar por calificación llegará con las reseñas (A, después del 9 de octubre): hoy no existe ese dato.
 
+### Administración de espacios y tipos (AD-02)
+
+Dentro de los módulos `spaces` y `space-types`, bajo `/api/admin`. Requieren sesión **y rol `ADMIN`** (403 a cualquier otro usuario): se usa `@UseGuards(JwtAuthGuard, RolesGuard)` con `@Roles('ADMIN')` (CU-03).
+
+| Endpoint | Qué hace |
+|---|---|
+| `GET /api/admin/spaces?status=&q=&page=&pageSize=` | Todos los espacios, de cualquier propietario y estado, los modificados más recientemente primero, con el nombre y el email del propietario y el motivo del bloqueo. `q` busca en el nombre del espacio y en el nombre o el email del propietario |
+| `POST /api/admin/spaces/:id/block` | Despublica (bloquea) un espacio con un `reason` de 5 a 500 caracteres. 409 si es un borrador o ya está bloqueado |
+| `POST /api/admin/spaces/:id/unblock` | Lo desbloquea: queda `INACTIVE` y el propietario decide cuándo activarlo. 409 si no está bloqueado |
+| `GET /api/admin/space-types` | Los tipos de espacio con cuántos espacios usa cada uno |
+| `POST /api/admin/space-types` | Crea un tipo (`name`, de 2 a 60 caracteres, sin espacios de más). 409 si ya existe (sin distinguir mayúsculas ni tildes) y 400 si es un alojamiento (P-08) |
+| `PATCH /api/admin/space-types/:id` | Renombra un tipo, con las mismas reglas. No se borran: hay espacios que los usan |
+
+- Un espacio **bloqueado** sale del catálogo, su propietario no puede activarlo (403) y ve el motivo en `blockedReason` (en `GET /api/spaces/me` y en `GET /api/spaces/:id`). Las reservas confirmadas se mantienen. Se guardan `blockedReason` y `blockedAt` en `Space`, y se borran al desbloquear.
+- Los tipos nuevos aparecen enseguida en `GET /api/space-types` (el público), y por tanto en el formulario de publicar y en los filtros del catálogo.
 ### Panel del propietario (PN-02, PN-04)
 
 Módulo `owner`. Requieren sesión (`JwtAuthGuard`, CU-03) y cada propietario ve solo lo suyo. Solo **leen** la tabla `Booking`: crear una reserva y cambiarla de estado es del módulo de reservas (C).

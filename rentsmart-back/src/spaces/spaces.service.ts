@@ -29,6 +29,7 @@ const OWNER_VIEW = {
   latitude: true,
   longitude: true,
   rules: true,
+  blockedReason: true,
   createdAt: true,
   updatedAt: true,
   amenities: { select: { amenityId: true }, orderBy: { amenityId: 'asc' } },
@@ -155,6 +156,7 @@ export class SpacesService {
         communeId: true,
         pricePerHour: true,
         pricePerDay: true,
+        blockedReason: true,
         updatedAt: true,
         type: { select: { name: true } },
         commune: { select: { name: true } },
@@ -172,6 +174,7 @@ export class SpacesService {
       pricePerHour: space.pricePerHour,
       pricePerDay: space.pricePerDay,
       coverUrl: space.photos[0]?.url ?? null,
+      blockedReason: space.blockedReason,
       missing: missingFields({
         ...space,
         photoCount: space._count.photos,
