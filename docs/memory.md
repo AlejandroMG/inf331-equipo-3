@@ -1593,45 +1593,38 @@ Dejar `JwtAuthGuard`, `RolesGuard` y `@CurrentUser()` listos para los demás mó
 
 ---
 
-### 2026-10-07 · B (xReNatS) · BU-07 historial de búsquedas recientes
+### 2026-10-07 · B (xReNatS) · ES-05 editar un espacio: las reservas conservan su total
 
-**Issues:** #33 (BU-07)
-**Rama / PR:** `feat/BU-07-historial-busquedas` · sin PR todavía
-**Duración aproximada:** 1 h
-**Herramientas:** Claude Code, Chrome con Puppeteer y axe-core
+**Issues:** #24 (ES-05)
+**Rama / PR:** `feat/ES-05-editar-espacio` · sin PR todavía
+**Duración aproximada:** 30 min
+**Herramientas:** Claude Code
 
 #### Objetivo
-Que el catálogo recuerde las últimas búsquedas y se puedan repetir desde un panel. El issue tenía un solo criterio: "repetir una búsqueda desde el panel".
+Cerrar ES-05. El formulario ya edita un espacio (la misma pantalla de publicar, con "Edita tu espacio"), y la API ya deja cambiar sus datos con las reglas de P-18. Faltaba lo único que pide el criterio: demostrar que un cambio de precio aplica solo a las reservas nuevas.
 
 #### Qué se hizo
-- **Panel "Búsquedas recientes"** bajo el buscador: un enlace por búsqueda, dicha en palabras (`“cocina” · Providencia`, `Sala de reuniones · hasta $90.000 por día`), más "Borrar historial". La búsqueda que está en pantalla se marca como actual. Sin historial no se muestra.
-- **Cuándo se guarda:** una búsqueda con filtros que encuentra algo y se queda 3 segundos en pantalla. Así no queda un rastro por cada paso de armarla ni se guardan las que no dan resultados. Se guardan las últimas 6, sin repetir (repetirla la sube al principio), sin la página ni el orden.
-- **Dónde:** en el navegador (`localStorage`). Se lee validado: JSON roto, entradas inválidas o con valores fuera de rango se descartan, y sin almacenamiento el catálogo sigue funcionando.
-- **Pruebas:** nuevas, del módulo y del panel, y del catálogo con reloj simulado (se guarda al rato y no antes, no se guarda sin resultados ni sin filtros, repetir desde el panel aplica los filtros, borrar vacía el historial).
+- No hubo que cambiar código: `Booking` guarda `subtotal`, `fee` y `total` al crearse y no los calcula desde el precio del espacio, así que editar el precio no puede tocar una reserva que ya existe.
+- Se agregó `test/space-edit-bookings.e2e-spec.ts` (5 pruebas) que lo demuestra: con un espacio publicado y una reserva confirmada de 3 horas, cambiar el precio por hora y por día, quitar el precio por día, o editar el nombre, la descripción y la capacidad deja la reserva con el mismo subtotal, comisión, total y estado; el público ve el precio nuevo; y desactivar el espacio mantiene la reserva confirmada (criterio de ES-06).
 
 #### Decisiones y por qué
 | Decisión | Alternativas consideradas | Por qué se eligió |
 |---|---|---|
-| Historial en el navegador | Guardarlo en la cuenta (endpoint y tabla nuevos) | El catálogo es público y no pide sesión; un historial en el servidor exigiría cuenta, un cambio de `schema.prisma` (de A) y datos personales. Para el MVP basta con el navegador, y se puede pasar al servidor después |
-| Se guarda lo que se queda 3 segundos en pantalla y encuentra algo | Guardar cada vez que cambia un filtro; guardar solo al enviar el buscador | Armar una búsqueda cambia varios filtros seguidos y llenaría el historial de pasos intermedios; guardar solo el buscador dejaría fuera las búsquedas por filtros |
-| La búsqueda es la URL de sus filtros, sin orden ni página | Guardar también el orden | El orden se elige sobre los resultados y no cambia de qué búsqueda se trata; así dos búsquedas iguales con distinto orden no ocupan dos lugares |
-| Cada búsqueda es un enlace | Un botón que cambia los filtros | Funciona como el resto del catálogo (la URL es el estado): se puede abrir en otra pestaña y el botón Atrás vuelve |
+| Probar con reservas creadas directo en la base de datos | Esperar a la API de reservas (RE-02, de C) | El criterio se cumple por cómo está modelada `Booking`, no por código de reservas: la prueba no depende de nada de C, y cuando exista RE-02 sigue valiendo |
 
 #### Archivos principales
-- `rentsmart-front/src/features/catalog/search-history.ts` (guardar, leer validado, describir en palabras), `RecentSearches.tsx` (el panel) y `CatalogPage.tsx` (cuándo guardar).
-- Pruebas: `search-history.test.ts`, `RecentSearches.test.tsx` y `CatalogPage.history.test.tsx`.
+- `rentsmart-back/test/space-edit-bookings.e2e-spec.ts`.
 
 #### Cómo probarlo
-En `rentsmart-front` (Node 24): `npm run lint`, `npm test` y `npm run build`. A mano: buscar "cocina", dejarlo 3 segundos, y volver al catálogo sin filtros: aparece en "Búsquedas recientes"; al hacer clic se aplica de nuevo.
+En `rentsmart-back` (Node 24): `npm run lint`, `npm run build`, `npm test` y `npm run test:e2e`.
 
 #### Estado de verificación
-- Lint: ✅ · Tests: ✅ (31 archivos, 380 pruebas, con Node 24) · Build: ✅
-- Chrome real: el panel se ve en escritorio y en móvil, y axe da 0 violaciones en las dos vistas, sin desborde horizontal.
+- Lint: ✅ · Build: ✅ · e2e: ✅ (Node 24, BD de test migrada y sin seed)
 
 #### Pendientes y bloqueos
-- El historial no cruza dispositivos. Si se quisiera, haría falta una tabla en `schema.prisma` (de A) y sesión real (CU-03).
+- Cuando C entregue RE-02, conviene sumar una prueba que cree la reserva por la API y no por la base de datos.
 
 #### Para el resto del equipo
-- Sin cambios para A ni C: es solo front y no toca sus módulos.
+- C (@gonzzza-lol): al crear una reserva hay que guardar `subtotal`, `fee` y `total` calculados en ese momento (como ya prevé el modelo); es lo que hace que editar el precio de un espacio no afecte a las reservas existentes.
 
 ---
