@@ -13,24 +13,28 @@ function renderNavbar(path = '/') {
   )
 }
 
+const mainNav = () => screen.getByRole('navigation', { name: 'Principal' })
+
 describe('Navbar', () => {
-  it('muestra los accesos principales', () => {
+  it('sin sesión muestra los accesos públicos', () => {
     renderNavbar()
 
-    const nav = screen.getByRole('navigation', { name: 'Principal' })
+    const nav = mainNav()
 
     expect(within(nav).getByRole('link', { name: 'Explorar' })).toHaveAttribute('href', '/')
-    expect(within(nav).getByRole('link', { name: 'Mis espacios' })).toHaveAttribute('href', '/owner/spaces')
-    expect(within(nav).getByRole('link', { name: 'Favoritos' })).toHaveAttribute('href', '/favorites')
     expect(within(nav).getByRole('link', { name: 'Publicar tu espacio' })).toHaveAttribute('href', '/publish')
     expect(within(nav).getByRole('link', { name: 'Ingresar' })).toHaveAttribute('href', '/login')
     expect(within(nav).getByRole('link', { name: 'Crear cuenta' })).toHaveAttribute('href', '/register')
+    expect(within(nav).queryByRole('link', { name: 'Mis espacios' })).toBeNull()
+    expect(within(nav).queryByRole('link', { name: 'Favoritos' })).toBeNull()
+    expect(within(nav).queryByRole('link', { name: 'Administración' })).toBeNull()
   })
 
   it('marca la página actual', () => {
+    setToken('abc')
     renderNavbar('/owner/spaces')
 
-    const nav = screen.getByRole('navigation', { name: 'Principal' })
+    const nav = mainNav()
 
     expect(within(nav).getByRole('link', { name: 'Mis espacios' })).toHaveAttribute('aria-current', 'page')
     expect(within(nav).getByRole('link', { name: 'Explorar' })).not.toHaveAttribute('aria-current')
@@ -62,25 +66,38 @@ describe('Navbar', () => {
     expect(document.getElementById('menu-movil')).toBeNull()
   })
 
-  it('con sesión muestra Salir en vez de Ingresar y Crear cuenta', () => {
+  it('con sesión de USER muestra Mis espacios y Salir, pero no Administración', async () => {
     setToken('abc')
     renderNavbar()
 
-    const nav = screen.getByRole('navigation', { name: 'Principal' })
+    const nav = mainNav()
 
+    expect(within(nav).getByRole('link', { name: 'Mis espacios' })).toHaveAttribute('href', '/owner/spaces')
+    expect(within(nav).getByRole('link', { name: 'Favoritos' })).toHaveAttribute('href', '/favorites')
     expect(within(nav).getByRole('button', { name: 'Salir' })).toBeInTheDocument()
     expect(within(nav).queryByRole('link', { name: 'Ingresar' })).toBeNull()
     expect(within(nav).queryByRole('link', { name: 'Crear cuenta' })).toBeNull()
+    // Espera a que llegue /auth/me (USER) y confirma que no aparece el menú de admin.
+    await screen.findByRole('button', { name: 'Salir' })
+    expect(within(nav).queryByRole('link', { name: 'Administración' })).toBeNull()
+  })
+
+  it('con sesión de ADMIN muestra Administración', async () => {
+    setToken('mock-admin-token')
+    renderNavbar()
+
+    expect(await within(mainNav()).findByRole('link', { name: 'Administración' })).toHaveAttribute('href', '/admin')
   })
 
   it('Salir cierra la sesión y vuelve a mostrar Ingresar', async () => {
     setToken('abc')
     renderNavbar('/owner/spaces')
 
-    const nav = screen.getByRole('navigation', { name: 'Principal' })
+    const nav = mainNav()
     await userEvent.click(within(nav).getByRole('button', { name: 'Salir' }))
 
     expect(getToken()).toBeNull()
     expect(within(nav).getByRole('link', { name: 'Ingresar' })).toBeInTheDocument()
+    expect(within(nav).queryByRole('link', { name: 'Mis espacios' })).toBeNull()
   })
 })

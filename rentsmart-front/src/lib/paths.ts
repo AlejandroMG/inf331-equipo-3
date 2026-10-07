@@ -9,4 +9,5 @@ export const paths = {
   favorites: '/favorites',
   login: '/login',
   register: '/register',
+  admin: '/admin',
 } as const

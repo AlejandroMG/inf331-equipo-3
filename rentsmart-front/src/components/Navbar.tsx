@@ -2,15 +2,30 @@ import { useState } from 'react'
 import { Link, NavLink, useNavigate } from 'react-router'
 import { cn } from '../lib/cn'
 import { paths } from '../lib/paths'
+import { useCurrentUser } from '../features/auth/useCurrentUser'
 import { clearToken, useToken } from '../lib/token'
 import { Button, LinkButton } from './Button'
 import { CloseIcon, MenuIcon } from './icons'
 
-const links = [
-  { to: paths.home, label: 'Explorar', end: true },
-  { to: paths.ownerSpaces, label: 'Mis espacios', end: false },
-  { to: paths.favorites, label: 'Favoritos', end: false },
-]
+interface NavItem {
+  to: string
+  label: string
+  end: boolean
+}
+
+/** Menú según la sesión (CU-03): "Mis espacios" y "Favoritos" con sesión, y "Administración" solo para ADMIN. */
+function linksFor(loggedIn: boolean, isAdmin: boolean): NavItem[] {
+  return [
+    { to: paths.home, label: 'Explorar', end: true },
+    ...(loggedIn
+      ? [
+          { to: paths.ownerSpaces, label: 'Mis espacios', end: false },
+          { to: paths.favorites, label: 'Favoritos', end: false },
+        ]
+      : []),
+    ...(isAdmin ? [{ to: paths.admin, label: 'Administración', end: false }] : []),
+  ]
+}
 
 function navLinkClass({ isActive }: { isActive: boolean }) {
   return cn(
@@ -39,6 +54,8 @@ export function Navbar() {
   const closeMenu = () => setMenuOpen(false)
   const navigate = useNavigate()
   const loggedIn = useToken() !== null
+  const { user } = useCurrentUser()
+  const links = linksFor(loggedIn, user?.role === 'ADMIN')
 
   const logout = () => {
     closeMenu()
