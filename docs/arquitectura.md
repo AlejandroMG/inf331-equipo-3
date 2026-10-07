@@ -121,7 +121,7 @@ Módulo `catalog`, sin sesión. Solo muestra espacios `ACTIVE`: borradores, inac
 
 ### Administración de espacios y tipos (AD-02)
 
-Dentro de los módulos `spaces` y `space-types`, bajo `/api/admin`. Requieren sesión **y rol `ADMIN`** (403 a cualquier otro usuario): se usa `@UseGuards(DevAuthGuard, AdminGuard)`; `AdminGuard` (`common/auth/admin.guard.ts`) revisa `request.user.role` y se reemplaza por el `RolesGuard` de A (CU-03).
+Dentro de los módulos `spaces` y `space-types`, bajo `/api/admin`. Requieren sesión **y rol `ADMIN`** (403 a cualquier otro usuario): se usa `@UseGuards(JwtAuthGuard, RolesGuard)` con `@Roles('ADMIN')` (CU-03).
 
 | Endpoint | Qué hace |
 |---|---|

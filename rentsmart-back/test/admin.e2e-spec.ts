@@ -2,6 +2,7 @@ import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { App } from 'supertest/types';
 import { PrismaService } from '../src/prisma/prisma.service';
+import { bearer } from './utils/auth';
 import { createTestApp } from './utils/create-test-app';
 
 // Cada test crea sus propios datos con un sufijo único, así no depende del seed ni choca con él.
@@ -35,7 +36,7 @@ describe('Administración de espacios y tipos (e2e)', () => {
   const ids: Record<string, string> = {};
   const createdTypeIds: number[] = [];
 
-  const as = (userId: string) => ({ 'x-user-id': userId });
+  const as = (userId: string) => bearer(app, userId);
   const server = () => app.getHttpServer();
   const asAdmin = () => as(adminId);
 
@@ -104,8 +105,8 @@ describe('Administración de espacios y tipos (e2e)', () => {
     });
 
     it('un usuario que no existe da 401', async () => {
-      await request(server()).get('/api/admin/spaces').set({ 'x-user-id': 'no-existe' }).expect(401);
-      await request(server()).get('/api/admin/space-types').set({ 'x-user-id': 'no-existe' }).expect(401);
+      await request(server()).get('/api/admin/spaces').set(bearer(app, 'no-existe')).expect(401);
+      await request(server()).get('/api/admin/space-types').set(bearer(app, 'no-existe')).expect(401);
     });
   });
 

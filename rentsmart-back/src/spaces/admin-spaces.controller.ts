@@ -12,15 +12,15 @@ import {
   ApiBadRequestResponse,
   ApiConflictResponse,
   ApiForbiddenResponse,
-  ApiHeader,
+  ApiBearerAuth,
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
-import { AdminGuard } from '../common/auth/admin.guard';
-import { DevAuthGuard } from '../common/auth/dev-auth.guard';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { Roles, RolesGuard } from '../auth/guards/roles.guard';
 import { AdminSpacesService } from './admin-spaces.service';
 import {
   AdminSpaceDto,
@@ -29,17 +29,12 @@ import {
   ListAdminSpacesQueryDto,
 } from './dto/admin-space.dto';
 
-// TEMPORAL: DevAuthGuard se reemplaza por el JwtAuthGuard de A (CU-03) y AdminGuard por su RolesGuard.
 @ApiTags('Administración de espacios')
-@ApiHeader({
-  name: 'x-user-id',
-  required: false,
-  description:
-    'Solo desarrollo: id del usuario que actúa (debe ser administrador). Sin él, el propietario del seed, que no lo es. Se reemplaza por el token JWT.',
-})
+@ApiBearerAuth()
 @ApiUnauthorizedResponse({ description: 'Sin sesión' })
 @ApiForbiddenResponse({ description: 'Solo para administradores' })
-@UseGuards(DevAuthGuard, AdminGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles('ADMIN')
 @Controller('admin/spaces')
 export class AdminSpacesController {
   constructor(private readonly service: AdminSpacesService) {}
