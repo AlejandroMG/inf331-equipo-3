@@ -22,8 +22,8 @@ export const routes: RouteObject[] = [
     children: [
       { index: true, element: <CatalogPage /> },
       { path: 'spaces/:spaceId', element: <SpaceDetailPage /> },
-      { path: 'login', element: <LoginPage /> },
-      { path: 'register', element: <RegisterPage /> },
+      { path: 'login', element: <LoginPage />, handle: { title: 'Iniciar sesión' } },
+      { path: 'register', element: <RegisterPage />, handle: { title: 'Crear cuenta' } },
       {
         element: <RequireAuth />,
         children: [
@@ -34,7 +34,7 @@ export const routes: RouteObject[] = [
         ],
       },
       ...(import.meta.env.DEV ? [{ path: 'dev/componentes', element: <ComponentsPage /> }] : []),
-      { path: '*', element: <NotFoundPage /> },
+      { path: '*', element: <NotFoundPage />, handle: { title: 'Página no encontrada' } },
     ],
   },
 ]

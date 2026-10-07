@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Button, LinkButton } from '../../components/Button'
 import { Modal } from '../../components/Modal'
 import { useToast } from '../../components/toast-context'
+import { usePageTitle } from '../../lib/page-title'
 import { paths } from '../../lib/paths'
 import { useRequest } from '../../lib/useRequest'
 import { missingFromError } from '../spaces/form'
@@ -25,10 +26,10 @@ function Tile({ value, label }: { value: number; label: string }) {
 function SkeletonRow() {
   return (
     <li aria-hidden="true" className="flex items-center gap-4 rounded-card border border-line bg-white p-4">
-      <div className="h-[72px] w-[88px] animate-pulse rounded-xl bg-line/60" />
+      <div className="h-[72px] w-[88px] motion-safe:animate-pulse rounded-xl bg-line/60" />
       <div className="flex flex-1 flex-col gap-2">
-        <div className="h-5 w-1/2 animate-pulse rounded bg-line/60" />
-        <div className="h-3 w-2/3 animate-pulse rounded bg-line/60" />
+        <div className="h-5 w-1/2 motion-safe:animate-pulse rounded bg-line/60" />
+        <div className="h-3 w-2/3 motion-safe:animate-pulse rounded bg-line/60" />
       </div>
     </li>
   )
@@ -36,6 +37,7 @@ function SkeletonRow() {
 
 /** Panel del propietario (PN-01): sus espacios con el estado de cada uno y los accesos a editar y activar o desactivar. */
 export function OwnerSpacesPage() {
+  usePageTitle('Mis espacios')
   const toast = useToast()
   const { data, error, loading, retry } = useRequest('owner-spaces', fetchMySpaces)
   // El estado que devolvió el servidor al activar o desactivar; tapa el de la lista cargada sin recargarla.
