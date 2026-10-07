@@ -16,6 +16,8 @@ export interface OwnerSpaceSummary {
   coverUrl: string | null
   /** Lo que falta para publicarlo o mantenerlo publicado; vacío si está completo. */
   missing: MissingField[]
+  /** Por qué un administrador bloqueó el espacio; null si no está bloqueado. */
+  blockedReason: string | null
   updatedAt: string
 }
 

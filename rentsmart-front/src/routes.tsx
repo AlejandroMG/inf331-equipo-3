@@ -1,3 +1,4 @@
+import { Navigate } from 'react-router'
 import type { RouteObject } from 'react-router'
 import { AppLayout } from './components/AppLayout'
 import { NotFoundPage } from './components/NotFoundPage'
@@ -5,10 +6,12 @@ import { RequireAuth } from './components/RequireAuth'
 import { CatalogPage } from './features/catalog/CatalogPage'
 import { SpaceDetailPage } from './features/catalog/SpaceDetailPage'
 import { LoginPage } from './features/auth/LoginPage'
-import { PlaceholderPage } from './components/PlaceholderPage'
 import { RegisterPage } from './features/auth/RegisterPage'
 import { RequireRole } from './features/auth/RequireRole'
 import { ComponentsPage } from './features/dev/ComponentsPage'
+import { AdminSpacesPage } from './features/moderation/AdminSpacesPage'
+import { AdminSpaceTypesPage } from './features/moderation/AdminSpaceTypesPage'
+import { paths } from './lib/paths'
 import { OwnerBookingsPage } from './features/owner/OwnerBookingsPage'
 import { OwnerMetricsPage } from './features/owner/OwnerMetricsPage'
 import { FavoritesPage } from './features/favorites/FavoritesPage'
@@ -39,8 +42,12 @@ export const routes: RouteObject[] = [
       },
       {
         element: <RequireRole role="ADMIN" />,
-        // Lo reemplaza A con el panel real de administración (AD-01).
-        children: [{ path: 'admin', element: <PlaceholderPage title="Administración" story="AD-01" /> }],
+        children: [
+          // Mientras A no entrega el panel real (AD-01), "Administración" lleva a la moderación de espacios.
+          { path: 'admin', element: <Navigate to={paths.adminSpaces} replace /> },
+          { path: 'admin/spaces', element: <AdminSpacesPage />, handle: { title: 'Administración de espacios' } },
+          { path: 'admin/space-types', element: <AdminSpaceTypesPage />, handle: { title: 'Tipos de espacio' } },
+        ],
       },
       ...(import.meta.env.DEV ? [{ path: 'dev/componentes', element: <ComponentsPage /> }] : []),
       { path: '*', element: <NotFoundPage />, handle: { title: 'Página no encontrada' } },
