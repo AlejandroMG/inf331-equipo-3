@@ -36,6 +36,7 @@ Un módulo de NestJS por dominio. Cada integrante trabaja en sus módulos para e
 | `spaces` | CRUD de espacios, reglas de publicación | B |
 | `space-types` | Tipos de espacio, equipamiento, regiones y comunas | B |
 | `catalog` | Listado público, filtros y búsqueda | B |
+| `owner` | Panel del propietario: reservas de sus espacios y métricas | B |
 | `storage` | `StorageService` sobre Supabase Storage | B |
 | `availability` | Horario semanal y servicio `isAvailable()` | C |
 | `bookings` | Reservas, máquina de estados, validación de conflictos | C |
@@ -119,9 +120,22 @@ Módulo `catalog`, sin sesión. Solo muestra espacios `ACTIVE`: borradores, inac
 - **Orden (BU-04):** `sort` = `recent` (por defecto, los más recientes primero), `price_asc` (de menor a mayor) o `price_desc` (de mayor a menor). Cualquier otro valor da 400. El precio es el de `priceUnit` (por hora, salvo que se pida `day`), y los espacios que no se arriendan en esa unidad van **al final en las dos direcciones**. Siempre se desempata por fecha (más reciente primero) y por id, así la paginación es estable aunque haya precios iguales. El orden no cambia qué espacios se listan ni el `total`.
 - Ordenar por calificación llegará con las reseñas (A, después del 9 de octubre): hoy no existe ese dato.
 
+### Panel del propietario (PN-02, PN-04)
+
+Módulo `owner`. Requieren sesión (`JwtAuthGuard`, CU-03) y cada propietario ve solo lo suyo. Solo **leen** la tabla `Booking`: crear una reserva y cambiarla de estado es del módulo de reservas (C).
+
+| Endpoint | Qué hace |
+|---|---|
+| `GET /api/owner/bookings` | Las reservas de todos mis espacios: `{ items, total, page, pageSize }`. Filtros opcionales: `status` (un estado de la reserva), `from` y `to` (`AAAA-MM-DD`, el día de inicio de la reserva, **hora de Chile**, con el día final incluido) y `sort` (`desc` por defecto, o `asc`). `page` ≥ 1, `pageSize` de 1 a 50 (20 por defecto) |
+| `GET /api/owner/metrics?month=AAAA-MM` | Ingresos y ocupación de un mes (el actual si no se da): `{ month, income, bookings, spaces: [...] }` |
+
+- Cada reserva trae `{ id, spaceId, spaceName, renterName, startAt, endAt, unit, subtotal, status, contact }`. `subtotal` es lo que recibe el propietario (la comisión se suma al arrendatario, P-13). `contact` (`{ email, phone }` del arrendatario) solo viene en las **confirmadas** y es `null` en cualquier otro estado.
+- **Métricas:** cuentan las reservas `CONFIRMED` y `FINISHED` que **empiezan** en el mes (hora de Chile). Por espacio (no borradores, por nombre): `income`, `bookings`, `bookedHours`, `availableHours` (su horario semanal por las veces que cada día de la semana cae en el mes) y `occupancy` (reservadas sobre arrendables, de 0 a 1; `null` si no tiene horario).
+- **Hora de Chile:** los días y los meses se miden en `America/Santiago`, no en UTC: la reserva del 31 de octubre a las 23:00 es de octubre aunque en UTC ya sea el 1 de noviembre. El cálculo (con el cambio de horario de verano) está en `src/common/santiago-time.ts`.
+- Un parámetro inválido o desconocido, una fecha que no existe (31 de febrero) o una fecha inicial posterior a la final dan 400.
 ### Favoritos (BU-08)
 
-Dentro del módulo `catalog`. Requieren sesión (hoy con el `DevAuthGuard` temporal) y cada usuario ve solo los suyos.
+Dentro del módulo `catalog`. Requieren sesión (`JwtAuthGuard`, CU-03) y cada usuario ve solo los suyos.
 
 | Endpoint | Qué hace |
 |---|---|
