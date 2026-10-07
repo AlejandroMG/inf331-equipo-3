@@ -33,3 +33,8 @@ export interface LoginResponse {
 export function login(input: LoginInput): Promise<LoginResponse> {
   return http.post<LoginResponse>('/auth/login', input)
 }
+
+/** Usuario de la sesión actual (necesita el token). */
+export function me(): Promise<PublicUser> {
+  return http.get<PublicUser>('/auth/me')
+}
