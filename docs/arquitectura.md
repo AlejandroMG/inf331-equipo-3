@@ -36,6 +36,7 @@ Un módulo de NestJS por dominio. Cada integrante trabaja en sus módulos para e
 | `spaces` | CRUD de espacios, reglas de publicación | B |
 | `space-types` | Tipos de espacio, equipamiento, regiones y comunas | B |
 | `catalog` | Listado público, filtros y búsqueda | B |
+| `owner` | Panel del propietario: reservas de sus espacios y métricas | B |
 | `storage` | `StorageService` sobre Supabase Storage | B |
 | `availability` | Horario semanal y servicio `isAvailable()` | C |
 | `bookings` | Reservas, máquina de estados, validación de conflictos | C |
@@ -119,6 +120,48 @@ Módulo `catalog`, sin sesión. Solo muestra espacios `ACTIVE`: borradores, inac
 - **Orden (BU-04):** `sort` = `recent` (por defecto, los más recientes primero), `price_asc` (de menor a mayor) o `price_desc` (de mayor a menor). Cualquier otro valor da 400. El precio es el de `priceUnit` (por hora, salvo que se pida `day`), y los espacios que no se arriendan en esa unidad van **al final en las dos direcciones**. Siempre se desempata por fecha (más reciente primero) y por id, así la paginación es estable aunque haya precios iguales. El orden no cambia qué espacios se listan ni el `total`.
 - Ordenar por calificación llegará con las reseñas (A, después del 9 de octubre): hoy no existe ese dato.
 
+### Administración de espacios y tipos (AD-02)
+
+Dentro de los módulos `spaces` y `space-types`, bajo `/api/admin`. Requieren sesión **y rol `ADMIN`** (403 a cualquier otro usuario): se usa `@UseGuards(JwtAuthGuard, RolesGuard)` con `@Roles('ADMIN')` (CU-03).
+
+| Endpoint | Qué hace |
+|---|---|
+| `GET /api/admin/spaces?status=&q=&page=&pageSize=` | Todos los espacios, de cualquier propietario y estado, los modificados más recientemente primero, con el nombre y el email del propietario y el motivo del bloqueo. `q` busca en el nombre del espacio y en el nombre o el email del propietario |
+| `POST /api/admin/spaces/:id/block` | Despublica (bloquea) un espacio con un `reason` de 5 a 500 caracteres. 409 si es un borrador o ya está bloqueado |
+| `POST /api/admin/spaces/:id/unblock` | Lo desbloquea: queda `INACTIVE` y el propietario decide cuándo activarlo. 409 si no está bloqueado |
+| `GET /api/admin/space-types` | Los tipos de espacio con cuántos espacios usa cada uno |
+| `POST /api/admin/space-types` | Crea un tipo (`name`, de 2 a 60 caracteres, sin espacios de más). 409 si ya existe (sin distinguir mayúsculas ni tildes) y 400 si es un alojamiento (P-08) |
+| `PATCH /api/admin/space-types/:id` | Renombra un tipo, con las mismas reglas. No se borran: hay espacios que los usan |
+
+- Un espacio **bloqueado** sale del catálogo, su propietario no puede activarlo (403) y ve el motivo en `blockedReason` (en `GET /api/spaces/me` y en `GET /api/spaces/:id`). Las reservas confirmadas se mantienen. Se guardan `blockedReason` y `blockedAt` en `Space`, y se borran al desbloquear.
+- Los tipos nuevos aparecen enseguida en `GET /api/space-types` (el público), y por tanto en el formulario de publicar y en los filtros del catálogo.
+### Panel del propietario (PN-02, PN-04)
+
+Módulo `owner`. Requieren sesión (`JwtAuthGuard`, CU-03) y cada propietario ve solo lo suyo. Solo **leen** la tabla `Booking`: crear una reserva y cambiarla de estado es del módulo de reservas (C).
+
+| Endpoint | Qué hace |
+|---|---|
+| `GET /api/owner/bookings` | Las reservas de todos mis espacios: `{ items, total, page, pageSize }`. Filtros opcionales: `status` (un estado de la reserva), `from` y `to` (`AAAA-MM-DD`, el día de inicio de la reserva, **hora de Chile**, con el día final incluido) y `sort` (`desc` por defecto, o `asc`). `page` ≥ 1, `pageSize` de 1 a 50 (20 por defecto) |
+| `GET /api/owner/metrics?month=AAAA-MM` | Ingresos y ocupación de un mes (el actual si no se da): `{ month, income, bookings, spaces: [...] }` |
+
+- Cada reserva trae `{ id, spaceId, spaceName, renterName, startAt, endAt, unit, subtotal, status, contact }`. `subtotal` es lo que recibe el propietario (la comisión se suma al arrendatario, P-13). `contact` (`{ email, phone }` del arrendatario) solo viene en las **confirmadas** y es `null` en cualquier otro estado.
+- **Métricas:** cuentan las reservas `CONFIRMED` y `FINISHED` que **empiezan** en el mes (hora de Chile). Por espacio (no borradores, por nombre): `income`, `bookings`, `bookedHours`, `availableHours` (su horario semanal por las veces que cada día de la semana cae en el mes) y `occupancy` (reservadas sobre arrendables, de 0 a 1; `null` si no tiene horario).
+- **Hora de Chile:** los días y los meses se miden en `America/Santiago`, no en UTC: la reserva del 31 de octubre a las 23:00 es de octubre aunque en UTC ya sea el 1 de noviembre. El cálculo (con el cambio de horario de verano) está en `src/common/santiago-time.ts`.
+- Un parámetro inválido o desconocido, una fecha que no existe (31 de febrero) o una fecha inicial posterior a la final dan 400.
+### Favoritos (BU-08)
+
+Dentro del módulo `catalog`. Requieren sesión (`JwtAuthGuard`, CU-03) y cada usuario ve solo los suyos.
+
+| Endpoint | Qué hace |
+|---|---|
+| `GET /api/favorites?page=&pageSize=` | Mis favoritos como tarjetas del catálogo (`{ items, total, page, pageSize }`), el último guardado primero. Solo los que siguen activos. Mismos topes de `page` y `pageSize` que el catálogo; cualquier otro parámetro da 400 |
+| `GET /api/favorites/ids` | Solo los ids de mis favoritos activos, para marcar el corazón en el catálogo sin pedir cada espacio |
+| `PUT /api/favorites/:spaceId` | Guarda un espacio. 204, e idempotente (guardar uno que ya es favorito no cambia nada). 404 si no existe o no está activo; 409 al llegar a 200 favoritos |
+| `DELETE /api/favorites/:spaceId` | Lo quita. 204, e idempotente |
+
+- Un espacio que se desactiva deja de verse en los favoritos pero no se pierde: reaparece si se vuelve a activar. Borrar el espacio o el usuario borra sus favoritos (`ON DELETE CASCADE`).
+- Las tarjetas salen del mismo `select` y de la misma función que el catálogo (`CATALOG_ITEM_SELECT` y `toCatalogItem`, en `catalog.service.ts`): lo que no sale del catálogo público (`addressDetail`, coordenadas, `ownerId`) tampoco sale de aquí.
+
 ### Espacios del propietario (ES-02)
 
 Módulo `spaces`. Requieren sesión y solo el dueño accede a su espacio (403 si es de otro, 404 si no existe).
@@ -181,6 +224,9 @@ rentsmart-front/src/
 - Pruebas: `npm test` ejecuta Vitest con jsdom, Testing Library y MSW. Los handlers de la API simulada están en `src/mocks/handlers.ts` y los usan tanto los tests (`src/mocks/server.ts`) como el navegador (`src/mocks/browser.ts`, con `VITE_USE_MOCKS=true`). El setup (`src/test/setup.ts`) falla cualquier petición sin handler y simula `<dialog>`, que jsdom no implementa. Los tests viven junto al código (`*.test.ts` y `*.test.tsx`).
 - Catálogo y detalle (BU-01, BU-02): el contrato de `GET /api/catalog` y `GET /api/catalog/:id` está en [Catálogo público](#catálogo-público-bu-01-bu-02) (sección del back). El front usa los tipos de `src/features/catalog/types.ts` y el mismo contrato en `src/mocks/handlers.ts`. `useRequest` (`src/lib/useRequest.ts`) carga datos con cancelación, estado de carga y "Reintentar"; úsalo en las pantallas nuevas.
 - Moderación (AD-02): `/admin/spaces` (todos los espacios, con su propietario; bloquear con un motivo y desbloquear) y `/admin/space-types` (ver, crear y renombrar tipos), en `src/features/moderation/`, con una navegación común (`AdminNav`). Son rutas privadas dentro de `<RequireAdmin />` (`src/components/RequireAdmin.tsx`), que deja pasar solo si el **rol del token** es `ADMIN` y, si no, avisa que no hay permiso. El rol se lee del contenido del JWT (`useRole()` en `src/lib/role.ts`) solo para mostrar u ocultar enlaces y pantallas (la barra muestra "Administración" solo a los administradores): quien decide qué se puede hacer es la API, que responde 403. En desarrollo con un token falso (`'dev'`) no hay rol; para ver estas pantallas hace falta iniciar sesión con un administrador o usar un token con la forma de un JWT.
+- Panel del propietario (PN-01, PN-02, PN-04): tres pantallas privadas con una navegación común (`OwnerNav`): "Mis espacios" (`/owner/spaces`, con las 3 próximas reservas confirmadas), "Reservas" (`/owner/bookings`) y "Métricas" (`/owner/metrics`). Los filtros de las reservas (estado, desde, hasta, orden y página) y el mes de las métricas viven en la URL. Las fechas de la API llegan en UTC y se muestran siempre en la hora de Chile (`booking-format.ts`, con `America/Santiago`); "hoy" y "el mes actual" también se miden en Chile. El contacto del arrendatario solo existe en las reservas confirmadas.
+- Favoritos (BU-08): `FavoritesProvider` (en `App.tsx`) guarda en un contexto los ids de los favoritos de la sesión (`GET /api/favorites/ids`, solo con sesión) y se olvida de ellos al cerrarla; `FavoriteButton` es el corazón de las tarjetas y el botón "Guardar en favoritos" del detalle. Marcar o desmarcar se ve al instante y se deshace, con un aviso, si el servidor lo rechaza. Sin sesión, el corazón lleva a iniciarla y regresa a la pantalla. "Mis favoritos" (`/favorites`, privada) lista las tarjetas con `GET /api/favorites`. El corazón no puede ir dentro del enlace de la tarjeta (un botón dentro de un enlace no es HTML válido): es su hermano, encima de la foto. Sin `FavoritesProvider` (por ejemplo, en la prueba de una tarjeta suelta) nada aparece guardado.
+- Búsquedas recientes (BU-07): el catálogo guarda en este navegador (`localStorage`, clave `rentsmart_recent_searches`) las últimas 6 búsquedas con filtros que dieron resultados y se quedaron 3 segundos en pantalla, para repetirlas desde "Búsquedas recientes" bajo el buscador. Cada una es la URL de sus filtros, sin el orden ni la página, y no se repite. No viaja al servidor ni cruza dispositivos, y se lee validada: lo que no se entiende se descarta. La lógica está en `src/features/catalog/search-history.ts`.
 - Mapas (ES-07): Leaflet con react-leaflet y las teselas de OpenStreetMap (`src/features/map/`). `LazyMaps.tsx` los carga bajo demanda (Leaflet pesa ~45 kB comprimido y queda fuera del resto de la aplicación) y los envuelve en un `ErrorBoundary`: si no cargan, el resto de la pantalla sigue. `LocationMap` dibuja el círculo del detalle público y `LocationPicker`, el mapa donde el propietario marca el punto; este último es solo una ayuda, porque las mismas coordenadas se escriben en los campos de latitud y longitud (la forma de hacerlo con teclado). Las teselas públicas de OSM tienen una [política de uso razonable](https://operations.osmfoundation.org/policies/tiles/): sirven para el MVP, y con tráfico real hay que cambiar `TILE_URL` (`map-config.ts`) por un proveedor propio. El contrato de `location` y de `latitude` y `longitude` está en [Catálogo público](#catálogo-público-bu-01-bu-02-bu-03) y [Espacios del propietario](#espacios-del-propietario-es-02).
 - Mientras A no entregue el login (CU-02), para entrar a una ruta privada en local: `localStorage.setItem('rentsmart_token', 'dev')` en la consola del navegador.
 
@@ -194,6 +240,7 @@ Borrador para F-03 ([#3](https://github.com/AlejandroMG/inf331-equipo-3/issues/3
 | `Region` · `Commune` | Lista cerrada cargada por el seed | B |
 | `SpaceType` · `Amenity` | Catálogos administrables; `SpaceAmenity` como tabla intermedia | B |
 | `Space` | ownerId, typeId, name, description, capacity, pricePerHour?, pricePerDay?, regionId, communeId, address (pública), addressDetail (privada), latitude? y longitude? (punto del mapa: exacto y solo del dueño; van juntos), rules, status (`DRAFT` · `ACTIVE` · `INACTIVE` · `BLOCKED`) | B |
+| `Favorite` | userId, spaceId (clave compuesta), createdAt; se borra con el usuario o el espacio | B |
 | `SpacePhoto` | spaceId, storagePath, url, position | B |
 | `AvailabilityRule` | spaceId, weekday (0–6), startTime, endTime (hora local, bloques de 1 h) | C |
 | `Booking` | spaceId, renterId, startAt, endAt, unit (`HOUR` · `DAY`), subtotal, fee, total, status, expiresAt, stripeCheckoutSessionId | C |

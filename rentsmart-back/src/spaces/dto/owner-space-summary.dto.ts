@@ -34,6 +34,9 @@ export class OwnerSpaceSummaryDto {
   })
   missing: string[];
 
+  @ApiProperty({ type: String, nullable: true, description: 'Por qué un administrador bloqueó el espacio; null si no está bloqueado' })
+  blockedReason: string | null;
+
   @ApiProperty()
   updatedAt: Date;
 }

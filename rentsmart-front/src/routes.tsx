@@ -12,6 +12,9 @@ import { ComponentsPage } from './features/dev/ComponentsPage'
 import { AdminSpacesPage } from './features/moderation/AdminSpacesPage'
 import { AdminSpaceTypesPage } from './features/moderation/AdminSpaceTypesPage'
 import { paths } from './lib/paths'
+import { OwnerBookingsPage } from './features/owner/OwnerBookingsPage'
+import { OwnerMetricsPage } from './features/owner/OwnerMetricsPage'
+import { FavoritesPage } from './features/favorites/FavoritesPage'
 import { OwnerSpacesPage } from './features/owner/OwnerSpacesPage'
 import { PublishSpacePage } from './features/spaces/PublishSpacePage'
 
@@ -32,6 +35,9 @@ export const routes: RouteObject[] = [
         children: [
           { path: 'publish/:spaceId?', element: <PublishSpacePage /> },
           { path: 'owner/spaces', element: <OwnerSpacesPage /> },
+          { path: 'owner/bookings', element: <OwnerBookingsPage />, handle: { title: 'Reservas de mis espacios' } },
+          { path: 'owner/metrics', element: <OwnerMetricsPage />, handle: { title: 'Métricas' } },
+          { path: 'favorites', element: <FavoritesPage />, handle: { title: 'Mis favoritos' } },
         ],
       },
       {
