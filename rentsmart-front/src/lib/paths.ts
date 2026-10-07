@@ -8,4 +8,5 @@ export const paths = {
   ownerSpaces: '/owner/spaces',
   login: '/login',
   register: '/register',
+  admin: '/admin',
 } as const
