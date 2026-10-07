@@ -102,6 +102,74 @@ describe('CatalogService', () => {
       expect(select).not.toHaveProperty('longitude');
     });
 
+    describe('orden', () => {
+      const search = (extra: Partial<ListCatalogQueryDto>) =>
+        service.findPage({ page: 1, pageSize: 12, ...extra });
+      const orderOf = () =>
+        (prisma.space.findMany.mock.calls[0] as [{ orderBy: unknown }])[0]
+          .orderBy;
+      const recent = [{ createdAt: 'desc' }, { id: 'asc' }];
+
+      beforeEach(() => {
+        prisma.space.findMany.mockResolvedValue([]);
+        prisma.space.count.mockResolvedValue(0);
+      });
+
+      it('por defecto, y con sort=recent, los más recientes primero', async () => {
+        await search({});
+        await search({ sort: 'recent' });
+
+        const [byDefault, explicit] = prisma.space.findMany.mock.calls as Array<
+          [{ orderBy: unknown }]
+        >;
+        expect(byDefault[0].orderBy).toEqual(recent);
+        expect(explicit[0].orderBy).toEqual(recent);
+      });
+
+      it('por precio de menor a mayor: el de la hora, con los que no tienen al final', async () => {
+        await search({ sort: 'price_asc' });
+
+        expect(orderOf()).toEqual([
+          { pricePerHour: { sort: 'asc', nulls: 'last' } },
+          ...recent,
+        ]);
+      });
+
+      it('por precio de mayor a menor, también con los que no tienen al final', async () => {
+        await search({ sort: 'price_desc' });
+
+        expect(orderOf()).toEqual([
+          { pricePerHour: { sort: 'desc', nulls: 'last' } },
+          ...recent,
+        ]);
+      });
+
+      it('con priceUnit=day ordena por el precio por día', async () => {
+        await search({ sort: 'price_asc', priceUnit: 'day' });
+
+        expect(orderOf()).toEqual([
+          { pricePerDay: { sort: 'asc', nulls: 'last' } },
+          ...recent,
+        ]);
+      });
+
+      it('la unidad sola no cambia el orden por fecha', async () => {
+        await search({ priceUnit: 'day' });
+
+        expect(orderOf()).toEqual(recent);
+      });
+
+      it('el orden no cambia lo que se busca ni el total', async () => {
+        await search({ sort: 'price_desc', typeId: 3 });
+
+        const { where } = (
+          prisma.space.findMany.mock.calls[0] as [{ where: unknown }]
+        )[0];
+        expect(where).toEqual({ status: 'ACTIVE', typeId: 3 });
+        expect(prisma.space.count).toHaveBeenCalledWith({ where });
+      });
+    });
+
     describe('filtros', () => {
       const search = (filters: Partial<ListCatalogQueryDto>) =>
         service.findPage({ page: 1, pageSize: 12, ...filters });

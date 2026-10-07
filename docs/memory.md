@@ -1385,6 +1385,51 @@ Con `docker compose up -d db-test`, en `rentsmart-back` (Node 24): `npm run lint
 
 ---
 
+### 2026-10-06 · B (xReNatS) · BU-04 ordenar resultados del catálogo
+
+**Issues:** #30 (BU-04)
+**Rama / PR:** `feat/BU-04-ordenar-resultados` · sin PR todavía
+**Duración aproximada:** 1 h
+**Herramientas:** Claude Code
+
+#### Objetivo
+Que el catálogo se pueda ordenar por precio y por los más recientes, y que el orden quede en la URL junto a los filtros.
+
+#### Qué se hizo
+- **API:** `GET /api/catalog?sort=` con `recent` (por defecto), `price_asc` y `price_desc`; otro valor da 400. El precio es el de `priceUnit` (por hora, o por día) y los espacios que no se arriendan en esa unidad van **al final en las dos direcciones**. Siempre se desempata por fecha y por id, así la paginación es estable aunque haya precios iguales. El orden no cambia qué espacios salen ni el total.
+- **Front:** selector "Ordenar por" junto al contador de resultados, con "Más recientes", "Precio por hora: menor a mayor" y "Precio por hora: mayor a menor" (dice "por día" si la unidad del precio es el día). El orden vive en la URL (`?sort=price_asc`), no cuenta como filtro, sobrevive a "Limpiar filtros", y los enlaces de la paginación lo conservan. Cambiarlo vuelve a la página 1. El mock ordena igual que el back.
+- Un test encontró un defecto antes de subir: el front solo mandaba `priceUnit` junto con un rango de precio, así que ordenar por precio por día sin rango ordenaba por hora. Ahora la unidad también viaja cuando se ordena por precio.
+- Pruebas: 6 unitarias y 14 e2e nuevas en el back (157 y 190 en total), y 19 en el front (343 en 28 archivos), todas con Node 24.
+
+#### Decisiones y por qué
+| Decisión | Alternativas consideradas | Por qué se eligió |
+|---|---|---|
+| El orden por precio sigue la unidad del filtro de precio (hora o día) | Un orden aparte por cada unidad | Ya hay un selector de unidad; así no se agrega otro control y el precio que se ordena es el mismo que se filtra |
+| Los espacios sin precio en esa unidad van al final en las dos direcciones | Primero al ordenar de mayor a menor | Un espacio sin precio por hora no es el más caro; en `price_desc` aparecería arriba y confundiría |
+| "Mejor calificados" no se implementa todavía | Un orden falso o desactivado | No existen reseñas ni calificación (A, después del 9 de octubre). Queda pendiente en #30 |
+
+#### Archivos principales
+- Back: `rentsmart-back/src/catalog/` (`dto/list-catalog-query.dto`, `catalog.service` y su spec) y `test/catalog-sort.e2e-spec.ts`.
+- Front: `rentsmart-front/src/features/catalog/` (`SortSelect`, `CatalogPage`, `filters`, `catalog-api` y sus pruebas) y `src/mocks/handlers.ts`.
+- `docs/arquitectura.md`.
+
+#### Cómo probarlo
+Back (Node 24, `JWT_SECRET` y BD de test migrada): `npm run lint`, `npm test`, `npm run test:e2e` y `npm run build`. Front: `npm run lint`, `npm test` y `npm run build`. A mano, con el seed: abrir `/`, elegir "Precio por hora: menor a mayor", cambiar a "Por día" y comprobar que el orden sigue al precio por día.
+
+#### Estado de verificación
+- Back: lint ✅ · 157 unitarias ✅ · 190 e2e ✅ · build ✅
+- Front: lint ✅ · 343 tests (28 archivos) ✅ · build ✅
+- A mano, contra el back real con el seed: orden por hora y por día, nulos al final, 400 con un orden inválido y 375 px sin desbordes ✅
+
+#### Pendientes y bloqueos
+- Ordenar por calificación depende de las reseñas (A). Cuando existan, se agrega `rating` a `sort` y una opción al selector.
+- Hay un error de tipos que ya estaba en `main`, en `rentsmart-back/src/spaces/spaces.service.spec.ts` (línea 125): `tsc` lo marca, pero ni el lint ni los tests ni el build lo ven.
+
+#### Para el resto del equipo
+- A (@AlejandroMG): cuando exista la calificación de los espacios (reseñas), avísame para agregar el orden "mejor calificados".
+
+---
+
 ### 2026-10-06 · B (xReNatS) · ES-07 API: punto del espacio en el mapa
 
 **Issues:** #26 (ES-07)

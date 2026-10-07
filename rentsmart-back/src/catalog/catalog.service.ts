@@ -9,7 +9,11 @@ import { PrismaService } from '../prisma/prisma.service';
 import { approximateLocation } from './approximate-location';
 import { CatalogDetailDto } from './dto/catalog-detail.dto';
 import { CatalogPageDto } from './dto/catalog-page.dto';
-import { ListCatalogQueryDto } from './dto/list-catalog-query.dto';
+import {
+  CatalogSort,
+  ListCatalogQueryDto,
+  PriceUnit,
+} from './dto/list-catalog-query.dto';
 
 // Solo los espacios activos son públicos: borradores, inactivos y bloqueados no aparecen en ninguna consulta.
 const PUBLIC = { status: SpaceStatus.ACTIVE } as const;
@@ -46,6 +50,27 @@ function searchFilter(q: string | undefined): Prisma.SpaceWhereInput[] {
 }
 
 /**
+ * El orden de la lista. Por defecto, los más recientes primero. Por precio, el de la hora o el del día según
+ * `priceUnit`: los espacios que no se arriendan en esa unidad (precio null) van al final, en cualquier dirección.
+ * Siempre se desempata por fecha y por id, así la paginación es estable aunque haya precios iguales.
+ */
+function orderBy(
+  sort: CatalogSort | undefined,
+  priceUnit: PriceUnit | undefined,
+): Prisma.SpaceOrderByWithRelationInput[] {
+  const recent = [{ createdAt: 'desc' as const }, { id: 'asc' as const }];
+  if (sort !== 'price_asc' && sort !== 'price_desc') return recent;
+  const price = {
+    sort: sort === 'price_asc' ? ('asc' as const) : ('desc' as const),
+    nulls: 'last' as const,
+  };
+  return [
+    priceUnit === 'day' ? { pricePerDay: price } : { pricePerHour: price },
+    ...recent,
+  ];
+}
+
+/**
  * Consultas públicas del catálogo. El `select` es una lista blanca: lo que no se pide aquí
  * (addressDetail, ownerId, status…) no sale nunca por la API pública (P-09).
  */
@@ -63,6 +88,7 @@ export class CatalogService {
     priceUnit,
     minCapacity,
     q,
+    sort,
   }: ListCatalogQueryDto): Promise<CatalogPageDto> {
     if (minPrice !== undefined && maxPrice !== undefined && minPrice > maxPrice) {
       throw new BadRequestException(
@@ -88,8 +114,7 @@ export class CatalogService {
     const [spaces, total] = await this.prisma.$transaction([
       this.prisma.space.findMany({
         where,
-        // Más recientes primero; el id desempata para que la paginación sea estable.
-        orderBy: [{ createdAt: 'desc' }, { id: 'asc' }],
+        orderBy: orderBy(sort, priceUnit),
         skip: (page - 1) * pageSize,
         take: pageSize,
         select: {
