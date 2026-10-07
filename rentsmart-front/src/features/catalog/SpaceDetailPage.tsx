@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router'
 import { LinkButton, Button } from '../../components/Button'
 import { ApiError } from '../../lib/http'
 import { formatClp } from '../../lib/format'
+import { usePageTitle } from '../../lib/page-title'
 import { paths } from '../../lib/paths'
 import { LazyLocationMap } from '../map/LazyMaps'
 import { BookingSlot } from './BookingSlot'
@@ -22,9 +23,9 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 function DetailSkeleton() {
   return (
     <div role="status" aria-label="Cargando el espacio" className="flex flex-col gap-6">
-      <div className="h-9 w-2/3 animate-pulse rounded bg-line/60" />
-      <div className="h-60 animate-pulse rounded-[18px] bg-line/60 sm:h-[440px]" />
-      <div className="h-4 w-1/2 animate-pulse rounded bg-line/60" />
+      <div className="h-9 w-2/3 motion-safe:animate-pulse rounded bg-line/60" />
+      <div className="h-60 motion-safe:animate-pulse rounded-[18px] bg-line/60 sm:h-[440px]" />
+      <div className="h-4 w-1/2 motion-safe:animate-pulse rounded bg-line/60" />
     </div>
   )
 }
@@ -32,6 +33,7 @@ function DetailSkeleton() {
 export function SpaceDetailPage() {
   const { spaceId = '' } = useParams()
   const { data: space, error, loading, retry } = useSpace(spaceId)
+  usePageTitle(space?.name ?? (error instanceof ApiError && error.status === 404 ? 'Espacio no disponible' : undefined))
 
   return (
     <div className="mx-auto max-w-[1200px] px-4 py-6 sm:px-6 sm:py-8">
@@ -57,8 +59,8 @@ export function SpaceDetailPage() {
 
       {space && (
         <>
-          <nav aria-label="Ruta de navegación" className="text-sm text-muted">
-            <Link to={paths.home} className="font-semibold text-primary">
+          <nav aria-label="Ruta de navegación" className="flex flex-wrap items-center gap-x-1 text-sm text-muted">
+            <Link to={paths.home} className="inline-flex min-h-11 items-center font-semibold text-primary">
               Catálogo
             </Link>
             <span aria-hidden="true"> / </span>

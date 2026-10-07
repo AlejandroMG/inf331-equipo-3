@@ -16,6 +16,8 @@
   --color-ink: #10201e;
   --color-muted: #566865;
   --color-line: #d9e2df;
+  /* Borde de los campos y del interruptor apagado: 3,5:1 sobre blanco, lo que pide WCAG 1.4.11. */
+  --color-field: #7d8c89;
 
   --font-sans: "Figtree", system-ui, sans-serif;
   --font-display: "Bricolage Grotesque", system-ui, sans-serif;

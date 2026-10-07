@@ -26,7 +26,7 @@ export function Input({ label, error, hint, id, className, ...rest }: InputProps
         aria-describedby={message ? messageId : undefined}
         className={cn(
           'min-h-12 w-full rounded-control bg-white px-3.5 py-2.5 text-base text-ink disabled:bg-surface disabled:text-muted',
-          error ? 'border-2 border-accent' : 'border border-line',
+          error ? 'border-2 border-accent' : 'border border-field',
           className,
         )}
         {...rest}

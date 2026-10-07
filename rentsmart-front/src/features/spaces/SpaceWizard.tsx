@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router'
 import { Button, LinkButton } from '../../components/Button'
 import { Card } from '../../components/Card'
@@ -38,6 +38,14 @@ export function SpaceWizard({ types, amenities, region, communes, initialSpace }
   const [photos, setPhotos] = useState<OwnerPhoto[]>(initialSpace?.photos ?? [])
   const [step, setStep] = useState(1)
   const [errors, setErrors] = useState<FormErrors>({})
+  // Tras un intento de guardar con errores, el foco pasa al primer campo inválido (el lector de pantalla lo anuncia con su mensaje).
+  const focusFirstError = useRef(false)
+  const rootRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!focusFirstError.current) return
+    focusFirstError.current = false
+    rootRef.current?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus()
+  }, [errors])
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [saved, setSaved] = useState(initialSpace !== null)
@@ -61,7 +69,10 @@ export function SpaceWizard({ types, amenities, region, communes, initialSpace }
   async function save(): Promise<string | null> {
     const found = validate(form)
     setErrors(found)
-    if (Object.keys(found).length > 0) return null
+    if (Object.keys(found).length > 0) {
+      focusFirstError.current = true
+      return null
+    }
 
     setSaving(true)
     setSaveError(null)
@@ -163,7 +174,7 @@ export function SpaceWizard({ types, amenities, region, communes, initialSpace }
   }
 
   return (
-    <div className="mx-auto max-w-[1100px] px-4 py-6 sm:px-6 sm:py-10">
+    <div ref={rootRef} className="mx-auto max-w-[1100px] px-4 py-6 sm:px-6 sm:py-10">
       <h1 className="font-display text-3xl font-bold leading-tight sm:text-[40px]">
         {status === 'DRAFT' ? 'Publica tu espacio' : 'Edita tu espacio'}
       </h1>
