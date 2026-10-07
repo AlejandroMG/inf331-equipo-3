@@ -21,6 +21,7 @@ describe('Navbar', () => {
 
     expect(within(nav).getByRole('link', { name: 'Explorar' })).toHaveAttribute('href', '/')
     expect(within(nav).getByRole('link', { name: 'Mis espacios' })).toHaveAttribute('href', '/owner/spaces')
+    expect(within(nav).getByRole('link', { name: 'Favoritos' })).toHaveAttribute('href', '/favorites')
     expect(within(nav).getByRole('link', { name: 'Publicar tu espacio' })).toHaveAttribute('href', '/publish')
     expect(within(nav).getByRole('link', { name: 'Ingresar' })).toHaveAttribute('href', '/login')
     expect(within(nav).getByRole('link', { name: 'Crear cuenta' })).toHaveAttribute('href', '/register')

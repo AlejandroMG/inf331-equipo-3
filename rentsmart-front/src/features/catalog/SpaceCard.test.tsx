@@ -73,4 +73,13 @@ describe('SpaceCard', () => {
 
     expect(screen.getByRole('link').querySelector('img')).toBeNull()
   })
+
+  it('tiene el corazón de favoritos fuera del enlace, con el nombre del espacio', () => {
+    renderCard()
+
+    const heart = screen.getByRole('button', { name: 'Guardar en favoritos: Sala Alameda' })
+    expect(heart).toHaveAttribute('aria-pressed', 'false')
+    // Un botón dentro de un enlace no es HTML válido: el corazón es hermano del enlace, no su hijo.
+    expect(screen.getByRole('link')).not.toContainElement(heart)
+  })
 })

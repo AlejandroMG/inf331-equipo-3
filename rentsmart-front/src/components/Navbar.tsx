@@ -9,6 +9,7 @@ import { CloseIcon, MenuIcon } from './icons'
 const links = [
   { to: paths.home, label: 'Explorar', end: true },
   { to: paths.ownerSpaces, label: 'Mis espacios', end: false },
+  { to: paths.favorites, label: 'Favoritos', end: false },
 ]
 
 function navLinkClass({ isActive }: { isActive: boolean }) {

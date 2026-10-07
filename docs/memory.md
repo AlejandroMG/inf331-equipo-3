@@ -1476,3 +1476,52 @@ Con Node 24, en `rentsmart-back`: aplicar la migración (`npx prisma migrate dep
 - C (@gonzzza-lol): nada cambia en tu dominio. Si más adelante la reserva confirmada muestra la dirección completa, el punto exacto del propietario (`latitude` y `longitude`) está en la base de datos por si sirve.
 
 ---
+
+### 2026-10-07 · B (xReNatS) · BU-08 favoritos en el front
+
+**Issues:** #34 (BU-08)
+**Rama / PR:** `feat/BU-08-favoritos-front` · sin PR todavía (la API está en `feat/BU-08-favoritos-api`, un PR aparte que debe entrar primero)
+**Duración aproximada:** 1 h 30 min
+**Herramientas:** Claude Code, Chrome con Puppeteer y axe-core
+
+#### Objetivo
+Que se pueda guardar un espacio como favorito desde el catálogo y el detalle, y ver la lista en "Mis favoritos". La API y la decisión de guardarlos en la cuenta están en el PR de la API.
+
+#### Qué se hizo
+- **Corazón en cada tarjeta** del catálogo (de 44 px, sobre la foto) y botón "Guardar en favoritos" en el detalle. Son botones de dos estados (`aria-pressed`) y su nombre no cambia al activarse. Sin sesión llevan a iniciarla y, al volver, regresan a la pantalla de donde se vino.
+- **Se ve al instante.** Marcar o desmarcar cambia el corazón sin esperar al servidor; si lo rechaza (por ejemplo, el tope de 200), se deshace y sale un aviso. Dos clics seguidos no mandan dos peticiones.
+- **"Mis favoritos"** (`/favorites`, ruta privada y un enlace "Favoritos" en la barra): las tarjetas, el último guardado primero, con su total, paginadas, y un mensaje cuando no hay ninguno. Quitar uno desde ahí lo saca de la lista al instante.
+- **Estado compartido:** `FavoritesProvider` carga los ids al iniciar sesión y los olvida al cerrarla, así el corazón de una tarjeta, el del detalle y la lista dicen lo mismo. Si no cargan, el catálogo funciona igual.
+- **La tarjeta cambió de estructura:** el corazón es un botón y no puede ir dentro del enlace (HTML inválido), así que es hermano del enlace y se posiciona sobre la foto. Toda la tarjeta sigue llevando al detalle.
+- **Mocks:** la API simulada (MSW) tiene los cuatro endpoints, con estado que se reinicia entre pruebas.
+- **Pruebas:** 19 de favoritos (con sesión, sin sesión, deshacer, sesión que se cierra, la página y su paginación), una de la tarjeta y una de la barra.
+
+#### Decisiones y por qué
+| Decisión | Alternativas consideradas | Por qué se eligió |
+|---|---|---|
+| Actualización optimista con deshacer | Esperar al servidor antes de cambiar el corazón | El corazón debe responder al instante; la petición casi siempre sale bien y, si no, se deshace y se avisa |
+| Un contexto con los ids de la sesión | Que cada tarjeta consulte por su cuenta; un campo `isFavorite` en el catálogo | Una sola petición para toda la pantalla, el catálogo público queda igual y las pantallas no se contradicen |
+| El corazón como hermano del enlace de la tarjeta | Un botón dentro del enlace; una tarjeta como `<article>` con un enlace extendido | Un botón dentro de un enlace es HTML inválido y lo leen mal los lectores de pantalla; así no se cambia cómo se ve ni cómo se hace clic en la tarjeta |
+| Nombre fijo y `aria-pressed` | Cambiar el texto entre "Guardar" y "Quitar" | Un botón de dos estados no debe cambiar de nombre al activarse (se anunciaría dos veces el cambio) |
+| Sin sesión, el corazón lleva a iniciarla | Esconderlo | Es la invitación natural a crear una cuenta, y vuelve a la pantalla de origen |
+
+#### Archivos principales
+- `rentsmart-front/src/features/favorites/` (`FavoritesProvider`, `favorites-context`, `favorites-api`, `FavoriteButton`, `FavoritesPage` y `favorites.test.tsx`).
+- `rentsmart-front/src/features/catalog/` (`SpaceCard.tsx`, `SpaceDetailPage.tsx`), `src/components/Navbar.tsx`, `src/routes.tsx`, `src/lib/paths.ts`, `src/App.tsx` y `src/mocks/handlers.ts`.
+
+#### Cómo probarlo
+En `rentsmart-front` (Node 24): `npm run lint`, `npm test` y `npm run build`. A mano (con la API de BU-08 o con `VITE_USE_MOCKS=true`, con sesión, por ejemplo `localStorage.setItem('rentsmart_token', 'dev')`): tocar el corazón de una tarjeta, abrir "Favoritos" y quitarlo desde ahí.
+
+#### Estado de verificación
+- Lint: ✅ · Tests: ✅ (29 archivos, 363 pruebas, con Node 24) · Build: ✅
+- Chrome real: el corazón mide 44 px; axe da 0 violaciones en el catálogo con favoritos marcados, en "Mis favoritos" y en el detalle, a 1100 y a 375 px, sin desborde horizontal.
+
+#### Pendientes y bloqueos
+- **Orden de merge:** entra después del PR de la API de BU-08; sin él, los corazones fallan con un aviso.
+- Con el `DevAuthGuard` temporal la API usa siempre el usuario del seed, aunque haya iniciado sesión otra persona; se arregla cuando A entregue el `JwtAuthGuard` (CU-03).
+- Cuando entre #103 (QA-02), la nueva pantalla debería declarar su título con `handle.title` en `routes.tsx` y el corazón usar `border-field`.
+
+#### Para el resto del equipo
+- A (@AlejandroMG) y C (@gonzzza-lol): no toca sus módulos.
+
+---

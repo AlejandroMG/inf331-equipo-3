@@ -4,6 +4,7 @@ import { LinkButton, Button } from '../../components/Button'
 import { ApiError } from '../../lib/http'
 import { formatClp } from '../../lib/format'
 import { paths } from '../../lib/paths'
+import { FavoriteButton } from '../favorites/FavoriteButton'
 import { BookingSlot } from './BookingSlot'
 import { Gallery } from './Gallery'
 import { groupSchedule } from './schedule'
@@ -77,6 +78,7 @@ export function SpaceDetailPage() {
                 Nuevo · sin reseñas aún
               </span>
             </p>
+            <FavoriteButton spaceId={space.id} name={space.name} variant="text" className="mt-4" />
           </div>
 
           <Gallery photos={space.photos} name={space.name} />
