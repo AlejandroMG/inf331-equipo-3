@@ -1593,51 +1593,38 @@ Dejar `JwtAuthGuard`, `RolesGuard` y `@CurrentUser()` listos para los demás mó
 
 ---
 
-### 2026-10-07 · B (xReNatS) · BU-08 API de favoritos
+### 2026-10-07 · B (xReNatS) · ES-05 editar un espacio: las reservas conservan su total
 
-**Issues:** #34 (BU-08)
-**Rama / PR:** `feat/BU-08-favoritos-api` · sin PR todavía (el front está en `feat/BU-08-favoritos-front`, un PR aparte)
-**Duración aproximada:** 1 h
+**Issues:** #24 (ES-05)
+**Rama / PR:** `feat/ES-05-editar-espacio` · sin PR todavía
+**Duración aproximada:** 30 min
 **Herramientas:** Claude Code
 
 #### Objetivo
-Que un usuario pueda guardar espacios como favoritos y listarlos. El issue no tenía criterios ("por definir al tomar la historia"): los definí yo y quedan anotados en el issue.
+Cerrar ES-05. El formulario ya edita un espacio (la misma pantalla de publicar, con "Edita tu espacio"), y la API ya deja cambiar sus datos con las reglas de P-18. Faltaba lo único que pide el criterio: demostrar que un cambio de precio aplica solo a las reservas nuevas.
 
 #### Qué se hizo
-- **Base de datos:** modelo `Favorite` (`userId`, `spaceId`, `createdAt`; clave compuesta, así un espacio se guarda una sola vez por usuario) con la migración `favorites`. Borrar el espacio o el usuario borra sus favoritos (`ON DELETE CASCADE`). Con la migración aplicada, el esquema y la BD no tienen diferencias.
-- **API** (en el módulo `catalog`): `GET /api/favorites` (tarjetas del catálogo paginadas, el último guardado primero), `GET /api/favorites/ids`, `PUT /api/favorites/:spaceId` y `DELETE /api/favorites/:spaceId`. Los dos últimos son idempotentes y responden 204. Solo se pueden guardar espacios activos (404 si no), hasta 200 por usuario (409).
-- **Un espacio que se desactiva** deja de verse en los favoritos pero no se pierde: reaparece si se vuelve a activar.
-- **Refactor chico:** el `select` y el mapeo de una tarjeta del catálogo ahora son `CATALOG_ITEM_SELECT` y `toCatalogItem`, y los usan el catálogo y los favoritos. Así lo que no sale del catálogo público tampoco sale de los favoritos.
-- **Pruebas:** unitarias del servicio y 24 e2e: guardar, repetir, guardar a la vez, 404, listas separadas por usuario, quitar, desactivar y reactivar, paginación, parámetros inválidos, que no salgan el detalle privado ni las coordenadas, y el borrado en cascada.
+- No hubo que cambiar código: `Booking` guarda `subtotal`, `fee` y `total` al crearse y no los calcula desde el precio del espacio, así que editar el precio no puede tocar una reserva que ya existe.
+- Se agregó `test/space-edit-bookings.e2e-spec.ts` (5 pruebas) que lo demuestra: con un espacio publicado y una reserva confirmada de 3 horas, cambiar el precio por hora y por día, quitar el precio por día, o editar el nombre, la descripción y la capacidad deja la reserva con el mismo subtotal, comisión, total y estado; el público ve el precio nuevo; y desactivar el espacio mantiene la reserva confirmada (criterio de ES-06).
 
 #### Decisiones y por qué
 | Decisión | Alternativas consideradas | Por qué se eligió |
 |---|---|---|
-| Favoritos en la cuenta (tabla `Favorite`) | Solo en el navegador (como el historial de BU-07) | Los favoritos se esperan en cualquier dispositivo y se pierden si se borran los datos del navegador; además hay cuenta y login. Cambia `schema.prisma` (de A): por eso va en un PR aparte |
-| `PUT` y `DELETE` idempotentes con 204 | `POST` que falla si ya existe | El corazón del front se actualiza al instante y puede repetir la petición; que repetir no falle simplifica el front y las carreras |
-| `GET /api/favorites/ids` aparte de la lista | Que el catálogo traiga `isFavorite` en cada tarjeta | El catálogo es público y no pide sesión; así sigue igual y solo quien tiene sesión pide sus ids |
-| Tope de 200 favoritos | Sin tope | Evita una lista sin fondo y consultas enormes; 200 es de sobra para el uso real |
-| Dentro del módulo `catalog` | Un módulo `favorites` nuevo | Es del dominio de B (búsqueda y catálogo), comparte el `select` de las tarjetas y no suma un módulo |
-| Mientras no haya `JwtAuthGuard` usa el `DevAuthGuard` | Esperar a A | Es la misma solución temporal de `spaces`; cambiarlo es reemplazar el guard en `favorites.controller.ts` (CU-03) |
+| Probar con reservas creadas directo en la base de datos | Esperar a la API de reservas (RE-02, de C) | El criterio se cumple por cómo está modelada `Booking`, no por código de reservas: la prueba no depende de nada de C, y cuando exista RE-02 sigue valiendo |
 
 #### Archivos principales
-- `rentsmart-back/prisma/schema.prisma` y `prisma/migrations/20261007120000_favorites/`.
-- `rentsmart-back/src/catalog/` (`favorites.service.ts`, `favorites.controller.ts`, `dto/list-favorites-query.dto.ts`, `catalog.service.ts`, `catalog.module.ts`) y `test/favorites.e2e-spec.ts`.
-- `docs/arquitectura.md`.
+- `rentsmart-back/test/space-edit-bookings.e2e-spec.ts`.
 
 #### Cómo probarlo
-Con Node 24, en `rentsmart-back`: `npx prisma migrate deploy`, y `npm run lint`, `npm run build`, `npm test` y `npm run test:e2e`. A mano en Swagger (`/docs`, sección Favoritos): `PUT /api/favorites/{id}` de un espacio activo, y `GET /api/favorites` lo lista.
+En `rentsmart-back` (Node 24): `npm run lint`, `npm run build`, `npm test` y `npm run test:e2e`.
 
 #### Estado de verificación
-- Lint: ✅ · Build: ✅ · unitarias ✅ · e2e ✅ (Node 24, BD de test migrada y sin seed, como en el CI)
+- Lint: ✅ · Build: ✅ · e2e: ✅ (Node 24, BD de test migrada y sin seed)
 
 #### Pendientes y bloqueos
-- **Cambio de `schema.prisma`:** este PR necesita la revisión de A (@AlejandroMG), además de la de C.
-- **Orden de merge:** va antes que el PR del front de favoritos.
-- Reemplazar el `DevAuthGuard` por el `JwtAuthGuard` de A (CU-03), igual que en `spaces`.
+- Cuando C entregue RE-02, conviene sumar una prueba que cree la reserva por la API y no por la base de datos.
 
 #### Para el resto del equipo
-- A (@AlejandroMG): este PR agrega la tabla `Favorite` a `schema.prisma` (con la migración `favorites`) y relaciones en `User` y `Space`. Por favor revísalo.
-- C (@gonzzza-lol): nada cambia en tu dominio.
+- C (@gonzzza-lol): al crear una reserva hay que guardar `subtotal`, `fee` y `total` calculados en ese momento (como ya prevé el modelo); es lo que hace que editar el precio de un espacio no afecte a las reservas existentes.
 
 ---
