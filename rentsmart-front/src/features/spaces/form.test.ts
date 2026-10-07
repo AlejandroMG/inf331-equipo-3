@@ -13,6 +13,8 @@ const filled: SpaceForm = {
   communeId: '4',
   address: 'Av. Libertador 1234',
   addressDetail: 'Oficina 301',
+  latitude: '-33.4489',
+  longitude: '-70.6693',
   pricePerHour: '12000',
   pricePerDay: '90000',
 }
@@ -51,6 +53,43 @@ describe('validate', () => {
   it('los límites son válidos', () => {
     expect(validate({ ...filled, capacity: '1000', pricePerHour: '1', pricePerDay: '10000000' })).toEqual({})
   })
+
+  describe('punto en el mapa', () => {
+    it('es opcional: sin coordenadas no hay error', () => {
+      expect(validate({ ...filled, latitude: '', longitude: '' })).toEqual({})
+    })
+
+    it.each([
+      ['latitude', 'norte'],
+      ['latitude', '-16.9'],
+      ['latitude', '-56.1'],
+      ['latitude', '33.4'],
+      ['longitude', 'oeste'],
+      ['longitude', '-65.9'],
+      ['longitude', '-110.1'],
+      ['longitude', '70.6'],
+    ] as const)('%s con "%s" es inválida', (field, value) => {
+      expect(validate({ ...filled, [field]: value })[field]).toBeDefined()
+    })
+
+    it('los límites de Chile son válidos', () => {
+      expect(validate({ ...filled, latitude: '-17', longitude: '-110' })).toEqual({})
+      expect(validate({ ...filled, latitude: '-56', longitude: '-66' })).toEqual({})
+    })
+
+    it('si falta una de las dos, el error queda en la que falta', () => {
+      expect(validate({ ...filled, longitude: '' })).toEqual({
+        longitude: 'Falta la longitud: completa las dos o quita el punto.',
+      })
+      expect(validate({ ...filled, latitude: '  ' })).toEqual({
+        latitude: 'Falta la latitud: completa las dos o quita el punto.',
+      })
+    })
+
+    it('el mensaje de rango no se mezcla con el de la que falta', () => {
+      expect(validate({ ...filled, latitude: '40', longitude: '' }).longitude).toBeUndefined()
+    })
+  })
 })
 
 describe('toPayload', () => {
@@ -66,9 +105,18 @@ describe('toPayload', () => {
       communeId: 4,
       address: 'Av. Libertador 1234',
       addressDetail: 'Oficina 301',
+      latitude: -33.4489,
+      longitude: -70.6693,
       rules: 'No fumar',
       amenityIds: [1, 3],
     })
+  })
+
+  it('manda las coordenadas con hasta 6 decimales, que es lo que acepta el back', () => {
+    const payload = toPayload({ ...filled, latitude: '-33.44891234567', longitude: ' -70.6693 ' }, 1)
+
+    expect(payload.latitude).toBe(-33.448912)
+    expect(payload.longitude).toBe(-70.6693)
   })
 
   it('manda null en lo vacío, para que borrarlo en el formulario lo borre también en el servidor', () => {
@@ -83,6 +131,8 @@ describe('toPayload', () => {
       communeId: null,
       address: null,
       addressDetail: null,
+      latitude: null,
+      longitude: null,
       rules: null,
       amenityIds: [],
     })
@@ -103,6 +153,8 @@ describe('toForm', () => {
     communeId: 4,
     address: 'Av. 1',
     addressDetail: null,
+    latitude: null,
+    longitude: null,
     rules: null,
     amenityIds: [1, 3],
     photos: [],
@@ -121,8 +173,17 @@ describe('toForm', () => {
       communeId: '4',
       address: 'Av. 1',
       addressDetail: '',
+      latitude: '',
+      longitude: '',
       pricePerHour: '12000',
       pricePerDay: '',
+    })
+  })
+
+  it('pasa las coordenadas guardadas a texto', () => {
+    expect(toForm({ ...space, latitude: -33.4489, longitude: -70.6693 })).toMatchObject({
+      latitude: '-33.4489',
+      longitude: '-70.6693',
     })
   })
 
