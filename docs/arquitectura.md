@@ -64,6 +64,30 @@ src/bookings/
 - Listados paginados con `?page=1&pageSize=20`; la respuesta trae `{ items, total, page, pageSize }`.
 - La configuración común (prefijo, `ValidationPipe`, Swagger) vive en `src/app.setup.ts` y la usan `main.ts` y los tests e2e. `main.ts` crea la app con `rawBody: true` para el webhook de Stripe.
 
+### Sesión y permisos (CU-03)
+
+`AuthModule` es global: cualquier módulo usa los guards sin importarlo.
+
+```ts
+@ApiBearerAuth()
+@UseGuards(JwtAuthGuard)                 // exige sesión: 401 sin token, con token inválido, expirado o de una cuenta suspendida
+@Controller('bookings')
+export class BookingsController {
+  @Get()
+  list(@CurrentUser() user: AuthUser) {}  // { id, role } del usuario de la sesión
+
+  @Get('all')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.ADMIN)                  // 403 si el rol no está en la lista
+  listAll() {}
+}
+```
+
+- `JwtAuthGuard` (`src/auth/guards`) revisa el token y además al usuario en la base: una cuenta suspendida pierde el acceso de inmediato y el rol se toma de la base, no del token.
+- `@CurrentUser()` y `AuthUser` están en `src/common/auth`.
+- `GET /api/auth/me` devuelve el usuario de la sesión; el front lo usa para armar el menú según el rol.
+- En los e2e, `bearer(app, userId)` de `test/utils/auth.ts` entrega el encabezado `Authorization` con un token válido.
+
 ### Datos de referencia (ES-01)
 
 Listas públicas y de solo lectura que alimentan los formularios y filtros. Módulo `space-types`; devuelven `[{ id, name }]`.
