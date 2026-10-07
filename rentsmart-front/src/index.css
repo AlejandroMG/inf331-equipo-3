@@ -37,3 +37,26 @@
     outline-offset: 2px;
   }
 }
+
+/* Mapas (ES-07): la zona aproximada del detalle y el punto del formulario, con los colores de la marca. */
+.location-area {
+  stroke: var(--color-primary);
+  stroke-width: 2;
+  fill: var(--color-primary);
+  fill-opacity: 0.2;
+}
+
+.location-pin {
+  stroke: #fff;
+  stroke-width: 3;
+  fill: var(--color-accent);
+  fill-opacity: 1;
+}
+
+/* Botones de zoom de 44 px, como el resto de los objetivos táctiles (QA-02). */
+.leaflet-container .leaflet-bar a.leaflet-control-zoom-in,
+.leaflet-container .leaflet-bar a.leaflet-control-zoom-out {
+  width: 44px;
+  height: 44px;
+  line-height: 44px;
+}

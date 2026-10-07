@@ -4,6 +4,7 @@ import { LinkButton, Button } from '../../components/Button'
 import { ApiError } from '../../lib/http'
 import { formatClp } from '../../lib/format'
 import { paths } from '../../lib/paths'
+import { LazyLocationMap } from '../map/LazyMaps'
 import { BookingSlot } from './BookingSlot'
 import { Gallery } from './Gallery'
 import { groupSchedule } from './schedule'
@@ -132,6 +133,12 @@ export function SpaceDetailPage() {
                 <p className="text-base">
                   {[space.address, space.communeName, space.regionName].filter(Boolean).join(', ')}
                 </p>
+                {space.location && (
+                  <div className="mt-4 max-w-[680px]">
+                    <LazyLocationMap location={space.location} label={`Mapa con la ubicación aproximada de ${space.name}`} />
+                    <p className="mt-2 text-sm text-muted">El círculo marca la zona aproximada del espacio.</p>
+                  </div>
+                )}
                 <p className="mt-3 flex items-start gap-2 text-sm text-muted">
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="mt-px shrink-0">
                     <rect x="5" y="11" width="14" height="9" rx="2" />

@@ -10,6 +10,7 @@ import { cn } from '../../lib/cn'
 import { formatClp } from '../../lib/format'
 import { paths } from '../../lib/paths'
 import { emptyForm, missingFromError, publishChecklist, REQUIREMENTS, toForm, toPayload, validate, type FormErrors, type MissingField } from './form'
+import { LocationField } from './LocationField'
 import { PhotosStep } from './PhotosStep'
 import { createSpace, publishSpace, updateSpace } from './spaces-api'
 import type { OwnerPhoto, OwnerSpace, ReferenceItem, SpaceForm } from './types'
@@ -311,6 +312,12 @@ export function SpaceWizard({ types, amenities, region, communes, initialSpace }
                 onChange={(e) => change('addressDetail', e.target.value)}
                 placeholder="Piso, oficina o indicaciones"
                 hint="Solo lo ve quien tenga una reserva confirmada."
+              />
+              <LocationField
+                latitude={form.latitude}
+                longitude={form.longitude}
+                errors={errors}
+                onChange={(field, value) => change(field, value)}
               />
             </>
           )}

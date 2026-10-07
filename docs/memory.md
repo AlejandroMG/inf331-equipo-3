@@ -1384,3 +1384,50 @@ Con `docker compose up -d db-test`, en `rentsmart-back` (Node 24): `npm run lint
 - C (@gonzzza-lol): cuando existan las reservas, el panel necesitará `GET /api/spaces/me` con las próximas reservas de cada espacio; avísame el contrato.
 
 ---
+
+### 2026-10-06 · B (xReNatS) · ES-07 front: mapa en el detalle y en el formulario de publicar
+
+**Issues:** #26 (ES-07)
+**Rama / PR:** `feat/ES-07-mapa-front` · sin PR todavía (la API está en `feat/ES-07-mapa-api`, un PR aparte que debe entrar primero)
+**Duración aproximada:** 1 h
+**Herramientas:** Claude Code, Chrome con Puppeteer y axe-core
+
+#### Objetivo
+Mostrar la ubicación aproximada de un espacio en un mapa (Leaflet y OpenStreetMap) y dejar que el propietario marque el punto al publicar. La decisión de producto está en P-19 (en el PR de la API).
+
+#### Qué se hizo
+- **Detalle:** en "Ubicación" se muestra un mapa con un círculo (no un pin) y la leyenda "El círculo marca la zona aproximada del espacio". Sin punto marcado no hay mapa.
+- **Formulario de publicar:** el paso 2 "Ubicación" tiene un mapa donde se toca el punto, más los campos de latitud y longitud y el botón "Quitar el punto". Los campos son la forma de hacerlo con teclado y validan que el punto esté en Chile y que vayan las dos coordenadas. Al guardar se mandan con hasta 6 decimales, y `null` en las dos borra el punto.
+- **Leaflet fuera del resto de la app:** los mapas se cargan bajo demanda (`LazyMaps.tsx`, un chunk de ~45 kB comprimido) y van dentro de un `ErrorBoundary`: si no cargan, el resto de la pantalla sigue. Los botones de zoom miden 44 px y se llaman "Acercar" y "Alejar".
+- **Pruebas:** 360 en 31 archivos. Los mapas se prueban con Leaflet de verdad en jsdom, y un archivo aparte simula que el mapa no descarga.
+
+#### Decisiones y por qué
+| Decisión | Alternativas consideradas | Por qué se eligió |
+|---|---|---|
+| Mapas con carga bajo demanda y un `ErrorBoundary` | Importar Leaflet directamente | Leaflet pesa ~45 kB comprimido y solo lo usan dos pantallas; un chunk viejo o sin red no debe romper el detalle |
+| Campos de latitud y longitud junto al mapa | Solo el mapa | Un mapa no se puede operar con teclado: los campos son la alternativa accesible (WCAG 2.1.1) |
+| En el teléfono el mapa del detalle no se arrastra con un dedo (`dragging` apagado en móvil) y la rueda del mouse no hace zoom | Dejar los valores por defecto | Con el arrastre activo, el mapa atrapa el scroll de la página; se sigue pudiendo acercar con los botones y con dos dedos |
+| `className` como propiedad del círculo | `pathOptions={{ className }}` | `pathOptions` de react-leaflet se aplica después de crear el elemento y Leaflet solo lee `className` al crearlo: el círculo salía con el azul por defecto. Lo detectó un test |
+
+#### Archivos principales
+- `rentsmart-front/src/features/map/` (`LazyMaps`, `LocationMap`, `LocationPicker`, `map-config`) y `src/features/spaces/LocationField.tsx`.
+- `rentsmart-front/src/features/spaces/` (`form.ts`, `types.ts`, `SpaceWizard.tsx`), `src/features/catalog/` (`SpaceDetailPage.tsx`, `types.ts`), `src/mocks/handlers.ts` (ubicaciones de ejemplo) y `src/index.css` (colores del círculo y del pin, botones de zoom de 44 px).
+- `rentsmart-front/package.json`: dependencias nuevas `leaflet` y `react-leaflet`, y `@types/leaflet` de desarrollo.
+
+#### Cómo probarlo
+En `rentsmart-front` (Node 24): `npm run lint`, `npm test` y `npm run build`. A mano, con la API del PR de ES-07 (o con los mocks): en `/publish`, paso 2, tocar el mapa (o escribir latitud y longitud) y guardar; abrir el detalle de un espacio con punto: se ve el círculo, y sin punto no hay mapa.
+
+#### Estado de verificación
+- Lint: ✅ · Tests: ✅ (31 archivos, 360 pruebas, con Node 24) · Build: ✅
+- Chrome real: el círculo sale con los colores de la marca y 76 px de ancho a zoom 15; los botones de zoom miden 44 px; en el teléfono el dedo no queda atrapado en el mapa; un clic en el formulario llena las coordenadas y dibuja el pin. axe: 0 violaciones en el detalle con mapa y en el paso 2 (sin y con punto), a 1100 y a 375 px, sin desborde horizontal.
+
+#### Pendientes y bloqueos
+- **Orden de merge:** entra después del PR de la API de ES-07. Sin él, el formulario manda `latitude` y `longitude` y la API los rechaza con 400.
+- Las teselas públicas de OpenStreetMap sirven para el MVP; con tráfico real hay que cambiar `TILE_URL` (`map-config.ts`) por un proveedor propio.
+- Las tarjetas del catálogo no muestran mapa, y no hay búsqueda por cercanía: queda fuera de esta historia.
+- No se probó con un lector de pantalla real (NVDA o VoiceOver). El mapa tiene nombre y los campos de coordenadas son la alternativa, pero falta oírlo.
+
+#### Para el resto del equipo
+- A (@AlejandroMG) y C (@gonzzza-lol): no toca sus módulos. Las pantallas nuevas con mapa deberían usar `LazyMaps` (no importar Leaflet directo) para no cargarlo en todas partes.
+
+---

@@ -5,6 +5,15 @@ import type { MissingField } from '../features/spaces/form'
 import type { OwnerPhoto, OwnerSpace, SpacePayload } from '../features/spaces/types'
 import { catalogData } from './catalog-data'
 
+/** Zona aproximada de ejemplo: el centro de cada comuna, con el radio que usa el back. */
+const COMMUNE_LOCATIONS: Record<string, SpaceDetail['location']> = {
+  Santiago: { latitude: -33.449, longitude: -70.669, radiusMeters: 150 },
+  Providencia: { latitude: -33.432, longitude: -70.616, radiusMeters: 150 },
+  'Las Condes': { latitude: -33.408, longitude: -70.567, radiusMeters: 150 },
+  Ñuñoa: { latitude: -33.457, longitude: -70.598, radiusMeters: 150 },
+  'San Miguel': { latitude: -33.497, longitude: -70.652, radiusMeters: 150 },
+}
+
 /** Detalle de ejemplo a partir de un espacio de la lista: horario de lunes a viernes y datos genéricos. */
 function detailOf(item: (typeof catalogData)[number]): SpaceDetail {
   return {
@@ -12,6 +21,8 @@ function detailOf(item: (typeof catalogData)[number]): SpaceDetail {
     description: 'Espacio de ejemplo para el catálogo simulado.',
     regionName: 'Región Metropolitana',
     address: 'Av. Libertador Bernardo O’Higgins 1234',
+    // "Taller de cerámica" es el que no tiene punto marcado: sirve para ver el detalle sin mapa.
+    location: item.id === 'mock-14' ? null : (COMMUNE_LOCATIONS[item.communeName] ?? null),
     rules: 'No fumar.',
     amenities: ['Aire acondicionado', 'Proyector', 'Wifi'],
     photos: item.coverUrl ? [{ id: `${item.id}-0`, url: item.coverUrl, position: 0 }] : [],
