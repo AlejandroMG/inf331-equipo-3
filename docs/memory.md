@@ -2330,3 +2330,47 @@ Con Node 24 y la base de test levantada y migrada. En `rentsmart-back`: `npm run
 - **A (@AlejandroMG):** te toca revisar por rotación. No hay cambios en `schema.prisma`.
 
 ---
+
+### 2026-10-08 · B (xReNatS) · Editar un espacio publicado: guardado bloqueado y falta botón (ES-05)
+
+**Issues:** #24
+**Rama / PR:** `fix/ES-05-editar-publicado` · sin PR todavía
+**Duración aproximada:** 1 h
+**Herramientas:** Claude Code
+
+#### Objetivo
+Corregir lo que impedía editar un espacio publicado: el comentario de @gonzzza-lol en #24 (no hay botón para guardar) y el 409 "Un espacio publicado debe seguir teniendo lo necesario para publicar" al cambiar cualquier campo.
+
+#### Qué se hizo
+- **Back:** `SpacesService.update` comparaba lo que falta *después* de la edición con una lista vacía. Un espacio activo que ya venía sin fotos o sin horario (los 10 del seed no tienen fotos, y el horario semanal aún no se carga desde la UI) rechazaba toda edición, aunque no tuviera relación. Ahora solo rechaza lo que la edición quita (lo que falta después y no faltaba antes). El 409 sigue trayendo `missing` con eso.
+- **Front:** el último paso de un espacio no borrador tiene el botón "Guardar cambios" (deshabilitado si no hay cambios). Si el guardado responde 409 con `missing`, el mensaje dice qué quedaría faltando en vez del texto genérico.
+- **Reactivar sin fotos:** era el mismo problema de raíz (los espacios del seed estaban publicados sin fotos, así que desactivarlos los dejaba sin poder volver a activarse). Se resolvió por el lado de los datos, sin relajar la regla: el seed ahora sube una foto por espacio.
+- **Fotos del seed** (`prisma/seed-photos.ts`, `prisma/seed.ts`): una ilustración SVG por tipo de espacio (sala de reuniones, cowork, estudio, sala de ensayo, cocina, cancha, salón de eventos, taller), generada en código: no se descarga nada ni se guardan binarios. Las sube por el mismo `StorageService` de la API (disco local o Supabase según `STORAGE_DRIVER`) y las descripciones del seed ahora hablan de lo que muestra la foto. Es idempotente: no repite la foto si el espacio ya tiene una; las descripciones sí se reescriben.
+- Tests: 2 unitarios en `spaces.service.spec.ts`, 1 en `publication.service.spec.ts` (sin fotos no reactiva) y 2 en `PublishSpacePage.test.tsx`.
+
+#### Decisiones y por qué
+| Decisión | Alternativas | Por qué |
+|---|---|---|
+| Poner fotos al seed y mantener estricta la reactivación | Que reactivar no exija fotos | El problema eran los datos del seed, no la regla: si reactivar no exigiera fotos, se podría borrar la última foto desactivado y volver a publicar sin ella |
+| Aclarar P-18: solo cuenta lo que la edición quita | Mantenerla estricta y arreglar solo el front | Con la regla estricta, un cambio en el paso 1 hacía fallar el guardado y no se podía llegar al paso 4 a subir la foto que faltaba: callejón sin salida. Aclaración registrada en `decisiones.md` |
+
+#### Archivos principales
+- `rentsmart-back/prisma/seed.ts` y `prisma/seed-photos.ts`, `rentsmart-back/src/spaces/spaces.service.ts` (+ spec), `rentsmart-front/src/features/spaces/SpaceWizard.tsx` (+ test), `docs/decisiones.md`, `docs/producto.md`.
+
+#### Cómo probarlo
+0. En `rentsmart-back`: `npm run seed` (agrega las fotos a los espacios del seed que no las tengan).
+1. Entrar como `host` del seed y abrir "Editar" en un espacio activo (sin fotos).
+2. Cambiar un campo y pasar al paso 5: guarda sin error y aparece "Guardar cambios".
+3. Borrar la descripción de un espacio con descripción: responde que quedaría sin descripción.
+
+#### Estado de verificación
+- Front: vitest de `src/features/spaces` (123), `tsc -b` y lint OK. Back: jest de `src/spaces` (102, con Node 24), lint y build OK.
+- Seed corrido contra `devdb` (en Docker, puerto 5434 porque el 5432 lo ocupaba un Postgres de Windows) y API levantada a mano: los 10 espacios tienen foto (`coverUrl` en el catálogo y `/api/uploads/seed/*.svg` responde 200); editar un espacio publicado sin fotos da 200; desactivar y reactivar da 200; quitar la descripción da 409 con `missing: ['description']`. No se corrieron los e2e.
+
+#### Pendientes y bloqueos
+- El horario semanal sigue sin poder cargarse desde la UI (DI-01, de C): sin él un borrador no se puede publicar de forma normal.
+
+#### Para el resto del equipo
+- C (@gonzzza-lol): el botón de guardar que pediste en #24 ya está en el paso "Revisar".
+
+---

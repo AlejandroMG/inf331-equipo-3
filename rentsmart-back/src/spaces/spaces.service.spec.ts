@@ -329,6 +329,28 @@ describe('SpacesService', () => {
       },
     );
 
+    describe('si ya venía sin fotos ni horario', () => {
+      beforeEach(() => {
+        prisma.space.findUnique.mockResolvedValue({
+          ...active,
+          _count: { photos: 0, rulesWeek: 0 },
+        });
+      });
+
+      it('deja editar lo que no tiene que ver', async () => {
+        await service.update('u1', 's1', { name: 'Sala 2', pricePerHour: 12000 });
+
+        expect(prisma.space.update).toHaveBeenCalled();
+      });
+
+      it('sigue rechazando que pierda algo que sí tenía', async () => {
+        await expect(
+          service.update('u1', 's1', { description: null }),
+        ).rejects.toMatchObject({ missing: ['description'] });
+        expect(prisma.space.update).not.toHaveBeenCalled();
+      });
+    });
+
     it('un borrador sí puede quedar incompleto', async () => {
       prisma.space.findUnique.mockResolvedValue({ ...active, status: 'DRAFT' });
 
