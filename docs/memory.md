@@ -2180,6 +2180,23 @@ Dejar el CI en verde: el e2e "guardarlo dos veces a la vez tampoco falla" de fav
 #### Qué se hizo
 - `FavoritesService.add` guarda con `createMany({ skipDuplicates: true })` en vez de `upsert`.
 - El test unitario de `add` espera la llamada nueva.
+### 2026-10-07 · C (gonzzza-lol) · DI-01 horario semanal del espacio
+
+**Issues:** #35 (DI-01)
+**Rama / PR:** `feat/DI-01-horario-semanal` · sin PR todavía
+**Duración aproximada:** 2 h
+**Herramientas:** Claude Code
+
+#### Objetivo
+Que el propietario pueda definir en qué días y horas se arrienda su espacio: implementar `GET` y `PUT /api/spaces/:id/schedule` (el contrato ya existía desde F-05 y no cambió) y entregar el componente del formulario.
+
+#### Qué se hizo
+- **Back:** `AvailabilityService.findSchedule` y `replaceSchedule` con Prisma sobre `AvailabilityRule`. Solo el dueño accede (404 si no existe, 403 si es de otro), también en un borrador. `PUT` reemplaza el horario completo en una transacción y lo devuelve ordenado por día y hora de inicio.
+- **Validación:** 400 si un fin no es posterior a su inicio o si dos rangos del mismo día se traslapan (contiguos valen); 409 con `missing: ["schedule"]` si dejaría sin horario a un espacio `ACTIVE`. Las reglas están en `src/availability/schedule-rules.ts`.
+- **Front:** componente `WeeklySchedule` en `src/features/bookings/` (el issue lo llama `<HorarioSemanal>`), con `schedule-form.ts` (lógica sin interfaz) y `schedule-api.ts`. Activa días, define uno o más rangos por día en horas cerradas, muestra los errores y guarda.
+- **Integración en el formulario:** en `SpaceWizard.tsx` (de B) reemplacé el recuadro "Llega pronto" del paso 3 por `<WeeklySchedule spaceId={spaceId} />`, como B dejó indicado en el issue. Son 3 líneas.
+- **Pruebas:** 24 unitarias nuevas del back, `test/schedule.e2e-spec.ts` con 17 e2e (200, 400, 401, 403, 404 y 409) y 21 tests del front (componente y lógica, con una revisión de axe). De `booking-contract.e2e-spec.ts` salieron las tres líneas de 501 del horario.
+- **Documentación:** `docs/arquitectura.md` dice que el horario ya está implementado y cómo leer las reglas.
 
 #### Decisiones y por qué
 | Decisión | Alternativas consideradas | Por qué se eligió |
@@ -2205,5 +2222,42 @@ En `rentsmart-back`: `npm run test:e2e -- favorites`, varias veces seguidas (era
 
 #### Para el resto del equipo
 - **B (@xReNatS):** toqué `src/catalog/favorites.service.ts` y su spec, que son de tu dominio, porque el fallo dejaba en rojo el CI de todos. El comportamiento no cambia: guardar sigue siendo idempotente y responde 204. Te pido revisar este PR aunque la rotación le toque a A.
+| `PUT` borra todas las reglas y las vuelve a crear en una transacción | Comparar y actualizar solo lo que cambió | El contrato es "reemplaza el horario completo" y son a lo más 50 filas; nada más apunta a una `AvailabilityRule` por su id |
+| Los rangos contiguos se guardan tal como llegan, sin unirlos | Unir 09:00–13:00 y 13:00–18:00 en uno | El propietario vuelve a ver lo que escribió. DI-02 debe tratar dos rangos contiguos como horas seguidas |
+| Solo un espacio `ACTIVE` no puede quedar sin horario | Exigirlo también en `INACTIVE` o `BLOCKED` | Es la regla de B: activar ya vuelve a comprobar que esté completo, así que un desactivado puede quedar incompleto |
+| Para el 409 se reutiliza `IncompleteSpaceException` de `src/spaces`, importando el archivo | Una excepción propia con la misma forma | El front ya entiende ese 409 (`missingFromError`); una sola forma para "al espacio publicado le falta algo" |
+| La comprobación del dueño es una consulta propia del servicio | Usar `SpacesService.ensureOwner` | Necesito además el estado del espacio, y `ensureOwner` no lo devuelve; así es una sola consulta y `availability` no importa el módulo de espacios |
+| El componente guarda con su propio botón | Recibir `value` y `onChange` y que guarde el formulario | Es la firma que B propuso (`spaceId`), igual que `PhotosStep`: el horario no pasa por el guardado del borrador. Muestra "Tienes cambios sin guardar" para que no se olvide |
+| Los errores de un día se ven mientras se edita y se bloquea el guardado | Validar solo al guardar | Con dos listas de horas es fácil dejar un fin anterior al inicio; verlo al momento evita un viaje al servidor |
+
+No se cambió ninguna decisión de `decisiones.md` ni `schema.prisma`.
+
+#### Archivos principales
+- `rentsmart-back/src/availability/availability.service.ts`: `findSchedule` y `replaceSchedule`.
+- `rentsmart-back/src/availability/schedule-rules.ts`: orden y validación de los rangos.
+- `rentsmart-back/src/availability/availability.service.spec.ts` y `test/schedule.e2e-spec.ts`: pruebas.
+- `rentsmart-back/test/booking-contract.e2e-spec.ts`: sin las líneas de 501 del horario.
+- `rentsmart-front/src/features/bookings/WeeklySchedule.tsx`, `schedule-form.ts`, `schedule-api.ts` y sus tests.
+- `rentsmart-front/src/features/spaces/SpaceWizard.tsx` y `form.ts`: el componente en el paso 3 y el requisito "Horario semanal" de la lista, que ahora se marca (archivos de B).
+- `docs/arquitectura.md`.
+
+#### Cómo probarlo
+Con Node 24 y la base de test levantada y migrada. En `rentsmart-back`: `npm run build`, `npm run lint`, `npm test` y `npm run test:e2e`. En `rentsmart-front`: `npm run build`, `npm run lint` y `npm test`. A mano, con el back y el front levantados y la sesión de `propietario@rentsmart.test`: ir a "Publica tu espacio", escribir un nombre, avanzar al paso 3, marcar días, agregar rangos y "Guardar horario"; al recargar, el horario sigue ahí. En Swagger: `PUT /api/spaces/:id/schedule` con `{ "rules": [{ "weekday": 1, "startTime": "09:00", "endTime": "21:00" }] }`.
+
+#### Estado de verificación
+- Build: ✅ back y front
+- Lint: ✅ back y front
+- Tests: back 246 unitarias ✅ · e2e 400 de 401, con 1 fallo que no es de este cambio (abajo) · front 634 tests (48 archivos) ✅
+- **No lo probé a mano en un navegador:** ni a 375 px ni con un lector de pantalla. Lo que hay es el test del componente (teclado, foco y axe) y que usa los componentes base, que ya miden 44 px. Falta mirarlo en el navegador antes de dar por cumplido "funciona a 375 px".
+
+#### Pendientes y bloqueos
+- `test/favorites.e2e-spec.ts`, "guardarlo dos veces a la vez tampoco falla", sigue fallando a veces con 500 (pasó en una corrida completa y falló en otra). Ya estaba anotado en la entrada de F-05; es de BU-08.
+- Carrera sin cubrir: si llegan a la vez "publicar" y un `PUT` con el horario vacío sobre el mismo borrador, el espacio podría quedar `ACTIVE` sin horario, porque `PublicationService` cuenta las reglas antes de cambiar el estado. Es muy improbable (el mismo dueño, en el mismo instante); cerrarla exige tocar el servicio de B.
+- Durante la sesión, otra sesión de trabajo cambió el directorio del repo a `feat/RE-01-estados-reserva` y guardó este trabajo en un stash; se terminó en un worktree aparte (`../inf331-equipo-3-di01`). El stash "DI-01 WIP" quedó sin borrar y ya no hace falta.
+
+#### Para el resto del equipo
+- **B (@xReNatS):** (1) toqué `SpaceWizard.tsx`: el import y el recuadro del paso 3, reemplazado por `{spaceId && <WeeklySchedule spaceId={spaceId} />}`. Tus tests de `PublishSpacePage` siguen pasando. (2) También toqué `form.ts`, a pedido de Gonzalo: `publishChecklist` recibe un tercer parámetro opcional `hasSchedule` (antes el horario estaba fijo en `false`) y en `REQUIREMENTS` el horario va antes de las fotos, así "Al menos una foto" queda al final de "Para publicar necesitas". `SpaceWizard` consulta el horario guardado (`fetchSchedule`) para marcarlo también al abrir un espacio que ya lo tiene, y lo actualiza con `onSaved`. Cambié el test que fijaba el orden y el de "el horario sigue pendiente", y agregué tres en `PublishSpacePage.test.tsx`. No toqué el texto "(se podrá cargar pronto)" del paso de revisión, que dijiste que cambiarías tú y ya quedó desactualizado. (3) El horario se guarda con su propio botón, no con "Siguiente": si prefieres que el formulario avise al avanzar con cambios sin guardar, lo vemos. (4) Uso tu `IncompleteSpaceException` importando `src/spaces/incomplete-space.exception.ts`, sin modificarla; si la mueves o cambias su forma, avísame.
+- **DI-02 (yo, o quien lo tome):** las reglas se leen con `prisma.availabilityRule.findMany({ where: { spaceId } })`. Cada fila es `{ weekday, startTime, endTime }` con `weekday` 0 = domingo y horas `HH:00` en hora de Chile; `endTime` puede ser `24:00` (la medianoche del día siguiente). Están garantizados fin > inicio y que no hay traslapes dentro de un día, pero **puede haber rangos contiguos** y **varios rangos por día**. Para pasar a UTC sirve `santiagoStartOfDay` de `src/common/santiago-time.ts`.
+- **A (@AlejandroMG):** te toca revisar por rotación. No hay cambios en `schema.prisma`.
 
 ---
