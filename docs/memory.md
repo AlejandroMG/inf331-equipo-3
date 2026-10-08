@@ -2166,3 +2166,79 @@ Abrir un PR hacia `main` con este cambio: en "Reviewers" debe aparecer @Alejandr
 - **A (@AlejandroMG):** te toca revisar este PR por rotación.
 
 ---
+
+### 2026-10-07 · C (gonzzza-lol) · RE-01: estados de la reserva y sus transiciones
+
+**Issues:** #38
+**Rama / PR:** `feat/RE-01-estados-reserva` · sin PR todavía
+**Duración aproximada:** 1 h
+**Herramientas:** Claude Code
+
+#### Objetivo
+Construir la máquina de estados de la reserva: el único método por el que pasa todo cambio de `Booking.status`, que valida la transición y deja el historial. No agrega endpoints ni pantalla; es la base de RE-02, PA-02, RE-04, RE-05 y RE-06.
+
+#### Qué se hizo
+- `src/bookings/booking-transitions.ts`: las 7 transiciones válidas como datos (`BOOKING_TRANSITIONS`), más `canTransition` e `isFinalStatus`. Sin dependencias de Nest.
+- `src/bookings/booking-state.service.ts`: `BookingStateService` con `transition` (valida, actualiza el estado y escribe el `BookingEvent` en la misma transacción) y `recordCreation` (evento inicial, de nulo a `PENDING`).
+- `BookingsModule` provee y exporta `BookingStateService`.
+- Tests unitarios de la tabla y del servicio, y un e2e contra la base de test.
+- `docs/arquitectura.md`: firma, reglas y ejemplo de uso junto a la tabla de transiciones.
+
+#### Decisiones y por qué
+| Decisión | Alternativas consideradas | Por qué se eligió |
+|---|---|---|
+| Servicio aparte, `BookingStateService` | Un método más en `BookingsService` | `BookingsService` va a depender de pagos (crear el Checkout en RE-02) y `payments` necesita cambiar estados (PA-02): con un servicio aparte que solo depende de Prisma no hay dependencia circular |
+| Actualizar con `updateManyAndReturn` y `where: { id, status: <origen> }` | Leer y luego `update` por id; `SELECT … FOR UPDATE` | Si otro cambio llegó primero, la condición no calza con ninguna fila y se responde 409. No necesita SQL a mano ni un nivel de aislamiento especial, y devuelve la reserva sin otra consulta |
+| El 409 es una `ConflictException` lanzada antes de escribir | Dejar que falle la base | No aborta la transacción de Postgres: quien llama puede atraparla y seguir (útil para un webhook repetido) |
+| `transition` recibe el id de la reserva, no el objeto | Recibir la reserva ya leída | El estado de origen se lee dentro de la transacción; un objeto leído antes podría venir desactualizado |
+| `recordCreation` no valida nada | Comprobar que la reserva exista y esté `PENDING` | La llama RE-02 justo después de crear la reserva, en la misma transacción; si la reserva no existe, falla la clave foránea |
+| Los 36 pares se prueban tres veces: tabla pura, servicio con Prisma simulado y servicio contra la base | Solo una de las tres | La tabla pura es instantánea y documenta la regla; la de la base comprueba que el estado y el evento realmente quedan (o no) guardados |
+
+#### Archivos principales
+- `rentsmart-back/src/bookings/booking-transitions.ts`: tabla de transiciones.
+- `rentsmart-back/src/bookings/booking-state.service.ts`: `transition` y `recordCreation`.
+- `rentsmart-back/src/bookings/bookings.module.ts`: provee y exporta el servicio.
+- `rentsmart-back/src/bookings/booking-transitions.spec.ts` y `booking-state.service.spec.ts`: unitarios.
+- `rentsmart-back/test/booking-state.e2e-spec.ts`: contra la base de test.
+- `docs/arquitectura.md`: sección "Ciclo de vida de una reserva".
+
+#### Cómo probarlo
+En `rentsmart-back`, con la base de test levantada (`docker compose up -d db-test`): `npm test -- booking` y `npm run test:e2e -- booking-state`.
+
+#### Estado de verificación
+- `npm run build` ✅ · `npm run lint` ✅
+- `npm test`: 21 suites, 308 tests ✅
+- `npm run test:e2e`: 432 de 433 ✅. El de RE-01 (`booking-state.e2e-spec.ts`, 46 tests) pasa completo. Falla 1, que no es de esta rama: `test/favorites.e2e-spec.ts`, "guardarlo dos veces a la vez tampoco falla" (500 por `Favorite_pkey` duplicada), el mismo fallo previo de `main` que quedó anotado en la entrada de F-05.
+- Front: no se tocó.
+
+#### Pendientes y bloqueos
+- El e2e de favoritos sigue fallando en `main` (B, BU-08) y va a dejar el CI en rojo en este PR.
+- Nada en la base impide que otro código haga `booking.update({ data: { status } })` directo; la regla de pasar por `transition` se cuida en la revisión.
+- No se tocó `schema.prisma` ni el contrato de F-05. Reservar, cancelar y vencer siguen en sus historias.
+- DI-01 (#35) sigue sin commitear: sus cambios quedaron en un stash (`DI-01 WIP …`) al crear esta rama desde `main`. Para retomarla: `git switch feat/DI-01-horario-semanal` y `git stash pop`.
+
+#### Para el resto del equipo
+- **Firma** (el módulo que lo use importa `BookingsModule` e inyecta `BookingStateService`):
+  ```ts
+  transition(bookingId: string, to: BookingStatus, change: { actorId: string | null; reason?: string | null }, tx?: Prisma.TransactionClient): Promise<Booking>
+  recordCreation(bookingId: string, change: { actorId: string | null; reason?: string | null }, tx?: Prisma.TransactionClient): Promise<BookingEvent>
+  ```
+  `transition` responde 404 si la reserva no existe y 409 si la transición no vale o si otro cambio simultáneo ganó. `actorId` nulo significa "el sistema". Sin `tx` abre su propia transacción.
+- **RE-02 (crear y limpiar vencidas), PA-02, RE-04, RE-05 y RE-06:** nunca actualicen `Booking.status` a mano. Ejemplo:
+  ```ts
+  await this.prisma.$transaction(async (tx) => {
+    // RE-02: vencer las pendientes del espacio antes de insertar
+    for (const { id } of expired) {
+      await this.bookingState.transition(id, 'EXPIRED', { actorId: null, reason: 'Venció el plazo de pago' }, tx);
+    }
+    const booking = await tx.booking.create({ data: { /* … */ } }); // nace en PENDING
+    await this.bookingState.recordCreation(booking.id, { actorId: userId }, tx);
+  });
+
+  // PA-02, fuera de una transacción propia
+  await this.bookingState.transition(bookingId, 'PAID', { actorId: null, reason: 'Pago recibido' });
+  ```
+- **A (@AlejandroMG):** te toca revisar este PR por rotación. No se tocó `schema.prisma`; `BookingEvent` se usa tal como está.
+- **B (@xReNatS):** el e2e de favoritos de arriba.
+
+---

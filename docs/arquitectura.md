@@ -332,7 +332,34 @@ stateDiagram-v2
 | Confirmada → Finalizada | Tarea programada al terminar el horario | RE-06 |
 | Confirmada → Cancelada | Arrendatario o propietario, según política | RE-05 |
 
-Toda transición pasa por un único método del servicio de reservas que valida el cambio (409 si no es válido) y escribe un `BookingEvent`.
+Toda transición pasa por un único método, `BookingStateService.transition` (RE-01), que valida el cambio y escribe un `BookingEvent`. Nadie más actualiza `Booking.status`.
+
+```ts
+transition(bookingId: string, to: BookingStatus, change: { actorId: string | null; reason?: string | null }, tx?: Prisma.TransactionClient): Promise<Booking>
+recordCreation(bookingId: string, change: { actorId: string | null; reason?: string | null }, tx?: Prisma.TransactionClient): Promise<BookingEvent>
+```
+
+- Las transiciones válidas están como datos en `src/bookings/booking-transitions.ts` (`BOOKING_TRANSITIONS`, `canTransition`, `isFinalStatus`), sin dependencias de Nest. `FINISHED`, `CANCELLED` y `EXPIRED` son finales.
+- `transition` responde 404 si la reserva no existe y 409 si la transición no es válida. En la misma transacción actualiza `Booking.status` y escribe el `BookingEvent` con `fromStatus`, `toStatus`, `actorId` y `reason`. Devuelve la reserva actualizada.
+- `actorId` es nulo cuando el cambio lo hace el sistema (webhook, tarea programada).
+- La actualización está condicionada al estado de origen (`WHERE id = … AND status = <origen>`): de dos cambios simultáneos pasa uno solo y el otro recibe 409, sin evento.
+- `recordCreation` escribe el evento inicial, de nulo a `PENDING`. Lo usa RE-02 al crear la reserva; no valida nada.
+- Sin `tx`, cada método abre su propia transacción. Con `tx`, trabaja dentro de la de quien llama, y si esa transacción se deshace, se deshacen también el cambio de estado y el evento:
+
+```ts
+// BookingsModule exporta BookingStateService; el módulo que lo use importa BookingsModule.
+await this.prisma.$transaction(async (tx) => {
+  const booking = await tx.booking.create({ data: { /* … */ } }); // nace en PENDING
+  await this.bookingState.recordCreation(booking.id, { actorId: userId }, tx);
+});
+
+await this.prisma.$transaction(async (tx) => {
+  await this.bookingState.transition(bookingId, 'PAID', { actorId: null, reason: 'Pago recibido' }, tx);
+  await tx.payment.update({ /* … */ });
+});
+```
+
+El 409 es una `ConflictException` lanzada antes de escribir, no un error de la base: quien llama puede atraparla y seguir usando la misma transacción (por ejemplo, un webhook repetido que encuentra la reserva ya `PAID`).
 
 ### Flujo de pago
 
