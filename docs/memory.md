@@ -2053,3 +2053,70 @@ No aplica: es solo documentación.
 - Quien abra un PR nuevo puede hacer lo mismo si quiere evitar conflictos: dejar su entrada en un PR aparte o en el último en entrar.
 
 ---
+
+### 2026-10-07 · C (gonzzza-lol) · F-05 contrato de disponibilidad, reservas y pagos
+
+**Issues:** #5 (F-05)
+**Rama / PR:** `feat/F-05-contrato-reservas` · sin PR todavía
+**Duración aproximada:** 2 h
+**Herramientas:** Claude Code
+
+#### Objetivo
+Dejar fijado el contrato de la API de `availability`, `bookings` y `payments` (rutas, DTOs, validación de entrada y Swagger) y sus mocks de MSW, para que DI-01, DI-02, RE-02, PA-01 y PA-02 avancen en paralelo sin rehacer las formas. No se implementa lógica de negocio ni Stripe.
+
+#### Qué se hizo
+- **Back:** tres módulos nuevos (`availability`, `bookings`, `payments`), registrados en `AppModule` y visibles en `/docs` bajo "Disponibilidad", "Reservas" y "Pagos". Cada uno tiene controlador, DTOs con `class-validator` y Swagger (respuestas 400, 401, 403, 404 y 409) y un servicio cuyos métodos lanzan `NotImplementedException` (501) hasta que entre su historia.
+- **Endpoints:** `GET /api/spaces/:id/availability`, `GET` y `PUT /api/spaces/:id/schedule`, `POST /api/bookings`, `GET /api/bookings/me`, `GET /api/bookings/:id`, `POST /api/bookings/:id/cancel`, `POST /api/payments/webhook` y `GET /api/payments/me`. La tabla y las reglas están en `docs/arquitectura.md`, sección "Disponibilidad, reservas y pagos (F-05)".
+- **Dos endpoints que no estaban en el plan de la sesión:** `GET /api/spaces/:id/schedule` (el formulario del propietario necesita leer el horario, y `SpaceDto` no lo trae) y `GET /api/payments/me` (`plan.md` lo compromete de C para A, para el panel del arrendatario).
+- **Front:** tipos del contrato en `src/features/bookings/types.ts` y mocks en `src/mocks/bookings-handlers.ts`, sumados a `handlers` y reiniciados desde `resetMockDrafts`. El mock calcula la disponibilidad sobre el horario, responde 409 al reservar un horario tomado y hace avanzar la reserva `PENDING` → `PAID` → `CONFIRMED` con cada consulta.
+- **Pruebas:** `test/booking-contract.e2e-spec.ts` (56 tests: Swagger, 401, 400 y 501 con datos válidos por endpoint) y `src/mocks/bookings-handlers.test.ts` (23 tests).
+- **Documentación:** sección nueva en `arquitectura.md` con los supuestos de P-12, P-13 y P-14, la nota del front, y `STRIPE_SECRET_KEY` y `STRIPE_WEBHOOK_SECRET` en `.env.example` (comentadas: todavía no se leen).
+- La rama local `main` estaba 73 commits atrás; la rama se creó desde `origin/main` actualizado.
+
+#### Decisiones y por qué
+| Decisión | Alternativas consideradas | Por qué se eligió |
+|---|---|---|
+| `from`, `to` y `date` de la disponibilidad son días en hora de Chile (`AAAA-MM-DD`); los bloques van en UTC | Pedir el rango como instantes UTC | El widget elige un día de Chile; con instantes UTC el front tendría que calcular la medianoche de Santiago con el horario de verano. Es lo mismo que ya hace `GET /api/owner/bookings` |
+| La disponibilidad trae `fullDay: { startAt, endAt, available }` por día | Que el front arme el día completo desde `schedule` | P-07: "por día" toma todo el horario del día. Así el front manda de vuelta lo que recibió y no convierte zonas horarias |
+| `startAt` y `endAt` de una reserva se validan en el DTO como horas cerradas en UTC (`...T12:00:00.000Z`) | Aceptar cualquier ISO 8601 y redondear | Chile va a horas enteras de UTC, así que la regla de P-07 se puede exigir en la entrada y un cliente con otra zona o con minutos recibe 400 |
+| `endTime` del horario llega hasta `24:00` | Tope en `23:00` | Una cancha o un salón que cierra a medianoche no se podría publicar entero. `hoursBetween` de `santiago-time.ts` ya lo entiende |
+| `GET /api/bookings/:id` y `/me` son solo del arrendatario | Que también los vea el dueño del espacio | El propietario ya tiene `GET /api/owner/bookings` (B), con el contacto del arrendatario; mezclar las dos vistas complicaría la regla de `addressDetail` |
+| `addressDetail` viene solo en `CONFIRMED` y es `null` en el resto | Omitir el campo | P-09. Un campo que siempre está es más fácil de tipar en el front |
+| El webhook rechaza con 400 en el controlador si falta `stripe-signature` | Dejar todo al servicio | Es validación de entrada, igual que un DTO, y permite probar el 400 del contrato sin Stripe |
+| Los mocks de reservas van en un archivo aparte (`bookings-handlers.ts`) | Agregarlos a `handlers.ts` | `handlers.ts` es de B y ya tiene 460 líneas; así el cambio en su archivo son 4 líneas y no hay conflictos |
+| El mock no depende del reloj: las horas pasadas siguen libres y una pendiente no vence sola | Imitar al back | Los tests usan fechas fijas y no deben empezar a fallar cuando esas fechas pasen |
+| `STRIPE_*` documentadas pero sin validación en `env.validation.ts` | Agregarlas ya como opcionales | Nada las lee todavía; PA-01 y PA-02 deciden si son obligatorias cuando las usen |
+
+No se cambió ninguna decisión de `decisiones.md`. P-12, P-13 y P-14 siguen abiertas: el contrato asume sus recomendaciones y eso quedó escrito como supuesto en `arquitectura.md`.
+
+#### Archivos principales
+- `rentsmart-back/src/availability/`, `src/bookings/` y `src/payments/`: módulo, controlador, servicio (501) y `dto/`.
+- `rentsmart-back/src/app.module.ts`: registra los tres módulos.
+- `rentsmart-back/test/booking-contract.e2e-spec.ts`: e2e del contrato.
+- `rentsmart-back/test/utils/create-test-app.ts`: la app de los e2e se crea con `rawBody: true`, como `main.ts`.
+- `rentsmart-front/src/features/bookings/types.ts`: tipos del contrato.
+- `rentsmart-front/src/mocks/bookings-handlers.ts` y su test; `src/mocks/handlers.ts` los incluye.
+- `docs/arquitectura.md` y `.env.example`.
+
+#### Cómo probarlo
+Con Node 24 y la base de test levantada (`docker compose up -d`) y migrada. En `rentsmart-back`: `npm run build`, `npm run lint`, `npm test` y `npm run test:e2e`. En `rentsmart-front`: `npm run build`, `npm run lint` y `npm test`. A mano: `npm run start:dev` y abrir http://localhost:3000/docs (grupos "Disponibilidad", "Reservas" y "Pagos"; cualquier llamada válida responde 501). En el front, con `VITE_USE_MOCKS=true` y una sesión iniciada, `fetch('/api/spaces/seed-space-1/availability?from=2026-10-12&to=2026-10-18')` desde la consola responde con el mock.
+
+#### Estado de verificación
+- Build: ✅ back y front
+- Lint: ✅ back y front
+- Tests: back 222 unitarias ✅ · e2e 386 de 387 ✅, con 1 fallo que **no es de este cambio** (ver abajo) · front 610 tests (46 archivos) ✅
+- No se levantó la API ni el front a mano: `/docs` se comprobó con el e2e, que lee `/docs-json`.
+
+#### Pendientes y bloqueos
+- **Fallo previo en `main`:** `test/favorites.e2e-spec.ts`, "guardarlo dos veces a la vez tampoco falla", responde 500 en dos de las tres peticiones simultáneas. Falla igual sin los cambios de esta rama (lo probé volviendo `create-test-app.ts` a como estaba). Parece una carrera del `upsert` de `FavoritesService` (B, BU-08).
+- En una de tres corridas completas del front falló 1 test que no alcancé a identificar; las dos siguientes pasaron completas. Queda como intermitente.
+- La lógica: DI-01 (#35), DI-02 (#36), RE-02 (#39), PA-01 (#45) y PA-02 (#46). Cada historia reemplaza su línea de "pendiente de implementar" en `booking-contract.e2e-spec.ts` por sus propios tests.
+- La ruta de retorno desde Stripe quedó como `/bookings/:id/success` (antes `/reservas/:id/exito` en el diagrama, pero las rutas del front están en inglés). La pantalla la crea PA-01.
+- `docs/arquitectura.md` todavía tiene la sección "Autenticación temporal", que habla de `DevAuthGuard`: ya no existe. No la toqué porque no es de mi dominio.
+
+#### Para el resto del equipo
+- **B (@xReNatS):** (1) `availability` cuelga tres rutas de `/api/spaces/:id` (`/availability` y `/schedule`), que es tu prefijo; el controlador está en mi módulo y no toca los tuyos. (2) `PUT /api/spaces/:id/schedule` responderá 409 con `missing: ["schedule"]` si deja sin horario a un espacio publicado, para respetar tu regla de ES-04; avísame si prefieres otra forma. (3) Agregué 4 líneas a `src/mocks/handlers.ts` (import, `...bookingHandlers` y `resetMockBookings()` dentro de `resetMockDrafts`). (4) `BookingWidget` usará el `id` y el `schedule` que ya trae `GET /api/catalog/:id` y reemplazará a `BookingSlot`. (5) `BookingStatus` quedó definido dos veces, en `features/owner/types.ts` y en `features/bookings/types.ts`; son iguales, se puede unificar después. (6) El e2e de favoritos de arriba.
+- **A (@AlejandroMG):** (1) te toca revisar este PR por rotación. (2) Los endpoints privados usan `JwtAuthGuard` y `@CurrentUser()` tal como los dejaste. (3) Para PN-03 ya tienes la forma de `GET /api/bookings/me` y `GET /api/payments/me` y sus mocks. (4) No se tocó `schema.prisma`: el contrato sale con los campos que ya existen. El webhook idempotente va a necesitar guardar el id del evento de Stripe, y hoy no hay dónde: lo vemos en PA-02. (5) `create-test-app.ts` ahora crea la app con `rawBody: true`.
+- **Todos:** P-12 y P-13 siguen abiertas y vencían el 3 de octubre. El contrato asume 10 % sumado al arrendatario y Stripe sin Connect; si se decide otra cosa, hay que registrarlo en `decisiones.md` antes de RE-02.
+
+---

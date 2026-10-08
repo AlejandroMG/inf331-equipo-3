@@ -4,6 +4,7 @@ import type { OwnerSpaceSummary } from '../features/owner/types'
 import type { MissingField } from '../features/spaces/form'
 import type { OwnerPhoto, OwnerSpace, SpacePayload } from '../features/spaces/types'
 import type { AdminSpace, AdminSpaceType } from '../features/moderation/types'
+import { bookingHandlers, resetMockBookings } from './bookings-handlers'
 import { catalogData } from './catalog-data'
 
 /** Zona aproximada de ejemplo: el centro de cada comuna, con el radio que usa el back. */
@@ -88,6 +89,7 @@ export function resetMockDrafts() {
   resetMockAdmin()
   favoriteIds.length = 0
   photoCounter = 0
+  resetMockBookings()
 }
 
 function ownerSpace(id: string, payload: SpacePayload, previous?: OwnerSpace): OwnerSpace {
@@ -192,6 +194,9 @@ function filterCatalog(params: URLSearchParams) {
  * Cada dominio agrega aquí los handlers de sus endpoints, con la forma que quedó en el contrato (F-05).
  */
 export const handlers = [
+  // F-05: disponibilidad, reservas y pagos (equipo de reservas), en bookings-handlers.ts.
+  ...bookingHandlers,
+
   // ES-01: tipos de espacio (los 8 del seed).
   http.get('*/api/space-types', () => HttpResponse.json(SPACE_TYPES)),
 
