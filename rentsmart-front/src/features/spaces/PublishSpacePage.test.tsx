@@ -3,7 +3,8 @@ import userEvent from '@testing-library/user-event'
 import { http as mswHttp, HttpResponse } from 'msw'
 import { act } from 'react'
 import { createMemoryRouter, RouterProvider } from 'react-router'
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { clearToken, setToken } from '../../lib/token'
 import { server } from '../../mocks/server'
 import { PublishSpacePage } from './PublishSpacePage'
 
@@ -156,6 +157,68 @@ describe('PublishSpacePage', () => {
     expect(item('Descripción')).toHaveTextContent('Listo')
     expect(item('Precio por hora o por día')).toHaveTextContent('Pendiente')
     expect(item('Al menos una foto')).toHaveTextContent('Pendiente')
+  })
+
+  describe('horario semanal en "Para publicar necesitas"', () => {
+    // El horario simulado pide sesión, igual que el real.
+    beforeEach(() => setToken('mock-token'))
+    afterEach(() => clearToken())
+
+    const labels = () =>
+      within(screen.getByRole('complementary', { name: 'Estado del borrador' })).getAllByRole('listitem').map((li) => li.textContent)
+    const schedule = () =>
+      within(screen.getByRole('complementary', { name: 'Estado del borrador' })).getByText('Horario semanal').closest('li')
+
+    it('va antes de las fotos, que quedan al final', async () => {
+      await openForm()
+
+      expect(labels().slice(-2)).toEqual(['Horario semanalPendiente', 'Al menos una fotoPendiente'])
+    })
+
+    it('se marca al guardar el horario y vuelve a pendiente si se guarda vacío', async () => {
+      await openForm()
+      await userEvent.type(screen.getByLabelText('Nombre del espacio'), 'Sala Alameda')
+      await userEvent.click(screen.getByRole('button', { name: /Precio y horario/ }))
+      await screen.findByRole('button', { name: 'Guardar horario' })
+      expect(schedule()).toHaveTextContent('Pendiente')
+
+      // Marcar el día no basta: cuenta lo guardado.
+      await userEvent.click(screen.getByRole('checkbox', { name: /Lunes/ }))
+      expect(schedule()).toHaveTextContent('Pendiente')
+      await userEvent.click(screen.getByRole('button', { name: 'Guardar horario' }))
+      await screen.findByText('Horario guardado.')
+      expect(schedule()).toHaveTextContent('Listo')
+
+      // Sigue marcado en los otros pasos.
+      await userEvent.click(screen.getByRole('button', { name: /Fotos/ }))
+      await screen.findByText('Paso 4 de 5 · Fotos')
+      expect(schedule()).toHaveTextContent('Listo')
+
+      await userEvent.click(screen.getByRole('button', { name: /Precio y horario/ }))
+      await userEvent.click(await screen.findByRole('checkbox', { name: /Lunes/ }))
+      await userEvent.click(screen.getByRole('button', { name: 'Guardar horario' }))
+      await screen.findByText('Horario guardado.')
+      expect(schedule()).toHaveTextContent('Pendiente')
+    })
+
+    it('al abrir un espacio que ya tiene horario aparece marcado desde el primer paso', async () => {
+      server.use(
+        mswHttp.get('*/api/spaces/draft-9', () =>
+          HttpResponse.json({
+            id: 'draft-9', status: 'DRAFT', name: 'Mi borrador', typeId: 2, description: 'Texto', capacity: 6,
+            pricePerHour: 7000, pricePerDay: null, regionId: 1, communeId: 3, address: 'Calle 1', addressDetail: null,
+            rules: null, amenityIds: [2], photos: [], createdAt: '2026-10-05T00:00:00.000Z', updatedAt: '2026-10-05T00:00:00.000Z',
+          }),
+        ),
+        mswHttp.get('*/api/spaces/draft-9/schedule', () =>
+          HttpResponse.json({ rules: [{ weekday: 1, startTime: '09:00', endTime: '18:00' }] }),
+        ),
+      )
+      await openForm('/publish/draft-9')
+
+      await waitFor(() => expect(schedule()).toHaveTextContent('Listo'))
+      expect(screen.getByText('Paso 1 de 5 · Información')).toBeInTheDocument()
+    })
   })
 
   it('el último paso resume el borrador y ofrece publicarlo', async () => {

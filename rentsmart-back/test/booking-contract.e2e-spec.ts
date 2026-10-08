@@ -6,7 +6,8 @@ import { bearer } from './utils/auth';
 import { createTestApp } from './utils/create-test-app';
 
 // F-05: el contrato de disponibilidad, reservas y pagos. Comprueba la forma (Swagger, 400 y 401), no la lógica:
-// cada historia (DI-01, DI-02, RE-02, PA-01, PA-02) reemplaza su 501 por sus propios tests.
+// cada historia (DI-02, RE-02, PA-01, PA-02) reemplaza su 501 por sus propios tests. El horario semanal (DI-01) ya
+// está implementado: sus e2e están en schedule.e2e-spec.ts.
 const SUFFIX = `e2e-f05-${Date.now()}`;
 const SPACE = 'un-espacio';
 const BOOKING = 'una-reserva';
@@ -16,12 +17,6 @@ const VALID_BOOKING = {
   startAt: '2026-10-12T12:00:00.000Z',
   endAt: '2026-10-12T14:00:00.000Z',
   unit: 'HOUR',
-};
-const VALID_SCHEDULE = {
-  rules: [
-    { weekday: 1, startTime: '09:00', endTime: '13:00' },
-    { weekday: 1, startTime: '15:00', endTime: '24:00' },
-  ],
 };
 
 interface SwaggerDoc {
@@ -183,9 +178,6 @@ describe('Contrato de disponibilidad, reservas y pagos (e2e)', () => {
   describe('pendiente de implementar', () => {
     it.each([
       ['get', `/api/spaces/${SPACE}/availability?from=2026-10-12&to=2026-10-18`, undefined],
-      ['get', `/api/spaces/${SPACE}/schedule`, undefined],
-      ['put', `/api/spaces/${SPACE}/schedule`, VALID_SCHEDULE],
-      ['put', `/api/spaces/${SPACE}/schedule`, { rules: [] }],
       ['post', '/api/bookings', VALID_BOOKING],
       ['post', '/api/bookings', { ...VALID_BOOKING, startAt: '2026-10-12T12:00:00Z', unit: 'DAY' }],
       ['get', '/api/bookings/me', undefined],
