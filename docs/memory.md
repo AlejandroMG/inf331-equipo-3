@@ -2167,6 +2167,19 @@ Abrir un PR hacia `main` con este cambio: en "Reviewers" debe aparecer @Alejandr
 
 ---
 
+### 2026-10-08 · C (gonzzza-lol) · Arreglar la carrera al guardar un favorito (CI en rojo)
+
+**Issues:** sin issue (fallo previo de `main`, anotado en la entrada de F-05)
+**Rama / PR:** `fix/BU-08-favoritos-concurrencia` · sin PR todavía
+**Duración aproximada:** 20 min
+**Herramientas:** Claude Code
+
+#### Objetivo
+Dejar el CI en verde: el e2e "guardarlo dos veces a la vez tampoco falla" de favoritos fallaba en `main` y bloqueaba cualquier PR.
+
+#### Qué se hizo
+- `FavoritesService.add` guarda con `createMany({ skipDuplicates: true })` en vez de `upsert`.
+- El test unitario de `add` espera la llamada nueva.
 ### 2026-10-07 · C (gonzzza-lol) · DI-01 horario semanal del espacio
 
 **Issues:** #35 (DI-01)
@@ -2188,6 +2201,27 @@ Que el propietario pueda definir en qué días y horas se arrienda su espacio: i
 #### Decisiones y por qué
 | Decisión | Alternativas consideradas | Por qué se eligió |
 |---|---|---|
+| `createMany` con `skipDuplicates` | Atrapar el error `P2002` del `upsert`; relajar el test | Se traduce a `INSERT … ON CONFLICT DO NOTHING`, que es atómico en la base. El `upsert` de Prisma hacía un `SELECT` y luego un `INSERT`: con tres peticiones a la vez, dos chocaban con `Favorite_pkey` y respondían 500. El test estaba bien; el error era del servicio |
+| Rama corta propia desde `main` | Commitearlo en la rama de RE-01, que fue donde apareció | El arreglo es de `catalog` y no tiene que esperar la revisión de RE-01: fusionado solo, deja en verde el CI de todos los PR abiertos |
+
+#### Archivos principales
+- `rentsmart-back/src/catalog/favorites.service.ts`: `add` inserta ignorando duplicados.
+- `rentsmart-back/src/catalog/favorites.service.spec.ts`: el mock y las aserciones usan `createMany`.
+
+#### Cómo probarlo
+En `rentsmart-back`: `npm run test:e2e -- favorites`, varias veces seguidas (era una carrera).
+
+#### Estado de verificación
+- `npm run build` ✅ · `npm run lint` ✅
+- `npm run test:cov`: 21 suites, 308 tests ✅
+- `npm run test:e2e`: 19 suites, 433 tests ✅. El e2e de favoritos se corrió 5 veces seguidas y pasó las 5.
+- Front: no se tocó. El CI no se ha ejecutado en GitHub todavía.
+
+#### Pendientes y bloqueos
+- El tope de 200 favoritos se sigue comprobando antes de insertar, sin bloqueo: dos peticiones simultáneas con 199 guardados podrían dejar 201. No lo cambié; no afecta al CI.
+
+#### Para el resto del equipo
+- **B (@xReNatS):** toqué `src/catalog/favorites.service.ts` y su spec, que son de tu dominio, porque el fallo dejaba en rojo el CI de todos. El comportamiento no cambia: guardar sigue siendo idempotente y responde 204. Te pido revisar este PR aunque la rotación le toque a A.
 | `PUT` borra todas las reglas y las vuelve a crear en una transacción | Comparar y actualizar solo lo que cambió | El contrato es "reemplaza el horario completo" y son a lo más 50 filas; nada más apunta a una `AvailabilityRule` por su id |
 | Los rangos contiguos se guardan tal como llegan, sin unirlos | Unir 09:00–13:00 y 13:00–18:00 en uno | El propietario vuelve a ver lo que escribió. DI-02 debe tratar dos rangos contiguos como horas seguidas |
 | Solo un espacio `ACTIVE` no puede quedar sin horario | Exigirlo también en `INACTIVE` o `BLOCKED` | Es la regla de B: activar ya vuelve a comprobar que esté completo, así que un desactivado puede quedar incompleto |

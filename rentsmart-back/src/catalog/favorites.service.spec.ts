@@ -14,7 +14,7 @@ describe('FavoritesService', () => {
       findMany: jest.fn(),
       findUnique: jest.fn(),
       count: jest.fn(),
-      upsert: jest.fn(),
+      createMany: jest.fn(),
       deleteMany: jest.fn(),
     },
   };
@@ -133,10 +133,9 @@ describe('FavoritesService', () => {
         where: { id: 's1', status: 'ACTIVE' },
         select: { id: true },
       });
-      expect(prisma.favorite.upsert).toHaveBeenCalledWith({
-        where: { userId_spaceId: { userId: 'u1', spaceId: 's1' } },
-        create: { userId: 'u1', spaceId: 's1' },
-        update: {},
+      expect(prisma.favorite.createMany).toHaveBeenCalledWith({
+        data: [{ userId: 'u1', spaceId: 's1' }],
+        skipDuplicates: true,
       });
     });
 
@@ -146,7 +145,7 @@ describe('FavoritesService', () => {
       await expect(service.add('u1', 'nope')).rejects.toThrow(
         NotFoundException,
       );
-      expect(prisma.favorite.upsert).not.toHaveBeenCalled();
+      expect(prisma.favorite.createMany).not.toHaveBeenCalled();
     });
 
     it('guardar uno que ya es favorito no hace nada, ni siquiera con el tope lleno', async () => {
@@ -155,7 +154,7 @@ describe('FavoritesService', () => {
       prisma.favorite.count.mockResolvedValue(MAX_FAVORITES);
 
       await expect(service.add('u1', 's1')).resolves.toBeUndefined();
-      expect(prisma.favorite.upsert).not.toHaveBeenCalled();
+      expect(prisma.favorite.createMany).not.toHaveBeenCalled();
     });
 
     it('con el tope de favoritos lleno responde 409', async () => {
@@ -166,7 +165,7 @@ describe('FavoritesService', () => {
       await expect(service.add('u1', 's1')).rejects.toThrow(
         ConflictException,
       );
-      expect(prisma.favorite.upsert).not.toHaveBeenCalled();
+      expect(prisma.favorite.createMany).not.toHaveBeenCalled();
     });
 
     it('con un favorito menos que el tope todavía deja guardar', async () => {
@@ -176,7 +175,7 @@ describe('FavoritesService', () => {
 
       await service.add('u1', 's1');
 
-      expect(prisma.favorite.upsert).toHaveBeenCalled();
+      expect(prisma.favorite.createMany).toHaveBeenCalled();
     });
   });
 

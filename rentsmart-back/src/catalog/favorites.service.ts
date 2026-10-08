@@ -72,11 +72,11 @@ export class FavoritesService {
         `Llegaste al máximo de ${MAX_FAVORITES} favoritos: quita alguno para guardar otro`,
       );
     }
-    // upsert y no create: dos peticiones a la vez no deben fallar por la clave repetida.
-    await this.prisma.favorite.upsert({
-      where: key,
-      create: { userId, spaceId },
-      update: {},
+    // INSERT … ON CONFLICT DO NOTHING: dos peticiones a la vez no deben fallar por la clave repetida.
+    // Con upsert no basta: Prisma lo resuelve con un SELECT y un INSERT, y la segunda petición choca con la clave.
+    await this.prisma.favorite.createMany({
+      data: [{ userId, spaceId }],
+      skipDuplicates: true,
     });
   }
 
