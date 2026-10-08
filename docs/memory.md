@@ -2204,7 +2204,7 @@ No se cambió ninguna decisión de `decisiones.md` ni `schema.prisma`.
 - `rentsmart-back/src/availability/availability.service.spec.ts` y `test/schedule.e2e-spec.ts`: pruebas.
 - `rentsmart-back/test/booking-contract.e2e-spec.ts`: sin las líneas de 501 del horario.
 - `rentsmart-front/src/features/bookings/WeeklySchedule.tsx`, `schedule-form.ts`, `schedule-api.ts` y sus tests.
-- `rentsmart-front/src/features/spaces/SpaceWizard.tsx`: el componente en el paso 3 (archivo de B).
+- `rentsmart-front/src/features/spaces/SpaceWizard.tsx` y `form.ts`: el componente en el paso 3 y el requisito "Horario semanal" de la lista, que ahora se marca (archivos de B).
 - `docs/arquitectura.md`.
 
 #### Cómo probarlo
@@ -2213,7 +2213,7 @@ Con Node 24 y la base de test levantada y migrada. En `rentsmart-back`: `npm run
 #### Estado de verificación
 - Build: ✅ back y front
 - Lint: ✅ back y front
-- Tests: back 246 unitarias ✅ · e2e 400 de 401, con 1 fallo que no es de este cambio (abajo) · front 631 tests (48 archivos) ✅
+- Tests: back 246 unitarias ✅ · e2e 400 de 401, con 1 fallo que no es de este cambio (abajo) · front 634 tests (48 archivos) ✅
 - **No lo probé a mano en un navegador:** ni a 375 px ni con un lector de pantalla. Lo que hay es el test del componente (teclado, foco y axe) y que usa los componentes base, que ya miden 44 px. Falta mirarlo en el navegador antes de dar por cumplido "funciona a 375 px".
 
 #### Pendientes y bloqueos
@@ -2222,7 +2222,7 @@ Con Node 24 y la base de test levantada y migrada. En `rentsmart-back`: `npm run
 - Durante la sesión, otra sesión de trabajo cambió el directorio del repo a `feat/RE-01-estados-reserva` y guardó este trabajo en un stash; se terminó en un worktree aparte (`../inf331-equipo-3-di01`). El stash "DI-01 WIP" quedó sin borrar y ya no hace falta.
 
 #### Para el resto del equipo
-- **B (@xReNatS):** (1) toqué `SpaceWizard.tsx`: el import y el recuadro del paso 3, reemplazado por `{spaceId && <WeeklySchedule spaceId={spaceId} />}`. Tus tests de `PublishSpacePage` siguen pasando. (2) No toqué lo que dijiste que cambiarías tú: el texto "(se podrá cargar pronto)" del paso de revisión y `schedule: false` en `publishChecklist` (`form.ts`), que deja el horario siempre pendiente en "Para publicar necesitas". El componente acepta `onSaved={(schedule) => ...}` por si quieres marcarlo cumplido cuando `schedule.rules.length > 0`. (3) El horario se guarda con su propio botón, no con "Siguiente": si prefieres que el formulario avise al avanzar con cambios sin guardar, lo vemos. (4) Uso tu `IncompleteSpaceException` importando `src/spaces/incomplete-space.exception.ts`, sin modificarla; si la mueves o cambias su forma, avísame.
+- **B (@xReNatS):** (1) toqué `SpaceWizard.tsx`: el import y el recuadro del paso 3, reemplazado por `{spaceId && <WeeklySchedule spaceId={spaceId} />}`. Tus tests de `PublishSpacePage` siguen pasando. (2) También toqué `form.ts`, a pedido de Gonzalo: `publishChecklist` recibe un tercer parámetro opcional `hasSchedule` (antes el horario estaba fijo en `false`) y en `REQUIREMENTS` el horario va antes de las fotos, así "Al menos una foto" queda al final de "Para publicar necesitas". `SpaceWizard` consulta el horario guardado (`fetchSchedule`) para marcarlo también al abrir un espacio que ya lo tiene, y lo actualiza con `onSaved`. Cambié el test que fijaba el orden y el de "el horario sigue pendiente", y agregué tres en `PublishSpacePage.test.tsx`. No toqué el texto "(se podrá cargar pronto)" del paso de revisión, que dijiste que cambiarías tú y ya quedó desactualizado. (3) El horario se guarda con su propio botón, no con "Siguiente": si prefieres que el formulario avise al avanzar con cambios sin guardar, lo vemos. (4) Uso tu `IncompleteSpaceException` importando `src/spaces/incomplete-space.exception.ts`, sin modificarla; si la mueves o cambias su forma, avísame.
 - **DI-02 (yo, o quien lo tome):** las reglas se leen con `prisma.availabilityRule.findMany({ where: { spaceId } })`. Cada fila es `{ weekday, startTime, endTime }` con `weekday` 0 = domingo y horas `HH:00` en hora de Chile; `endTime` puede ser `24:00` (la medianoche del día siguiente). Están garantizados fin > inicio y que no hay traslapes dentro de un día, pero **puede haber rangos contiguos** y **varios rangos por día**. Para pasar a UTC sirve `santiagoStartOfDay` de `src/common/santiago-time.ts`.
 - **A (@AlejandroMG):** te toca revisar por rotación. No hay cambios en `schema.prisma`.
 

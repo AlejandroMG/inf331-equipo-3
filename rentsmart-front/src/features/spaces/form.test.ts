@@ -225,8 +225,11 @@ describe('publishChecklist', () => {
     expect(done(filled, 10)['Al menos una foto']).toBe(true)
   })
 
-  it('el horario sigue pendiente hasta que se pueda cargar (DI-01)', () => {
-    expect(done(filled, 3)['Horario semanal']).toBe(false)
+  it('el horario cuenta cuando el espacio tiene uno guardado (DI-01)', () => {
+    const schedule = (has?: boolean) => publishChecklist(filled, 3, has).find((i) => i.code === 'schedule')?.done
+    expect(schedule()).toBe(false)
+    expect(schedule(false)).toBe(false)
+    expect(schedule(true)).toBe(true)
   })
 })
 
@@ -235,7 +238,7 @@ describe('publishChecklist: tipo y comuna (P-18)', () => {
 
   it('incluye todos los requisitos en el orden del formulario', () => {
     expect(publishChecklist(emptyForm, 0).map((i) => i.code)).toEqual([
-      'type', 'description', 'capacity', 'commune', 'price', 'photos', 'schedule',
+      'type', 'description', 'capacity', 'commune', 'price', 'schedule', 'photos',
     ])
   })
 
