@@ -197,6 +197,39 @@ Requieren sesión y ser el dueño (403 si es de otro, 404 si no existe).
 
 Hasta que A entregue el login (CU-03), los endpoints protegidos usan `DevAuthGuard` (`src/common/auth/`): toma al usuario del encabezado `x-user-id` o, sin él, del propietario del seed (`propietario@rentsmart.test`), y deja `request.user` con la forma `{ id, role }` que dejará el guard real. `@CurrentUser()` entrega ese usuario. Para pasar a JWT basta reemplazar `DevAuthGuard` por `JwtAuthGuard` en cada `@UseGuards`. **Nunca funciona con `NODE_ENV=production`.**
 
+### Disponibilidad, reservas y pagos (F-05)
+
+Módulos `availability`, `bookings` y `payments` (C). **Es el contrato, todavía sin lógica:** las rutas, los DTOs y la validación de entrada existen y están en Swagger, pero los servicios responden `501` hasta que entre la historia de cada uno. El front trabaja mientras tanto contra los mocks de MSW (`src/mocks/bookings-handlers.ts`), que tienen las mismas formas y códigos. Los campos de cada DTO están en `/docs`; aquí va lo que Swagger no cuenta.
+
+| Endpoint | Sesión | Qué hace | Historia |
+|---|---|---|---|
+| `GET /api/spaces/:id/availability?from=&to=` | No | Bloques libres de una hora por cada día pedido: `{ spaceId, timeZone, days: [{ date, slots: [{ startAt, endAt }], fullDay }] }`. 400 si falta una fecha, no es `AAAA-MM-DD`, `from` es posterior a `to` o se piden más de 31 días; 404 si el espacio no existe o no está activo | DI-02 |
+| `GET /api/spaces/:id/schedule` | Sí, el dueño | El horario semanal de un espacio propio, también de un borrador: `{ rules: [{ weekday, startTime, endTime }] }` | DI-01 |
+| `PUT /api/spaces/:id/schedule` | Sí, el dueño | Reemplaza el horario completo con `{ rules }` y lo devuelve ordenado. 400 si un día u hora no vale, el fin no es posterior al inicio o dos rangos del mismo día se traslapan; 409 con `missing: ["schedule"]` si dejaría sin horario a un espacio publicado | DI-01 |
+| `POST /api/bookings` | Sí | `{ spaceId, startAt, endAt, unit }` → `201 { bookingId, checkoutUrl }`. Crea la reserva `PENDING` (retiene el horario 30 min) y la sesión de Stripe Checkout. 400 si las fechas no valen o el espacio no se arrienda en esa unidad; 404 si el espacio no existe o no está activo; 409 si el horario está fuera del horario semanal o ya está ocupado | RE-02, PA-01 |
+| `GET /api/bookings/me?page=&pageSize=` | Sí | Mis reservas como arrendatario, de cualquier estado, las más recientes primero: `{ items, total, page, pageSize }`. `page` ≥ 1, `pageSize` de 1 a 50 (20 por defecto) | RE-02 |
+| `GET /api/bookings/:id` | Sí, el arrendatario | Una reserva: `{ id, status, unit, startAt, endAt, subtotal, fee, total, expiresAt, createdAt, space }`. 403 si es de otro usuario | RE-02 |
+| `POST /api/bookings/:id/cancel` | Sí, el arrendatario | Cancela y devuelve la reserva. 409 si ya no se puede cancelar. **Fuera del MVP**: depende de [P-14](https://github.com/AlejandroMG/inf331-equipo-3/issues/81) | RE-05 |
+| `POST /api/payments/webhook` | No (firma de Stripe) | Recibe los eventos de Stripe y responde `200 { received: true }`. 400 si falta el encabezado `stripe-signature` o la firma no corresponde al cuerpo | PA-02 |
+| `GET /api/payments/me?page=&pageSize=` | Sí | Mis pagos como arrendatario: `{ items: [{ id, bookingId, spaceName, amount, fee, refundedAmount, status, createdAt }], total, page, pageSize }` | PA-01 |
+
+- **Días en Chile, instantes en UTC.** `from`, `to` y `date` son días del calendario en `America/Santiago` (`AAAA-MM-DD`); `startAt` y `endAt` son instantes UTC. El front no convierte zonas para reservar: manda de vuelta el `startAt` y el `endAt` que recibió en la disponibilidad.
+- **Horas cerradas (P-07).** `startAt` y `endAt` de una reserva deben ser horas cerradas en UTC (`2026-10-12T12:00:00.000Z`; otro desfase o minutos dan 400). Chile siempre va a horas enteras de UTC, así que una hora cerrada allá también lo es acá.
+- **Reservar por día.** `fullDay` es `{ startAt, endAt, available }`: va del primer inicio al último fin del horario de ese día (aunque tenga una pausa al medio) y es `null` si ese día no se arrienda. Para reservar el día se manda `unit: "DAY"` con exactamente ese `startAt` y ese `endAt`; se cobra el precio por día. Con `unit: "HOUR"` se cobra el precio por hora por cada bloque.
+- **Un bloque está libre** si está dentro del horario semanal, no ha pasado y no lo cubre una reserva `PENDING` no vencida, `PAID` o `CONFIRMED` (P-06).
+- **Horario semanal:** `weekday` de 0 (domingo) a 6, y horas cerradas en hora de Chile: `startTime` de `00:00` a `23:00` y `endTime` de `01:00` a `24:00`. Un día puede tener varios rangos y los días que no aparecen no se arriendan. Es el mismo `schedule` que muestra `GET /api/catalog/:id`. Cambiarlo no toca las reservas que ya existen.
+- **Desglose:** `subtotal` es el precio del espacio, `fee` la comisión y `total = subtotal + fee` lo que paga el arrendatario. Todo en CLP enteros, calculado en el servidor: el cliente nunca manda montos (un campo de más da 400).
+- **Detalle de la dirección (P-09):** `space` es `{ id, name, communeName, address, addressDetail, coverUrl }` y `addressDetail` solo viene en una reserva `CONFIRMED`; en cualquier otro estado es `null`.
+- **Después de pagar**, Stripe devuelve al arrendatario al front, que consulta `GET /api/bookings/:id` hasta verla `CONFIRMED` (pasa por `PAID`; ver [Flujo de pago](#flujo-de-pago)).
+- **Webhook:** no usa sesión; lo que lo autentica es la firma. Es idempotente: un evento repetido, o de un tipo que no interesa, responde 200 sin hacer nada. Necesita el cuerpo sin interpretar (`rawBody: true`, también en la app de los e2e: `test/utils/create-test-app.ts`).
+- **Quién ve qué:** estos endpoints son la vista del arrendatario. El propietario ve las reservas de sus espacios en `GET /api/owner/bookings` ([Panel del propietario](#panel-del-propietario-pn-02-pn-04), de B).
+
+**Supuestos mientras las decisiones sigan abiertas** (si el equipo las cierra distinto, se registra en `decisiones.md` y se ajusta el contrato):
+
+- [P-13](https://github.com/AlejandroMG/inf331-equipo-3/issues/80), comisión: se asume la recomendación, **10 % sumado al arrendatario** y visible en el desglose. El contrato no fija el porcentaje, solo que `fee` existe y que `total = subtotal + fee`; el mock usa 10 %.
+- [P-12](https://github.com/AlejandroMG/inf331-equipo-3/issues/79), Stripe: se asume **Checkout en modo test, sin Connect**. La plataforma cobra el total y registra la comisión en `Payment.fee`; no hay traspaso al propietario. Por eso el contrato no tiene nada de cuentas conectadas.
+- [P-14](https://github.com/AlejandroMG/inf331-equipo-3/issues/81), cancelación: `POST /api/bookings/:id/cancel` no define plazos ni montos de reembolso.
+
 ## Frontend
 
 ```
@@ -228,6 +261,7 @@ rentsmart-front/src/
 - Favoritos (BU-08): `FavoritesProvider` (en `App.tsx`) guarda en un contexto los ids de los favoritos de la sesión (`GET /api/favorites/ids`, solo con sesión) y se olvida de ellos al cerrarla; `FavoriteButton` es el corazón de las tarjetas y el botón "Guardar en favoritos" del detalle. Marcar o desmarcar se ve al instante y se deshace, con un aviso, si el servidor lo rechaza. Sin sesión, el corazón lleva a iniciarla y regresa a la pantalla. "Mis favoritos" (`/favorites`, privada) lista las tarjetas con `GET /api/favorites`. El corazón no puede ir dentro del enlace de la tarjeta (un botón dentro de un enlace no es HTML válido): es su hermano, encima de la foto. Sin `FavoritesProvider` (por ejemplo, en la prueba de una tarjeta suelta) nada aparece guardado.
 - Búsquedas recientes (BU-07): el catálogo guarda en este navegador (`localStorage`, clave `rentsmart_recent_searches`) las últimas 6 búsquedas con filtros que dieron resultados y se quedaron 3 segundos en pantalla, para repetirlas desde "Búsquedas recientes" bajo el buscador. Cada una es la URL de sus filtros, sin el orden ni la página, y no se repite. No viaja al servidor ni cruza dispositivos, y se lee validada: lo que no se entiende se descarta. La lógica está en `src/features/catalog/search-history.ts`.
 - Mapas (ES-07): Leaflet con react-leaflet y las teselas de OpenStreetMap (`src/features/map/`). `LazyMaps.tsx` los carga bajo demanda (Leaflet pesa ~45 kB comprimido y queda fuera del resto de la aplicación) y los envuelve en un `ErrorBoundary`: si no cargan, el resto de la pantalla sigue. `LocationMap` dibuja el círculo del detalle público y `LocationPicker`, el mapa donde el propietario marca el punto; este último es solo una ayuda, porque las mismas coordenadas se escriben en los campos de latitud y longitud (la forma de hacerlo con teclado). Las teselas públicas de OSM tienen una [política de uso razonable](https://operations.osmfoundation.org/policies/tiles/): sirven para el MVP, y con tráfico real hay que cambiar `TILE_URL` (`map-config.ts`) por un proveedor propio. El contrato de `location` y de `latitude` y `longitude` está en [Catálogo público](#catálogo-público-bu-01-bu-02-bu-03) y [Espacios del propietario](#espacios-del-propietario-es-02).
+- Reservas y pagos (F-05): los tipos del contrato están en `src/features/bookings/types.ts` y sus mocks en `src/mocks/bookings-handlers.ts` (se suman a `handlers.ts` y se reinician con `resetMockDrafts`). El mock calcula la disponibilidad de verdad sobre el horario (lunes a viernes de 09:00 a 21:00 en los espacios del catálogo, o el que se guarde con `PUT .../schedule`), responde 409 al reservar un horario tomado y tiene un bloque siempre ocupado, los miércoles de 13:00 a 14:00. Una reserva nueva avanza sola con cada `GET /api/bookings/:id`: la primera consulta la ve `PENDING`, la segunda `PAID` y la tercera `CONFIRMED`. Piden un encabezado `Authorization` cualquiera (401 sin él), salvo la disponibilidad. A propósito, para no depender del reloj: las horas pasadas siguen libres y una pendiente no vence sola.
 - Mientras A no entregue el login (CU-02), para entrar a una ruta privada en local: `localStorage.setItem('rentsmart_token', 'dev')` en la consola del navegador.
 
 ## Modelo de datos
@@ -319,7 +353,7 @@ sequenceDiagram
     S->>A: Webhook checkout.session.completed
     A->>DB: PENDING → PAID, guarda Payment
     A->>DB: Valida espacio y horario → CONFIRMED
-    S-->>F: Redirige a /reservas/:id/exito
+    S-->>F: Redirige a /bookings/:id/success
     F->>A: GET /api/bookings/:id (consulta hasta ver CONFIRMED)
 ```
 
@@ -395,7 +429,8 @@ Solo `PORT`, `VITE_API_URL` y `VITE_USE_MOCKS` existen hoy. Las demás se agrega
 | `STORAGE_DRIVER` | back | `local` (por defecto) o `supabase`: dónde se guardan las fotos | ES-03 |
 | `UPLOADS_DIR` | back | Carpeta de las fotos con `local` (`./uploads` por defecto) | ES-03 |
 | `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_BUCKET` | back | Subida de fotos; obligatorias con `STORAGE_DRIVER=supabase` | ES-03 |
-| `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` | back | Checkout y verificación del webhook | PA-01, PA-02 |
+| `STRIPE_SECRET_KEY` | back | Clave secreta de Stripe en modo test (`sk_test_...`), para crear la sesión de Checkout y los reembolsos. Documentada en F-05; todavía no se lee | PA-01 |
+| `STRIPE_WEBHOOK_SECRET` | back | Secreto con que se verifica la firma del webhook (`whsec_...`). En local lo entrega `stripe listen`. Documentada en F-05; todavía no se lee | PA-02 |
 | `PLATFORM_FEE_PERCENT` | back | Comisión de la plataforma (depende de P-13) | RE-02 |
 | `AI_API_KEY`, `AI_MODEL` | back | Proveedor de IA (depende de P-15) | IA-01 |
 
