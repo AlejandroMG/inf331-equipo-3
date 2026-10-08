@@ -2053,3 +2053,49 @@ No aplica: es solo documentación.
 - Quien abra un PR nuevo puede hacer lo mismo si quiere evitar conflictos: dejar su entrada en un PR aparte o en el último en entrar.
 
 ---
+
+### 2026-10-07 · C (gonzzza-lol) · Asignar el revisor de cada PR automáticamente
+
+**Issues:** sin issue (mejora del CI, dominio de C)
+**Rama / PR:** `feat/F-06-ci-github-actions` · sin PR todavía
+**Duración aproximada:** 30 min
+**Herramientas:** Claude Code
+
+#### Objetivo
+Que al abrir un PR hacia `main` GitHub pida la revisión a quien corresponde, sin que el autor tenga que acordarse de la rotación ni de avisar al dueño de un módulo ajeno.
+
+#### Qué se hizo
+- Workflow nuevo `.github/workflows/assign-reviewer.yml`: al abrir, reabrir o sacar de borrador un PR hacia `main`, pide la revisión por rotación (A → B → C → A) y, además, al dueño de cada módulo ajeno que el PR toca.
+- `docs/flujo-de-trabajo.md`: la sección "Rotación de revisión" explica que la revisión se pide sola y qué hay que mantener.
+
+#### Decisiones y por qué
+| Decisión | Alternativas consideradas | Por qué se eligió |
+|---|---|---|
+| Un workflow con `actions/github-script` | `CODEOWNERS` | `CODEOWNERS` asigna por ruta, pero no sabe quién es el autor: no puede expresar la rotación |
+| Rotación y dueños escritos en el mismo workflow | Un archivo de configuración aparte o una action de terceros | Son tres personas y una tabla; así se lee entero en un archivo y no se depende de una action externa |
+| Evento `pull_request`, no `pull_request_target` | `pull_request_target`, que también sirve para forks | Todos trabajamos con ramas del mismo repo, y con `pull_request` el workflow corre en su propio PR y se puede probar antes de fusionarlo. Un PR desde un fork se salta el paso |
+| Los borradores no piden revisión | Pedirla siempre | Un borrador todavía no está listo; se pide al pasarlo a "Ready for review" |
+| No se vuelve a correr con cada push (`synchronize`) | Recalcular en cada push | Volvería a pedir la revisión a quien ya revisó y llenaría de avisos. Si un push posterior toca un módulo ajeno, el aviso es manual |
+| Todo `rentsmart-back/prisma/` avisa a A, no solo `schema.prisma` | Solo el schema | Las migraciones y el seed cambian lo mismo que el schema |
+
+#### Archivos principales
+- `.github/workflows/assign-reviewer.yml`: el workflow.
+- `docs/flujo-de-trabajo.md`: nota en "Rotación de revisión".
+
+#### Cómo probarlo
+Abrir un PR hacia `main` con este cambio: en "Reviewers" debe aparecer @AlejandroMG (rotación de C) y la pestaña Actions debe mostrar "Asignar revisor" en verde con el aviso "Revisión pedida a: …".
+
+#### Estado de verificación
+- Build, lint y tests de las apps: no aplica, no se tocó código del back ni del front.
+- El script del workflow se probó en local con `github` y `context` simulados: 9 casos (las tres rotaciones, schema de Prisma, módulo ajeno, workflows, archivo movido y un autor fuera de la rotación) ✅
+- **No se ha ejecutado en GitHub.** Se comprueba al abrir el PR de esta rama.
+
+#### Pendientes y bloqueos
+- Si el job falla con "Resource not accessible by integration", A (admin) tiene que revisar en Settings → Actions → General que los workflows puedan usar el permiso `pull-requests: write`.
+- No pude leer la configuración de Actions del repo con mi cuenta (403), así que ese punto queda por confirmar en el primer PR.
+
+#### Para el resto del equipo
+- **Todos:** ya no hace falta asignar el revisor a mano. Los módulos que no están en la tabla de `AGENTS.md` los asigné así: `rentsmart-back/src/owner` y los `features` `owner`, `favorites` y `map` a B; `features/moderation` a A; `.github/workflows` a C. Si alguno está mal, se cambia en la tabla `OWNERS` del workflow.
+- **A (@AlejandroMG):** te toca revisar este PR por rotación.
+
+---

@@ -1,0 +1,80 @@
+name: Asignar revisor
+
+# Pide la revisión de un PR según docs/flujo-de-trabajo.md:
+# la rotación (A → B → C → A) y, además, el dueño de cada módulo ajeno que el PR toca.
+on:
+  pull_request:
+    branches: [ main ]
+    types: [ opened, reopened, ready_for_review ]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  assign:
+    name: Pedir revisión
+    runs-on: ubuntu-latest
+    # Un borrador todavía no se revisa. Un PR desde un fork llega con un token de solo lectura.
+    if: >-
+      github.event.pull_request.draft == false &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    steps:
+      - name: Pedir revisión por rotación y por módulo
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const A = 'AlejandroMG';
+            const B = 'xReNatS';
+            const C = 'gonzzza-lol';
+
+            // Rotación de revisión: quién revisa los PR de cada autor.
+            const ROTATION = { [A]: B, [B]: C, [C]: A };
+
+            // Dueño de cada ruta (tabla "Equipo y dominios" de AGENTS.md). Gana el primer prefijo que calce.
+            const back = 'rentsmart-back/src/';
+            const front = 'rentsmart-front/src/features/';
+            const OWNERS = [
+              ['rentsmart-back/prisma/', A],
+              ...['prisma', 'auth', 'users', 'ai', 'reviews', 'admin'].map((m) => [`${back}${m}/`, A]),
+              ...['spaces', 'space-types', 'catalog', 'storage', 'owner'].map((m) => [`${back}${m}/`, B]),
+              ...['availability', 'bookings', 'payments'].map((m) => [`${back}${m}/`, C]),
+              ...['auth', 'moderation'].map((f) => [`${front}${f}/`, A]),
+              ...['catalog', 'spaces', 'owner', 'favorites', 'map'].map((f) => [`${front}${f}/`, B]),
+              [`${front}bookings/`, C],
+              ['.github/workflows/', C],
+            ];
+
+            const pr = context.payload.pull_request;
+            const author = pr.user.login;
+            const reviewers = new Set();
+
+            if (ROTATION[author]) reviewers.add(ROTATION[author]);
+
+            const files = await github.paginate(github.rest.pulls.listFiles, {
+              ...context.repo,
+              pull_number: pr.number,
+              per_page: 100,
+            });
+            for (const file of files) {
+              // En un archivo movido cuentan las dos rutas: de dónde salió y a dónde llegó.
+              for (const path of [file.filename, file.previous_filename]) {
+                const owner = path && OWNERS.find(([prefix]) => path.startsWith(prefix));
+                if (owner) reviewers.add(owner[1]);
+              }
+            }
+
+            // GitHub no deja pedirle la revisión al autor.
+            reviewers.delete(author);
+
+            if (reviewers.size === 0) {
+              core.notice(`Sin revisor que asignar: ${author} no está en la rotación.`);
+              return;
+            }
+
+            await github.rest.pulls.requestReviewers({
+              ...context.repo,
+              pull_number: pr.number,
+              reviewers: [...reviewers],
+            });
+            core.notice(`Revisión pedida a: ${[...reviewers].join(', ')}`);
