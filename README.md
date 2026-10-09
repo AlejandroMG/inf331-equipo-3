@@ -31,6 +31,7 @@ Proyecto del ramo INF331, equipo 3.
    cd rentsmart-back
    npm install
    npx prisma migrate dev   # crear las tablas y generar el cliente de Prisma
+   npx prisma generate
    npm run seed             # carga datos de prueba
    ```
 
