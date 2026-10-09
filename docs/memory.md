@@ -2536,3 +2536,38 @@ Revisar el repo contra el enunciado de la Entrega 1 y corregir lo desactualizado
 - C (@gonzzza-lol): conviene cambiar la base del PR #127 a `develop`.
 
 ---
+
+### 2026-10-09 · B (xReNatS) · Cierre del release de la Entrega 1
+
+**Issues:** ninguno (cierre de la entrega)
+**Rama / PR:** `docs/bitacora-cierre-entrega-1` · PR hacia `develop`. Antes: #128 (release → `main`), #129 y #130
+**Duración aproximada:** 2 h
+**Herramientas:** Claude Code
+
+#### Objetivo
+Dejar el repositorio conforme al enunciado de la Entrega 1: `main` con el código final, tag y Release sobre el mismo commit, y `develop` alineada con `main`.
+
+#### Qué se hizo
+- Se mergeó el #129 (README y bitácora) a `release/v1.0-entrega1` y el #128 (release → `main`) con *merge commit*. `main` quedó en `a1004eb` con el CI en verde.
+- El #129 hizo que el #128 tuviera un conflicto en el README (el paso de `prisma generate`). Se resolvió con un merge de `main` en la rama de release, conservando la versión de la rama de release.
+- El tag `v1.0-entrega1` apuntaba a un commit de `main` anterior a la entrega (`92c324b`, sin ES-08 ni los documentos). Se movió a `a1004eb` con un force-push del tag, autorizado por la persona del equipo. El Release sigue publicado sobre ese tag y se corrigió su texto (enlace al CI en `main`; el enlace al video se agregará al README).
+- El #130 devolvió la rama de release a `develop`.
+- Wiki actualizada y publicada: cifras de pruebas (1438) y cobertura (45,6 %), herramientas de testing, capturas de la aplicación y evidencia de la gestión con GitHub y Discord. Líder de equipo: Renato Ramírez.
+
+#### Decisiones y por qué
+- Los PR a `release/*` no ejecutan el CI porque `ci.yml` solo corre en PR hacia `main` y `develop`. El #129 era solo documentación y se mergeó sin CI propio; el CI del #128 validó el resultado final.
+- Se usa GitHub (issues, milestones y etiquetas) y Discord en lugar de JIRA y Slack para el tablero y la comunicación. Quedó declarado en la Wiki.
+
+#### Estado de verificación
+- CI en verde en `main` sobre `a1004eb`. El tag, `main` y el Release apuntan a ese mismo commit.
+
+#### Pendientes y bloqueos
+- Falta el enlace al video en el README y en el `Home` de la Wiki (`PENDIENTE_LINK_VIDEO`).
+- Los milestones de GitHub tienen descripciones y fechas desactualizadas (el Sprint 2 dice «con reserva con pago» y el Sprint 1 figura vencido); conviene ajustarlos antes de mostrarlos como evidencia.
+- Que el CI corra también en PR hacia `release/*` (decisión de C, dueño del CI).
+
+#### Para el resto del equipo
+- A (@AlejandroMG): el tag y el Release que creaste se movieron a `a1004eb`; el Release tiene el texto corregido.
+- C (@gonzzza-lol): el PR #127 (RE-05) apunta a `main`; cámbialo a `develop` para no adelantar `main` respecto al tag.
+
+---
