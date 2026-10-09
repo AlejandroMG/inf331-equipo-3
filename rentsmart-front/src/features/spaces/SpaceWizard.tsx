@@ -9,6 +9,9 @@ import { Textarea } from '../../components/Textarea'
 import { cn } from '../../lib/cn'
 import { formatClp } from '../../lib/format'
 import { paths } from '../../lib/paths'
+import { useRequest } from '../../lib/useRequest'
+import { fetchSchedule } from '../bookings/schedule-api'
+import { WeeklySchedule } from '../bookings/WeeklySchedule'
 import { emptyForm, missingFromError, publishChecklist, REQUIREMENTS, toForm, toPayload, validate, type FormErrors, type MissingField } from './form'
 import { LocationField } from './LocationField'
 import { PhotosStep } from './PhotosStep'
@@ -36,6 +39,11 @@ export function SpaceWizard({ types, amenities, region, communes, initialSpace }
   const [spaceId, setSpaceId] = useState<string | null>(initialSpace?.id ?? null)
   // Las fotos se suben, ordenan y borran en el servidor apenas se hace: no pasan por el guardado del borrador.
   const [photos, setPhotos] = useState<OwnerPhoto[]>(initialSpace?.photos ?? [])
+  // El horario también se guarda aparte (DI-01): se consulta el guardado para saber si el requisito está cumplido,
+  // y cada guardado desde el paso 3 lo actualiza.
+  const storedSchedule = useRequest(spaceId ?? '', async (signal) => (spaceId ? fetchSchedule(spaceId, signal) : null))
+  const [savedRuleCount, setSavedRuleCount] = useState<number | null>(null)
+  const hasSchedule = (savedRuleCount ?? storedSchedule.data?.rules.length ?? 0) > 0
   const [step, setStep] = useState(1)
   const [errors, setErrors] = useState<FormErrors>({})
   // Tras un intento de guardar con errores, el foco pasa al primer campo inválido (el lector de pantalla lo anuncia con su mensaje).
@@ -93,11 +101,21 @@ export function SpaceWizard({ types, amenities, region, communes, initialSpace }
       setMissing(null)
       return id
     } catch (error) {
-      setSaveError(error instanceof Error ? error.message : 'No pudimos guardar el borrador.')
+      const lacking = missingFromError(error)
+      if (lacking && lacking.length > 0) {
+        setSaveError(`Este cambio dejaría el espacio sin: ${lacking.map((code) => REQUIREMENTS[code].label.toLowerCase()).join(', ')}. Un espacio publicado debe seguir completo; desactívalo desde Mis espacios si quieres dejarlo incompleto.`)
+      } else {
+        setSaveError(error instanceof Error ? error.message : 'No pudimos guardar el borrador.')
+      }
       return null
     } finally {
       setSaving(false)
     }
+  }
+
+  /** Guarda los cambios de un espacio ya publicado (o desactivado) desde el último paso. */
+  async function saveChanges() {
+    if (dirty) await save()
   }
 
   async function goTo(next: number) {
@@ -126,7 +144,7 @@ export function SpaceWizard({ types, amenities, region, communes, initialSpace }
     }
   }
 
-  const checklist = publishChecklist(form, photos.length)
+  const checklist = publishChecklist(form, photos.length, hasSchedule)
   const typeName = types.find((t) => String(t.id) === form.typeId)?.name
   const communeName = communes.find((c) => String(c.id) === form.communeId)?.name
   const priceText = [
@@ -363,9 +381,8 @@ export function SpaceWizard({ types, amenities, region, communes, initialSpace }
               <p className="-mt-2 text-[13px] text-muted">
                 Ingresa al menos uno. Si cambias el precio después, solo aplica a reservas nuevas.
               </p>
-              <div className="rounded-card border border-dashed border-line bg-surface p-4 text-[15px] text-muted">
-                Aquí definirás los días y horas en que se arrienda tu espacio. Llega pronto.
-              </div>
+              {/* DI-01, del equipo de reservas: carga y guarda el horario por su cuenta, con su propio botón. */}
+              {spaceId && <WeeklySchedule spaceId={spaceId} onSaved={(schedule) => setSavedRuleCount(schedule.rules.length)} />}
             </>
           )}
 
@@ -412,12 +429,17 @@ export function SpaceWizard({ types, amenities, region, communes, initialSpace }
                   </Button>
                 </div>
               ) : (
-                <div className="rounded-card bg-primary-soft p-4 text-[15px] text-primary-dark">
-                  {status === 'ACTIVE'
-                    ? 'Este espacio ya está publicado. Tus cambios se guardan al pasar de paso.'
-                    : status === 'INACTIVE'
-                      ? 'Este espacio está desactivado: actívalo desde Mis espacios para que vuelva al catálogo.'
-                      : 'Un administrador bloqueó esta publicación.'}
+                <div className="flex flex-col items-start gap-3">
+                  <div className="rounded-card bg-primary-soft p-4 text-[15px] text-primary-dark">
+                    {status === 'ACTIVE'
+                      ? 'Este espacio ya está publicado. Guarda los cambios para que se vean en el catálogo.'
+                      : status === 'INACTIVE'
+                        ? 'Este espacio está desactivado: actívalo desde Mis espacios para que vuelva al catálogo.'
+                        : 'Un administrador bloqueó esta publicación.'}
+                  </div>
+                  <Button onClick={() => void saveChanges()} loading={saving} disabled={!dirty}>
+                    Guardar cambios
+                  </Button>
                 </div>
               )}
             </>

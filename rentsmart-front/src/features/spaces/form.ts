@@ -128,8 +128,8 @@ export const REQUIREMENTS: Record<MissingField, { label: string; step: number }>
   capacity: { label: 'Capacidad', step: 1 },
   commune: { label: 'Comuna', step: 2 },
   price: { label: 'Precio por hora o por día', step: 3 },
-  photos: { label: 'Al menos una foto', step: 4 },
   schedule: { label: 'Horario semanal', step: 3 },
+  photos: { label: 'Al menos una foto', step: 4 },
 }
 
 export interface ChecklistItem {
@@ -140,10 +140,10 @@ export interface ChecklistItem {
 }
 
 /**
- * Qué requisitos para publicar ya cumple el formulario. El horario semanal (DI-01, del equipo de reservas)
- * todavía no se puede cargar desde esta pantalla, por eso queda siempre pendiente.
+ * Qué requisitos para publicar ya cumple el formulario. Las fotos y el horario semanal (DI-01) se guardan
+ * aparte del borrador, por eso llegan como datos sueltos.
  */
-export function publishChecklist(form: SpaceForm, photoCount: number): ChecklistItem[] {
+export function publishChecklist(form: SpaceForm, photoCount: number, hasSchedule = false): ChecklistItem[] {
   const done: Record<MissingField, boolean> = {
     type: form.typeId !== '',
     description: form.description.trim() !== '',
@@ -151,7 +151,7 @@ export function publishChecklist(form: SpaceForm, photoCount: number): Checklist
     commune: form.communeId !== '',
     price: Number(form.pricePerHour) > 0 || Number(form.pricePerDay) > 0,
     photos: photoCount > 0,
-    schedule: false,
+    schedule: hasSchedule,
   }
   return (Object.keys(REQUIREMENTS) as MissingField[]).map((code) => ({ code, ...REQUIREMENTS[code], done: done[code] }))
 }

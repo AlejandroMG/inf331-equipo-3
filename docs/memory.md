@@ -2054,6 +2054,327 @@ No aplica: es solo documentación.
 
 ---
 
+### 2026-10-07 · C (gonzzza-lol) · F-05 contrato de disponibilidad, reservas y pagos
+
+**Issues:** #5 (F-05)
+**Rama / PR:** `feat/F-05-contrato-reservas` · sin PR todavía
+**Duración aproximada:** 2 h
+**Herramientas:** Claude Code
+
+#### Objetivo
+Dejar fijado el contrato de la API de `availability`, `bookings` y `payments` (rutas, DTOs, validación de entrada y Swagger) y sus mocks de MSW, para que DI-01, DI-02, RE-02, PA-01 y PA-02 avancen en paralelo sin rehacer las formas. No se implementa lógica de negocio ni Stripe.
+
+#### Qué se hizo
+- **Back:** tres módulos nuevos (`availability`, `bookings`, `payments`), registrados en `AppModule` y visibles en `/docs` bajo "Disponibilidad", "Reservas" y "Pagos". Cada uno tiene controlador, DTOs con `class-validator` y Swagger (respuestas 400, 401, 403, 404 y 409) y un servicio cuyos métodos lanzan `NotImplementedException` (501) hasta que entre su historia.
+- **Endpoints:** `GET /api/spaces/:id/availability`, `GET` y `PUT /api/spaces/:id/schedule`, `POST /api/bookings`, `GET /api/bookings/me`, `GET /api/bookings/:id`, `POST /api/bookings/:id/cancel`, `POST /api/payments/webhook` y `GET /api/payments/me`. La tabla y las reglas están en `docs/arquitectura.md`, sección "Disponibilidad, reservas y pagos (F-05)".
+- **Dos endpoints que no estaban en el plan de la sesión:** `GET /api/spaces/:id/schedule` (el formulario del propietario necesita leer el horario, y `SpaceDto` no lo trae) y `GET /api/payments/me` (`plan.md` lo compromete de C para A, para el panel del arrendatario).
+- **Front:** tipos del contrato en `src/features/bookings/types.ts` y mocks en `src/mocks/bookings-handlers.ts`, sumados a `handlers` y reiniciados desde `resetMockDrafts`. El mock calcula la disponibilidad sobre el horario, responde 409 al reservar un horario tomado y hace avanzar la reserva `PENDING` → `PAID` → `CONFIRMED` con cada consulta.
+- **Pruebas:** `test/booking-contract.e2e-spec.ts` (56 tests: Swagger, 401, 400 y 501 con datos válidos por endpoint) y `src/mocks/bookings-handlers.test.ts` (23 tests).
+- **Documentación:** sección nueva en `arquitectura.md` con los supuestos de P-12, P-13 y P-14, la nota del front, y `STRIPE_SECRET_KEY` y `STRIPE_WEBHOOK_SECRET` en `.env.example` (comentadas: todavía no se leen).
+- La rama local `main` estaba 73 commits atrás; la rama se creó desde `origin/main` actualizado.
+
+#### Decisiones y por qué
+| Decisión | Alternativas consideradas | Por qué se eligió |
+|---|---|---|
+| `from`, `to` y `date` de la disponibilidad son días en hora de Chile (`AAAA-MM-DD`); los bloques van en UTC | Pedir el rango como instantes UTC | El widget elige un día de Chile; con instantes UTC el front tendría que calcular la medianoche de Santiago con el horario de verano. Es lo mismo que ya hace `GET /api/owner/bookings` |
+| La disponibilidad trae `fullDay: { startAt, endAt, available }` por día | Que el front arme el día completo desde `schedule` | P-07: "por día" toma todo el horario del día. Así el front manda de vuelta lo que recibió y no convierte zonas horarias |
+| `startAt` y `endAt` de una reserva se validan en el DTO como horas cerradas en UTC (`...T12:00:00.000Z`) | Aceptar cualquier ISO 8601 y redondear | Chile va a horas enteras de UTC, así que la regla de P-07 se puede exigir en la entrada y un cliente con otra zona o con minutos recibe 400 |
+| `endTime` del horario llega hasta `24:00` | Tope en `23:00` | Una cancha o un salón que cierra a medianoche no se podría publicar entero. `hoursBetween` de `santiago-time.ts` ya lo entiende |
+| `GET /api/bookings/:id` y `/me` son solo del arrendatario | Que también los vea el dueño del espacio | El propietario ya tiene `GET /api/owner/bookings` (B), con el contacto del arrendatario; mezclar las dos vistas complicaría la regla de `addressDetail` |
+| `addressDetail` viene solo en `CONFIRMED` y es `null` en el resto | Omitir el campo | P-09. Un campo que siempre está es más fácil de tipar en el front |
+| El webhook rechaza con 400 en el controlador si falta `stripe-signature` | Dejar todo al servicio | Es validación de entrada, igual que un DTO, y permite probar el 400 del contrato sin Stripe |
+| Los mocks de reservas van en un archivo aparte (`bookings-handlers.ts`) | Agregarlos a `handlers.ts` | `handlers.ts` es de B y ya tiene 460 líneas; así el cambio en su archivo son 4 líneas y no hay conflictos |
+| El mock no depende del reloj: las horas pasadas siguen libres y una pendiente no vence sola | Imitar al back | Los tests usan fechas fijas y no deben empezar a fallar cuando esas fechas pasen |
+| `STRIPE_*` documentadas pero sin validación en `env.validation.ts` | Agregarlas ya como opcionales | Nada las lee todavía; PA-01 y PA-02 deciden si son obligatorias cuando las usen |
+
+No se cambió ninguna decisión de `decisiones.md`. P-12, P-13 y P-14 siguen abiertas: el contrato asume sus recomendaciones y eso quedó escrito como supuesto en `arquitectura.md`.
+
+#### Archivos principales
+- `rentsmart-back/src/availability/`, `src/bookings/` y `src/payments/`: módulo, controlador, servicio (501) y `dto/`.
+- `rentsmart-back/src/app.module.ts`: registra los tres módulos.
+- `rentsmart-back/test/booking-contract.e2e-spec.ts`: e2e del contrato.
+- `rentsmart-back/test/utils/create-test-app.ts`: la app de los e2e se crea con `rawBody: true`, como `main.ts`.
+- `rentsmart-front/src/features/bookings/types.ts`: tipos del contrato.
+- `rentsmart-front/src/mocks/bookings-handlers.ts` y su test; `src/mocks/handlers.ts` los incluye.
+- `docs/arquitectura.md` y `.env.example`.
+
+#### Cómo probarlo
+Con Node 24 y la base de test levantada (`docker compose up -d`) y migrada. En `rentsmart-back`: `npm run build`, `npm run lint`, `npm test` y `npm run test:e2e`. En `rentsmart-front`: `npm run build`, `npm run lint` y `npm test`. A mano: `npm run start:dev` y abrir http://localhost:3000/docs (grupos "Disponibilidad", "Reservas" y "Pagos"; cualquier llamada válida responde 501). En el front, con `VITE_USE_MOCKS=true` y una sesión iniciada, `fetch('/api/spaces/seed-space-1/availability?from=2026-10-12&to=2026-10-18')` desde la consola responde con el mock.
+
+#### Estado de verificación
+- Build: ✅ back y front
+- Lint: ✅ back y front
+- Tests: back 222 unitarias ✅ · e2e 386 de 387 ✅, con 1 fallo que **no es de este cambio** (ver abajo) · front 610 tests (46 archivos) ✅
+- No se levantó la API ni el front a mano: `/docs` se comprobó con el e2e, que lee `/docs-json`.
+
+#### Pendientes y bloqueos
+- **Fallo previo en `main`:** `test/favorites.e2e-spec.ts`, "guardarlo dos veces a la vez tampoco falla", responde 500 en dos de las tres peticiones simultáneas. Falla igual sin los cambios de esta rama (lo probé volviendo `create-test-app.ts` a como estaba). Parece una carrera del `upsert` de `FavoritesService` (B, BU-08).
+- En una de tres corridas completas del front falló 1 test que no alcancé a identificar; las dos siguientes pasaron completas. Queda como intermitente.
+- La lógica: DI-01 (#35), DI-02 (#36), RE-02 (#39), PA-01 (#45) y PA-02 (#46). Cada historia reemplaza su línea de "pendiente de implementar" en `booking-contract.e2e-spec.ts` por sus propios tests.
+- La ruta de retorno desde Stripe quedó como `/bookings/:id/success` (antes `/reservas/:id/exito` en el diagrama, pero las rutas del front están en inglés). La pantalla la crea PA-01.
+- `docs/arquitectura.md` todavía tiene la sección "Autenticación temporal", que habla de `DevAuthGuard`: ya no existe. No la toqué porque no es de mi dominio.
+
+#### Para el resto del equipo
+- **B (@xReNatS):** (1) `availability` cuelga tres rutas de `/api/spaces/:id` (`/availability` y `/schedule`), que es tu prefijo; el controlador está en mi módulo y no toca los tuyos. (2) `PUT /api/spaces/:id/schedule` responderá 409 con `missing: ["schedule"]` si deja sin horario a un espacio publicado, para respetar tu regla de ES-04; avísame si prefieres otra forma. (3) Agregué 4 líneas a `src/mocks/handlers.ts` (import, `...bookingHandlers` y `resetMockBookings()` dentro de `resetMockDrafts`). (4) `BookingWidget` usará el `id` y el `schedule` que ya trae `GET /api/catalog/:id` y reemplazará a `BookingSlot`. (5) `BookingStatus` quedó definido dos veces, en `features/owner/types.ts` y en `features/bookings/types.ts`; son iguales, se puede unificar después. (6) El e2e de favoritos de arriba.
+- **A (@AlejandroMG):** (1) te toca revisar este PR por rotación. (2) Los endpoints privados usan `JwtAuthGuard` y `@CurrentUser()` tal como los dejaste. (3) Para PN-03 ya tienes la forma de `GET /api/bookings/me` y `GET /api/payments/me` y sus mocks. (4) No se tocó `schema.prisma`: el contrato sale con los campos que ya existen. El webhook idempotente va a necesitar guardar el id del evento de Stripe, y hoy no hay dónde: lo vemos en PA-02. (5) `create-test-app.ts` ahora crea la app con `rawBody: true`.
+- **Todos:** P-12 y P-13 siguen abiertas y vencían el 3 de octubre. El contrato asume 10 % sumado al arrendatario y Stripe sin Connect; si se decide otra cosa, hay que registrarlo en `decisiones.md` antes de RE-02.
+
+---
+
+### 2026-10-07 · C (gonzzza-lol) · Asignar el revisor de cada PR automáticamente
+
+**Issues:** sin issue (mejora del CI, dominio de C)
+**Rama / PR:** `feat/F-06-ci-github-actions` · sin PR todavía
+**Duración aproximada:** 30 min
+**Herramientas:** Claude Code
+
+#### Objetivo
+Que al abrir un PR hacia `main` GitHub pida la revisión a quien corresponde, sin que el autor tenga que acordarse de la rotación ni de avisar al dueño de un módulo ajeno.
+
+#### Qué se hizo
+- Workflow nuevo `.github/workflows/assign-reviewer.yml`: al abrir, reabrir o sacar de borrador un PR hacia `main`, pide la revisión por rotación (A → B → C → A) y, además, al dueño de cada módulo ajeno que el PR toca.
+- `docs/flujo-de-trabajo.md`: la sección "Rotación de revisión" explica que la revisión se pide sola y qué hay que mantener.
+
+#### Decisiones y por qué
+| Decisión | Alternativas consideradas | Por qué se eligió |
+|---|---|---|
+| Un workflow con `actions/github-script` | `CODEOWNERS` | `CODEOWNERS` asigna por ruta, pero no sabe quién es el autor: no puede expresar la rotación |
+| Rotación y dueños escritos en el mismo workflow | Un archivo de configuración aparte o una action de terceros | Son tres personas y una tabla; así se lee entero en un archivo y no se depende de una action externa |
+| Evento `pull_request`, no `pull_request_target` | `pull_request_target`, que también sirve para forks | Todos trabajamos con ramas del mismo repo, y con `pull_request` el workflow corre en su propio PR y se puede probar antes de fusionarlo. Un PR desde un fork se salta el paso |
+| Los borradores no piden revisión | Pedirla siempre | Un borrador todavía no está listo; se pide al pasarlo a "Ready for review" |
+| No se vuelve a correr con cada push (`synchronize`) | Recalcular en cada push | Volvería a pedir la revisión a quien ya revisó y llenaría de avisos. Si un push posterior toca un módulo ajeno, el aviso es manual |
+| Todo `rentsmart-back/prisma/` avisa a A, no solo `schema.prisma` | Solo el schema | Las migraciones y el seed cambian lo mismo que el schema |
+
+#### Archivos principales
+- `.github/workflows/assign-reviewer.yml`: el workflow.
+- `docs/flujo-de-trabajo.md`: nota en "Rotación de revisión".
+
+#### Cómo probarlo
+Abrir un PR hacia `main` con este cambio: en "Reviewers" debe aparecer @AlejandroMG (rotación de C) y la pestaña Actions debe mostrar "Asignar revisor" en verde con el aviso "Revisión pedida a: …".
+
+#### Estado de verificación
+- Build, lint y tests de las apps: no aplica, no se tocó código del back ni del front.
+- El script del workflow se probó en local con `github` y `context` simulados: 9 casos (las tres rotaciones, schema de Prisma, módulo ajeno, workflows, archivo movido y un autor fuera de la rotación) ✅
+- **No se ha ejecutado en GitHub.** Se comprueba al abrir el PR de esta rama.
+
+#### Pendientes y bloqueos
+- Si el job falla con "Resource not accessible by integration", A (admin) tiene que revisar en Settings → Actions → General que los workflows puedan usar el permiso `pull-requests: write`.
+- No pude leer la configuración de Actions del repo con mi cuenta (403), así que ese punto queda por confirmar en el primer PR.
+
+#### Para el resto del equipo
+- **Todos:** ya no hace falta asignar el revisor a mano. Los módulos que no están en la tabla de `AGENTS.md` los asigné así: `rentsmart-back/src/owner` y los `features` `owner`, `favorites` y `map` a B; `features/moderation` a A; `.github/workflows` a C. Si alguno está mal, se cambia en la tabla `OWNERS` del workflow.
+- **A (@AlejandroMG):** te toca revisar este PR por rotación.
+
+---
+
+### 2026-10-07 · C (gonzzza-lol) · RE-01: estados de la reserva y sus transiciones
+
+**Issues:** #38
+**Rama / PR:** `feat/RE-01-estados-reserva` · sin PR todavía
+**Duración aproximada:** 1 h
+**Herramientas:** Claude Code
+
+#### Objetivo
+Construir la máquina de estados de la reserva: el único método por el que pasa todo cambio de `Booking.status`, que valida la transición y deja el historial. No agrega endpoints ni pantalla; es la base de RE-02, PA-02, RE-04, RE-05 y RE-06.
+
+#### Qué se hizo
+- `src/bookings/booking-transitions.ts`: las 7 transiciones válidas como datos (`BOOKING_TRANSITIONS`), más `canTransition` e `isFinalStatus`. Sin dependencias de Nest.
+- `src/bookings/booking-state.service.ts`: `BookingStateService` con `transition` (valida, actualiza el estado y escribe el `BookingEvent` en la misma transacción) y `recordCreation` (evento inicial, de nulo a `PENDING`).
+- `BookingsModule` provee y exporta `BookingStateService`.
+- Tests unitarios de la tabla y del servicio, y un e2e contra la base de test.
+- `docs/arquitectura.md`: firma, reglas y ejemplo de uso junto a la tabla de transiciones.
+### 2026-10-08 · C (gonzzza-lol) · Arreglar la carrera al guardar un favorito (CI en rojo)
+
+**Issues:** sin issue (fallo previo de `main`, anotado en la entrada de F-05)
+**Rama / PR:** `fix/BU-08-favoritos-concurrencia` · sin PR todavía
+**Duración aproximada:** 20 min
+**Herramientas:** Claude Code
+
+#### Objetivo
+Dejar el CI en verde: el e2e "guardarlo dos veces a la vez tampoco falla" de favoritos fallaba en `main` y bloqueaba cualquier PR.
+
+#### Qué se hizo
+- `FavoritesService.add` guarda con `createMany({ skipDuplicates: true })` en vez de `upsert`.
+- El test unitario de `add` espera la llamada nueva.
+### 2026-10-07 · C (gonzzza-lol) · DI-01 horario semanal del espacio
+
+**Issues:** #35 (DI-01)
+**Rama / PR:** `feat/DI-01-horario-semanal` · sin PR todavía
+**Duración aproximada:** 2 h
+**Herramientas:** Claude Code
+
+#### Objetivo
+Que el propietario pueda definir en qué días y horas se arrienda su espacio: implementar `GET` y `PUT /api/spaces/:id/schedule` (el contrato ya existía desde F-05 y no cambió) y entregar el componente del formulario.
+
+#### Qué se hizo
+- **Back:** `AvailabilityService.findSchedule` y `replaceSchedule` con Prisma sobre `AvailabilityRule`. Solo el dueño accede (404 si no existe, 403 si es de otro), también en un borrador. `PUT` reemplaza el horario completo en una transacción y lo devuelve ordenado por día y hora de inicio.
+- **Validación:** 400 si un fin no es posterior a su inicio o si dos rangos del mismo día se traslapan (contiguos valen); 409 con `missing: ["schedule"]` si dejaría sin horario a un espacio `ACTIVE`. Las reglas están en `src/availability/schedule-rules.ts`.
+- **Front:** componente `WeeklySchedule` en `src/features/bookings/` (el issue lo llama `<HorarioSemanal>`), con `schedule-form.ts` (lógica sin interfaz) y `schedule-api.ts`. Activa días, define uno o más rangos por día en horas cerradas, muestra los errores y guarda.
+- **Integración en el formulario:** en `SpaceWizard.tsx` (de B) reemplacé el recuadro "Llega pronto" del paso 3 por `<WeeklySchedule spaceId={spaceId} />`, como B dejó indicado en el issue. Son 3 líneas.
+- **Pruebas:** 24 unitarias nuevas del back, `test/schedule.e2e-spec.ts` con 17 e2e (200, 400, 401, 403, 404 y 409) y 21 tests del front (componente y lógica, con una revisión de axe). De `booking-contract.e2e-spec.ts` salieron las tres líneas de 501 del horario.
+- **Documentación:** `docs/arquitectura.md` dice que el horario ya está implementado y cómo leer las reglas.
+
+#### Decisiones y por qué
+| Decisión | Alternativas consideradas | Por qué se eligió |
+|---|---|---|
+| Servicio aparte, `BookingStateService` | Un método más en `BookingsService` | `BookingsService` va a depender de pagos (crear el Checkout en RE-02) y `payments` necesita cambiar estados (PA-02): con un servicio aparte que solo depende de Prisma no hay dependencia circular |
+| Actualizar con `updateManyAndReturn` y `where: { id, status: <origen> }` | Leer y luego `update` por id; `SELECT … FOR UPDATE` | Si otro cambio llegó primero, la condición no calza con ninguna fila y se responde 409. No necesita SQL a mano ni un nivel de aislamiento especial, y devuelve la reserva sin otra consulta |
+| El 409 es una `ConflictException` lanzada antes de escribir | Dejar que falle la base | No aborta la transacción de Postgres: quien llama puede atraparla y seguir (útil para un webhook repetido) |
+| `transition` recibe el id de la reserva, no el objeto | Recibir la reserva ya leída | El estado de origen se lee dentro de la transacción; un objeto leído antes podría venir desactualizado |
+| `recordCreation` no valida nada | Comprobar que la reserva exista y esté `PENDING` | La llama RE-02 justo después de crear la reserva, en la misma transacción; si la reserva no existe, falla la clave foránea |
+| Los 36 pares se prueban tres veces: tabla pura, servicio con Prisma simulado y servicio contra la base | Solo una de las tres | La tabla pura es instantánea y documenta la regla; la de la base comprueba que el estado y el evento realmente quedan (o no) guardados |
+
+#### Archivos principales
+- `rentsmart-back/src/bookings/booking-transitions.ts`: tabla de transiciones.
+- `rentsmart-back/src/bookings/booking-state.service.ts`: `transition` y `recordCreation`.
+- `rentsmart-back/src/bookings/bookings.module.ts`: provee y exporta el servicio.
+- `rentsmart-back/src/bookings/booking-transitions.spec.ts` y `booking-state.service.spec.ts`: unitarios.
+- `rentsmart-back/test/booking-state.e2e-spec.ts`: contra la base de test.
+- `docs/arquitectura.md`: sección "Ciclo de vida de una reserva".
+
+#### Cómo probarlo
+En `rentsmart-back`, con la base de test levantada (`docker compose up -d db-test`): `npm test -- booking` y `npm run test:e2e -- booking-state`.
+
+#### Estado de verificación
+- `npm run build` ✅ · `npm run lint` ✅
+- `npm test`: 21 suites, 308 tests ✅
+- `npm run test:e2e`: 432 de 433 ✅. El de RE-01 (`booking-state.e2e-spec.ts`, 46 tests) pasa completo. Falla 1, que no es de esta rama: `test/favorites.e2e-spec.ts`, "guardarlo dos veces a la vez tampoco falla" (500 por `Favorite_pkey` duplicada), el mismo fallo previo de `main` que quedó anotado en la entrada de F-05.
+- Front: no se tocó.
+
+#### Pendientes y bloqueos
+- El e2e de favoritos sigue fallando en `main` (B, BU-08) y va a dejar el CI en rojo en este PR.
+- Nada en la base impide que otro código haga `booking.update({ data: { status } })` directo; la regla de pasar por `transition` se cuida en la revisión.
+- No se tocó `schema.prisma` ni el contrato de F-05. Reservar, cancelar y vencer siguen en sus historias.
+- DI-01 (#35) sigue sin commitear: sus cambios quedaron en un stash (`DI-01 WIP …`) al crear esta rama desde `main`. Para retomarla: `git switch feat/DI-01-horario-semanal` y `git stash pop`.
+
+#### Para el resto del equipo
+- **Firma** (el módulo que lo use importa `BookingsModule` e inyecta `BookingStateService`):
+  ```ts
+  transition(bookingId: string, to: BookingStatus, change: { actorId: string | null; reason?: string | null }, tx?: Prisma.TransactionClient): Promise<Booking>
+  recordCreation(bookingId: string, change: { actorId: string | null; reason?: string | null }, tx?: Prisma.TransactionClient): Promise<BookingEvent>
+  ```
+  `transition` responde 404 si la reserva no existe y 409 si la transición no vale o si otro cambio simultáneo ganó. `actorId` nulo significa "el sistema". Sin `tx` abre su propia transacción.
+- **RE-02 (crear y limpiar vencidas), PA-02, RE-04, RE-05 y RE-06:** nunca actualicen `Booking.status` a mano. Ejemplo:
+  ```ts
+  await this.prisma.$transaction(async (tx) => {
+    // RE-02: vencer las pendientes del espacio antes de insertar
+    for (const { id } of expired) {
+      await this.bookingState.transition(id, 'EXPIRED', { actorId: null, reason: 'Venció el plazo de pago' }, tx);
+    }
+    const booking = await tx.booking.create({ data: { /* … */ } }); // nace en PENDING
+    await this.bookingState.recordCreation(booking.id, { actorId: userId }, tx);
+  });
+
+  // PA-02, fuera de una transacción propia
+  await this.bookingState.transition(bookingId, 'PAID', { actorId: null, reason: 'Pago recibido' });
+  ```
+- **A (@AlejandroMG):** te toca revisar este PR por rotación. No se tocó `schema.prisma`; `BookingEvent` se usa tal como está.
+- **B (@xReNatS):** el e2e de favoritos de arriba.
+| `createMany` con `skipDuplicates` | Atrapar el error `P2002` del `upsert`; relajar el test | Se traduce a `INSERT … ON CONFLICT DO NOTHING`, que es atómico en la base. El `upsert` de Prisma hacía un `SELECT` y luego un `INSERT`: con tres peticiones a la vez, dos chocaban con `Favorite_pkey` y respondían 500. El test estaba bien; el error era del servicio |
+| Rama corta propia desde `main` | Commitearlo en la rama de RE-01, que fue donde apareció | El arreglo es de `catalog` y no tiene que esperar la revisión de RE-01: fusionado solo, deja en verde el CI de todos los PR abiertos |
+
+#### Archivos principales
+- `rentsmart-back/src/catalog/favorites.service.ts`: `add` inserta ignorando duplicados.
+- `rentsmart-back/src/catalog/favorites.service.spec.ts`: el mock y las aserciones usan `createMany`.
+
+#### Cómo probarlo
+En `rentsmart-back`: `npm run test:e2e -- favorites`, varias veces seguidas (era una carrera).
+
+#### Estado de verificación
+- `npm run build` ✅ · `npm run lint` ✅
+- `npm run test:cov`: 21 suites, 308 tests ✅
+- `npm run test:e2e`: 19 suites, 433 tests ✅. El e2e de favoritos se corrió 5 veces seguidas y pasó las 5.
+- Front: no se tocó. El CI no se ha ejecutado en GitHub todavía.
+
+#### Pendientes y bloqueos
+- El tope de 200 favoritos se sigue comprobando antes de insertar, sin bloqueo: dos peticiones simultáneas con 199 guardados podrían dejar 201. No lo cambié; no afecta al CI.
+
+#### Para el resto del equipo
+- **B (@xReNatS):** toqué `src/catalog/favorites.service.ts` y su spec, que son de tu dominio, porque el fallo dejaba en rojo el CI de todos. El comportamiento no cambia: guardar sigue siendo idempotente y responde 204. Te pido revisar este PR aunque la rotación le toque a A.
+| `PUT` borra todas las reglas y las vuelve a crear en una transacción | Comparar y actualizar solo lo que cambió | El contrato es "reemplaza el horario completo" y son a lo más 50 filas; nada más apunta a una `AvailabilityRule` por su id |
+| Los rangos contiguos se guardan tal como llegan, sin unirlos | Unir 09:00–13:00 y 13:00–18:00 en uno | El propietario vuelve a ver lo que escribió. DI-02 debe tratar dos rangos contiguos como horas seguidas |
+| Solo un espacio `ACTIVE` no puede quedar sin horario | Exigirlo también en `INACTIVE` o `BLOCKED` | Es la regla de B: activar ya vuelve a comprobar que esté completo, así que un desactivado puede quedar incompleto |
+| Para el 409 se reutiliza `IncompleteSpaceException` de `src/spaces`, importando el archivo | Una excepción propia con la misma forma | El front ya entiende ese 409 (`missingFromError`); una sola forma para "al espacio publicado le falta algo" |
+| La comprobación del dueño es una consulta propia del servicio | Usar `SpacesService.ensureOwner` | Necesito además el estado del espacio, y `ensureOwner` no lo devuelve; así es una sola consulta y `availability` no importa el módulo de espacios |
+| El componente guarda con su propio botón | Recibir `value` y `onChange` y que guarde el formulario | Es la firma que B propuso (`spaceId`), igual que `PhotosStep`: el horario no pasa por el guardado del borrador. Muestra "Tienes cambios sin guardar" para que no se olvide |
+| Los errores de un día se ven mientras se edita y se bloquea el guardado | Validar solo al guardar | Con dos listas de horas es fácil dejar un fin anterior al inicio; verlo al momento evita un viaje al servidor |
+
+No se cambió ninguna decisión de `decisiones.md` ni `schema.prisma`.
+
+#### Archivos principales
+- `rentsmart-back/src/availability/availability.service.ts`: `findSchedule` y `replaceSchedule`.
+- `rentsmart-back/src/availability/schedule-rules.ts`: orden y validación de los rangos.
+- `rentsmart-back/src/availability/availability.service.spec.ts` y `test/schedule.e2e-spec.ts`: pruebas.
+- `rentsmart-back/test/booking-contract.e2e-spec.ts`: sin las líneas de 501 del horario.
+- `rentsmart-front/src/features/bookings/WeeklySchedule.tsx`, `schedule-form.ts`, `schedule-api.ts` y sus tests.
+- `rentsmart-front/src/features/spaces/SpaceWizard.tsx` y `form.ts`: el componente en el paso 3 y el requisito "Horario semanal" de la lista, que ahora se marca (archivos de B).
+- `docs/arquitectura.md`.
+
+#### Cómo probarlo
+Con Node 24 y la base de test levantada y migrada. En `rentsmart-back`: `npm run build`, `npm run lint`, `npm test` y `npm run test:e2e`. En `rentsmart-front`: `npm run build`, `npm run lint` y `npm test`. A mano, con el back y el front levantados y la sesión de `propietario@rentsmart.test`: ir a "Publica tu espacio", escribir un nombre, avanzar al paso 3, marcar días, agregar rangos y "Guardar horario"; al recargar, el horario sigue ahí. En Swagger: `PUT /api/spaces/:id/schedule` con `{ "rules": [{ "weekday": 1, "startTime": "09:00", "endTime": "21:00" }] }`.
+
+#### Estado de verificación
+- Build: ✅ back y front
+- Lint: ✅ back y front
+- Tests: back 246 unitarias ✅ · e2e 400 de 401, con 1 fallo que no es de este cambio (abajo) · front 634 tests (48 archivos) ✅
+- **No lo probé a mano en un navegador:** ni a 375 px ni con un lector de pantalla. Lo que hay es el test del componente (teclado, foco y axe) y que usa los componentes base, que ya miden 44 px. Falta mirarlo en el navegador antes de dar por cumplido "funciona a 375 px".
+
+#### Pendientes y bloqueos
+- `test/favorites.e2e-spec.ts`, "guardarlo dos veces a la vez tampoco falla", sigue fallando a veces con 500 (pasó en una corrida completa y falló en otra). Ya estaba anotado en la entrada de F-05; es de BU-08.
+- Carrera sin cubrir: si llegan a la vez "publicar" y un `PUT` con el horario vacío sobre el mismo borrador, el espacio podría quedar `ACTIVE` sin horario, porque `PublicationService` cuenta las reglas antes de cambiar el estado. Es muy improbable (el mismo dueño, en el mismo instante); cerrarla exige tocar el servicio de B.
+- Durante la sesión, otra sesión de trabajo cambió el directorio del repo a `feat/RE-01-estados-reserva` y guardó este trabajo en un stash; se terminó en un worktree aparte (`../inf331-equipo-3-di01`). El stash "DI-01 WIP" quedó sin borrar y ya no hace falta.
+
+#### Para el resto del equipo
+- **B (@xReNatS):** (1) toqué `SpaceWizard.tsx`: el import y el recuadro del paso 3, reemplazado por `{spaceId && <WeeklySchedule spaceId={spaceId} />}`. Tus tests de `PublishSpacePage` siguen pasando. (2) También toqué `form.ts`, a pedido de Gonzalo: `publishChecklist` recibe un tercer parámetro opcional `hasSchedule` (antes el horario estaba fijo en `false`) y en `REQUIREMENTS` el horario va antes de las fotos, así "Al menos una foto" queda al final de "Para publicar necesitas". `SpaceWizard` consulta el horario guardado (`fetchSchedule`) para marcarlo también al abrir un espacio que ya lo tiene, y lo actualiza con `onSaved`. Cambié el test que fijaba el orden y el de "el horario sigue pendiente", y agregué tres en `PublishSpacePage.test.tsx`. No toqué el texto "(se podrá cargar pronto)" del paso de revisión, que dijiste que cambiarías tú y ya quedó desactualizado. (3) El horario se guarda con su propio botón, no con "Siguiente": si prefieres que el formulario avise al avanzar con cambios sin guardar, lo vemos. (4) Uso tu `IncompleteSpaceException` importando `src/spaces/incomplete-space.exception.ts`, sin modificarla; si la mueves o cambias su forma, avísame.
+- **DI-02 (yo, o quien lo tome):** las reglas se leen con `prisma.availabilityRule.findMany({ where: { spaceId } })`. Cada fila es `{ weekday, startTime, endTime }` con `weekday` 0 = domingo y horas `HH:00` en hora de Chile; `endTime` puede ser `24:00` (la medianoche del día siguiente). Están garantizados fin > inicio y que no hay traslapes dentro de un día, pero **puede haber rangos contiguos** y **varios rangos por día**. Para pasar a UTC sirve `santiagoStartOfDay` de `src/common/santiago-time.ts`.
+- **A (@AlejandroMG):** te toca revisar por rotación. No hay cambios en `schema.prisma`.
+
+---
+
+### 2026-10-08 · B (xReNatS) · Editar un espacio publicado: guardado bloqueado y falta botón (ES-05)
+
+**Issues:** #24
+**Rama / PR:** `fix/ES-05-editar-publicado` · sin PR todavía
+**Duración aproximada:** 1 h
+**Herramientas:** Claude Code
+
+#### Objetivo
+Corregir lo que impedía editar un espacio publicado: el comentario de @gonzzza-lol en #24 (no hay botón para guardar) y el 409 "Un espacio publicado debe seguir teniendo lo necesario para publicar" al cambiar cualquier campo.
+
+#### Qué se hizo
+- **Back:** `SpacesService.update` comparaba lo que falta *después* de la edición con una lista vacía. Un espacio activo que ya venía sin fotos o sin horario (los 10 del seed no tienen fotos, y el horario semanal aún no se carga desde la UI) rechazaba toda edición, aunque no tuviera relación. Ahora solo rechaza lo que la edición quita (lo que falta después y no faltaba antes). El 409 sigue trayendo `missing` con eso.
+- **Front:** el último paso de un espacio no borrador tiene el botón "Guardar cambios" (deshabilitado si no hay cambios). Si el guardado responde 409 con `missing`, el mensaje dice qué quedaría faltando en vez del texto genérico.
+- **Reactivar sin fotos:** era el mismo problema de raíz (los espacios del seed estaban publicados sin fotos, así que desactivarlos los dejaba sin poder volver a activarse). Se resolvió por el lado de los datos, sin relajar la regla: el seed ahora sube una foto por espacio.
+- **Fotos del seed** (`prisma/seed-photos.ts`, `prisma/seed.ts`): una ilustración SVG por tipo de espacio (sala de reuniones, cowork, estudio, sala de ensayo, cocina, cancha, salón de eventos, taller), generada en código: no se descarga nada ni se guardan binarios. Las sube por el mismo `StorageService` de la API (disco local o Supabase según `STORAGE_DRIVER`) y las descripciones del seed ahora hablan de lo que muestra la foto. Es idempotente: no repite la foto si el espacio ya tiene una; las descripciones sí se reescriben.
+- Tests: 2 unitarios en `spaces.service.spec.ts`, 1 en `publication.service.spec.ts` (sin fotos no reactiva) y 2 en `PublishSpacePage.test.tsx`.
+
+#### Decisiones y por qué
+| Decisión | Alternativas | Por qué |
+|---|---|---|
+| Poner fotos al seed y mantener estricta la reactivación | Que reactivar no exija fotos | El problema eran los datos del seed, no la regla: si reactivar no exigiera fotos, se podría borrar la última foto desactivado y volver a publicar sin ella |
+| Aclarar P-18: solo cuenta lo que la edición quita | Mantenerla estricta y arreglar solo el front | Con la regla estricta, un cambio en el paso 1 hacía fallar el guardado y no se podía llegar al paso 4 a subir la foto que faltaba: callejón sin salida. Aclaración registrada en `decisiones.md` |
+
+#### Archivos principales
+- `rentsmart-back/prisma/seed.ts` y `prisma/seed-photos.ts`, `rentsmart-back/src/spaces/spaces.service.ts` (+ spec), `rentsmart-front/src/features/spaces/SpaceWizard.tsx` (+ test), `docs/decisiones.md`, `docs/producto.md`.
+
+#### Cómo probarlo
+0. En `rentsmart-back`: `npm run seed` (agrega las fotos a los espacios del seed que no las tengan).
+1. Entrar como `host` del seed y abrir "Editar" en un espacio activo (sin fotos).
+2. Cambiar un campo y pasar al paso 5: guarda sin error y aparece "Guardar cambios".
+3. Borrar la descripción de un espacio con descripción: responde que quedaría sin descripción.
+
+#### Estado de verificación
+- Front: vitest de `src/features/spaces` (123), `tsc -b` y lint OK. Back: jest de `src/spaces` (102, con Node 24), lint y build OK.
+- Seed corrido contra `devdb` (en Docker, puerto 5434 porque el 5432 lo ocupaba un Postgres de Windows) y API levantada a mano: los 10 espacios tienen foto (`coverUrl` en el catálogo y `/api/uploads/seed/*.svg` responde 200); editar un espacio publicado sin fotos da 200; desactivar y reactivar da 200; quitar la descripción da 409 con `missing: ['description']`. No se corrieron los e2e.
+
+#### Pendientes y bloqueos
+- El horario semanal sigue sin poder cargarse desde la UI (DI-01, de C): sin él un borrador no se puede publicar de forma normal.
+
+#### Para el resto del equipo
+- C (@gonzzza-lol): el botón de guardar que pediste en #24 ya está en el paso "Revisar".
+
+---
+
 ### 2026-10-07 · B (xReNatS) · ES-08 eliminar un espacio y entregables de la Entrega 1
 
 **Issues:** #116 (ES-08)
@@ -2107,5 +2428,80 @@ Cumplir lo que le toca a B en la Entrega 1 (enunciado "Construcción inicial apl
 - C (@gonzzza-lol): el CI ahora también corre en `develop` (solo cambiaron los disparadores de `ci.yml`). DI-01 desbloquea publicar desde la app.
 - A (@AlejandroMG): ES-08 no cambia `schema.prisma`; usa la cascada que ya tenían fotos, equipamiento, horario y favoritos, y la llave foránea de `Booking`.
 - Todos: los PR nuevos van hacia `develop`. Como `Closes #N` solo cierra issues al llegar a `main`, ciérrenlos a mano al mergear a `develop`.
+
+---
+
+### 2026-10-08 · B (xReNatS) · Sincronizar main en develop
+
+**Issues:** ninguno (mantenimiento de ramas)
+**Rama / PR:** `sync/main-en-develop` · PR hacia `develop`
+**Duración aproximada:** 1 h
+**Herramientas:** Claude Code
+
+#### Objetivo
+`main` y `develop` estaban separadas: los PR de C iban a `main` y los de B y los entregables de la Entrega 1 a `develop`. Ninguna rama tenía el botón "Eliminar" (ES-08) y el horario semanal (DI-01) a la vez, y la demo necesita ambos.
+
+#### Qué se hizo
+- Se creó `sync/main-en-develop` desde `origin/develop` y se hizo el merge de `origin/main`: contrato de reservas y pagos (F-05), horario semanal (DI-01), estados de la reserva (RE-01), favoritos simultáneos (BU-08), edición de espacios publicados y fotos en el seed (ES-05, #124) y la asignación automática de revisor.
+- Único conflicto: `docs/memory.md`. Las dos ramas agregaron entradas al final del archivo; se conservaron las de `main` completas y, al final, las de `develop`.
+- Verificación con Node 24: front 641 pruebas, integración de la API 454 (contra una base local de prueba) y unitarias del back en verde salvo `PrismaService`, que necesita la base que dice el `.env`.
+
+#### Decisiones y por qué
+| Decisión | Alternativas consideradas | Por qué se eligió |
+|---|---|---|
+| Sincronizar con un PR hacia `develop` y un merge commit | Empujar el merge directo a `develop`; hacer *squash* | El flujo de trabajo exige PR con CI y revisión. Con *squash* no quedaría registrado que `develop` ya contiene a `main`, y las ramas seguirían apareciendo como separadas |
+| Resolver `memory.md` conservando ambos lados | Quedarse con una sola versión | Es la bitácora de las tres personas; no se debe perder ninguna entrada |
+
+#### Archivos principales
+- `docs/memory.md` (conflicto resuelto y esta entrada). El resto lo trae el merge, sin cambios propios.
+
+#### Cómo probarlo
+- Desde esta rama: `npm run build` y `npm run start:prod` en `rentsmart-back`, y `npm run dev` en `rentsmart-front`.
+- En "Mis espacios" debe verse el botón **Eliminar**, y al publicar, el horario semanal.
+
+#### Estado de verificación
+- Front: lint, tipos y 641 pruebas en verde.
+- Back: lint y tipos en verde; integración 454 en verde; unitarias 342 de 343 (la de `PrismaService` depende de la BD del `.env`, no del código).
+
+#### Pendientes y bloqueos
+- **Mergear con merge commit, no con *squash*.**
+- Después, crear `release/v1.0-entrega1` desde `develop`, mergearla a `main` y hacer el tag con su Release.
+- El CI de `main` falló en el último merge por un test de concurrencia de reservas (`booking-state`), que parece intermitente: lo revisa C.
+
+#### Para el resto del equipo
+- C (@gonzzza-lol): desde ahora conviene abrir los PR hacia `develop` (GitFlow, decisión T-05); `main` solo recibe releases.
+- A (@AlejandroMG): sin cambios en tu dominio.
+- Todos: tras el merge, `main` y `develop` quedan alineadas.
+
+---
+
+### 2026-10-08 · B (xReNatS) · Arreglar dos tests e2e intermitentes que tumbaron el CI del PR de sincronización
+
+**Issues:** ninguno (mantenimiento de pruebas)
+**Rama / PR:** `sync/main-en-develop` · PR de sincronización de `main` en `develop`
+**Duración aproximada:** 40 min
+**Herramientas:** Claude Code
+
+#### Objetivo
+El job de Backend del CI falló en el PR de sincronización con 1 test e2e en rojo (453 de 454). El merge no tenía relación: eran pruebas que dependen del orden en que corren las suites.
+
+#### Qué se hizo
+- `rentsmart-back/test/catalog.e2e-spec.ts`: la prueba «pagina con page y pageSize» comparaba el `total` de dos peticiones sobre todo el catálogo. Jest corre las suites en paralelo sobre la misma BD, así que otra suite creaba espacios activos entre ambas peticiones (esperaba 6, recibió 3). Ahora filtra por la comuna única de la suite (`communeId`).
+- `rentsmart-back/test/booking-state.e2e-spec.ts` (módulo de C): la prueba «de dos cambios simultáneos con destinos distintos» usaba `PAID` contra `CANCELLED`. Como `PENDING→PAID→CANCELLED` es válido en secuencia, si la segunda petición leía después de la primera ganaban las dos y la prueba fallaba. Ahora usa `PAID` contra `EXPIRED`, que no se pueden encadenar. Es el intermitente que ya había tumbado el CI de `main`.
+
+#### Decisiones y por qué
+- Se arreglaron las pruebas y no el CI (`--runInBand`): es un cambio mínimo, no hace más lenta la ejecución y deja las pruebas independientes del paralelismo.
+
+#### Cómo probarlo
+- En `rentsmart-back`, con una BD de test: `npm run test:e2e` varias veces seguidas. `booking-state` pasó 6 de 6 corridas y el catálogo 3 de 3.
+
+#### Estado de verificación
+- e2e completo en verde (454 de 454) en 2 de 3 corridas completas antes del arreglo de `booking-state`; lint en verde.
+
+#### Pendientes y bloqueos
+- Tras el push, esperar al CI y pedir a Gonzalo que revise el PR.
+
+#### Para el resto del equipo
+- C (@gonzzza-lol): toqué una línea de `test/booking-state.e2e-spec.ts` (el par de estados de la prueba de concurrencia); revisa que te parezca bien.
 
 ---
