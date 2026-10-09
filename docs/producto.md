@@ -36,7 +36,7 @@ Lo que no entra quedó en el milestone [Post 9 de octubre](https://github.com/Al
 - **Tipos permitidos** ([P-08](decisiones.md#p-08--lista-cerrada-de-8-tipos-de-espacio)): sala de reuniones, oficina o cowork, estudio fotográfico o audiovisual, sala de ensayo, cocina equipada, cancha, salón de eventos y taller. El admin puede agregar tipos. No se permite alojamiento.
 - **Ubicación** ([P-09](decisiones.md#p-09--ubicación-pública-con-detalle-privado)): región y comuna desde una lista cerrada, que sirve para filtrar. La dirección (calle y número) es pública. El detalle (número de depto u oficina, indicaciones de acceso) es privado y solo lo ve quien tiene una reserva `Confirmada` en ese espacio.
 - **Precio**: por hora, por día o ambos. Montos en pesos chilenos, sin decimales.
-- **Publicación**: un espacio solo se publica si tiene tipo, descripción, capacidad, comuna, precio (por hora o por día), al menos una foto y horario semanal ([P-18](decisiones.md#p-18--tipo-y-comuna-también-son-obligatorios-para-publicar)). Mientras tanto queda como borrador. Un espacio publicado no puede quedar sin alguno de esos datos: para dejarlo incompleto hay que desactivarlo primero.
+- **Publicación**: un espacio solo se publica si tiene tipo, descripción, capacidad, comuna, precio (por hora o por día), al menos una foto y horario semanal ([P-18](decisiones.md#p-18--tipo-y-comuna-también-son-obligatorios-para-publicar)). Mientras tanto queda como borrador. Un espacio publicado no puede perder alguno de esos datos al editarlo: para dejarlo incompleto hay que desactivarlo primero.
 - **Desactivar** un espacio lo saca del catálogo y bloquea nuevas reservas; las reservas ya confirmadas se mantienen.
 - **Cambios de precio** aplican solo a reservas nuevas.
 

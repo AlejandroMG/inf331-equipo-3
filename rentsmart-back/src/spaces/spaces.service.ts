@@ -97,9 +97,21 @@ export class SpacesService {
     const regionId = await this.checkReferences(dto);
     checkCoordinates(dto, current);
 
-    // Un espacio publicado no puede quedar sin algo de lo necesario para publicar (un cambio de precio sí vale).
+    // Un espacio publicado no puede perder algo de lo necesario para publicar (un cambio de precio sí vale).
+    // Solo cuenta lo que esta edición quita: si ya venía incompleto (fotos u horario que se cargan aparte),
+    // se puede seguir editando para poder completarlo.
     if (current.status === SpaceStatus.ACTIVE) {
-      const missing = missingFields({
+      const before = missingFields({
+        typeId: current.typeId,
+        description: current.description,
+        capacity: current.capacity,
+        communeId: current.communeId,
+        pricePerHour: current.pricePerHour,
+        pricePerDay: current.pricePerDay,
+        photoCount: current._count.photos,
+        scheduleCount: current._count.rulesWeek,
+      });
+      const after = missingFields({
         typeId: dto.typeId !== undefined ? dto.typeId : current.typeId,
         description:
           dto.description !== undefined ? dto.description : current.description,
@@ -115,9 +127,10 @@ export class SpacesService {
         photoCount: current._count.photos,
         scheduleCount: current._count.rulesWeek,
       });
-      if (missing.length > 0) {
+      const removed = after.filter((field) => !before.includes(field));
+      if (removed.length > 0) {
         throw new IncompleteSpaceException(
-          missing,
+          removed,
           'Un espacio publicado debe seguir teniendo lo necesario para publicar: desactívalo si quieres dejarlo incompleto',
         );
       }

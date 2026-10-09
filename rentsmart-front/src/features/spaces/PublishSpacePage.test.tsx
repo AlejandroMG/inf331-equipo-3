@@ -365,6 +365,59 @@ describe('PublishSpacePage', () => {
     })
   })
 
+  describe('editar un espacio publicado', () => {
+    const useActiveSpace = () =>
+      server.use(
+        mswHttp.get('*/api/spaces/draft-7', () =>
+          HttpResponse.json({
+            id: 'draft-7', status: 'ACTIVE', name: 'Publicado', typeId: 1, description: 'x', capacity: 5, pricePerHour: 5000, pricePerDay: null,
+            regionId: 1, communeId: 1, address: null, addressDetail: null, rules: null, amenityIds: [], photos: [],
+            createdAt: '2026-10-05T00:00:00.000Z', updatedAt: '2026-10-05T00:00:00.000Z',
+          }),
+        ),
+      )
+
+    async function editNameAndReview() {
+      renderPublish('/publish/draft-7')
+      await screen.findByRole('heading', { level: 1, name: 'Edita tu espacio' })
+      await userEvent.type(screen.getByLabelText('Nombre del espacio'), ' 2')
+      await userEvent.click(screen.getByRole('button', { name: /Revisar/ }))
+    }
+
+    it('el último paso tiene un botón para guardar los cambios', async () => {
+      useActiveSpace()
+      const saves = spyOnSaves()
+      server.use(mswHttp.patch('*/api/spaces/draft-7', () => HttpResponse.json({})))
+      renderPublish('/publish/draft-7')
+      await screen.findByRole('heading', { level: 1, name: 'Edita tu espacio' })
+      await userEvent.click(screen.getByRole('button', { name: /Revisar/ }))
+      expect(await screen.findByRole('button', { name: 'Guardar cambios' })).toBeDisabled()
+
+      await userEvent.click(screen.getByRole('button', { name: /Información/ }))
+      await userEvent.type(await screen.findByLabelText('Nombre del espacio'), ' 2')
+      await userEvent.click(screen.getByRole('button', { name: /Revisar/ }))
+      await userEvent.click(await screen.findByRole('button', { name: 'Guardar cambios' }))
+
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Guardar cambios' })).toBeDisabled())
+      expect(screen.getByText('Cambios guardados')).toBeInTheDocument()
+      expect(saves.filter((call) => call.method === 'PATCH')).toHaveLength(1)
+    })
+
+    it('si el guardado deja el espacio incompleto, dice qué le faltaría', async () => {
+      useActiveSpace()
+      server.use(
+        mswHttp.patch('*/api/spaces/draft-7', () =>
+          HttpResponse.json({ message: 'Un espacio publicado debe seguir teniendo lo necesario', missing: ['price'] }, { status: 409 }),
+        ),
+      )
+
+      await editNameAndReview()
+
+      expect(await screen.findByRole('alert')).toHaveTextContent('Este cambio dejaría el espacio sin: precio por hora o por día.')
+      expect(screen.getByText('Paso 1 de 5 · Información')).toBeInTheDocument()
+    })
+  })
+
   it('si el servidor rechaza el guardado muestra el mensaje y no avanza', async () => {
     server.use(
       mswHttp.post('*/api/spaces', () => HttpResponse.json({ message: 'El tipo de espacio no existe' }, { status: 400 })),
