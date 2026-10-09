@@ -147,8 +147,14 @@ describe('Catálogo (e2e)', () => {
     });
 
     it('pagina con page y pageSize', async () => {
-      const first = await request(app.getHttpServer()).get('/api/catalog?pageSize=1&page=1').expect(200);
-      const second = await request(app.getHttpServer()).get('/api/catalog?pageSize=1&page=2').expect(200);
+      // Se filtra por la comuna de esta suite: otras suites e2e corren en paralelo sobre la misma BD
+      // y crean espacios activos que cambiarían el total entre una petición y otra.
+      const first = await request(app.getHttpServer())
+        .get(`/api/catalog?pageSize=1&page=1&communeId=${communeId}`)
+        .expect(200);
+      const second = await request(app.getHttpServer())
+        .get(`/api/catalog?pageSize=1&page=2&communeId=${communeId}`)
+        .expect(200);
 
       expect((first.body as CatalogBody).items.map((i) => i.id)).toEqual([ids['Activo-1']]);
       expect((second.body as CatalogBody).items.map((i) => i.id)).toEqual([ids['Activo-2']]);

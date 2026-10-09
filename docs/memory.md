@@ -2474,3 +2474,34 @@ Cumplir lo que le toca a B en la Entrega 1 (enunciado "Construcción inicial apl
 - Todos: tras el merge, `main` y `develop` quedan alineadas.
 
 ---
+
+### 2026-10-08 · B (xReNatS) · Arreglar dos tests e2e intermitentes que tumbaron el CI del PR de sincronización
+
+**Issues:** ninguno (mantenimiento de pruebas)
+**Rama / PR:** `sync/main-en-develop` · PR de sincronización de `main` en `develop`
+**Duración aproximada:** 40 min
+**Herramientas:** Claude Code
+
+#### Objetivo
+El job de Backend del CI falló en el PR de sincronización con 1 test e2e en rojo (453 de 454). El merge no tenía relación: eran pruebas que dependen del orden en que corren las suites.
+
+#### Qué se hizo
+- `rentsmart-back/test/catalog.e2e-spec.ts`: la prueba «pagina con page y pageSize» comparaba el `total` de dos peticiones sobre todo el catálogo. Jest corre las suites en paralelo sobre la misma BD, así que otra suite creaba espacios activos entre ambas peticiones (esperaba 6, recibió 3). Ahora filtra por la comuna única de la suite (`communeId`).
+- `rentsmart-back/test/booking-state.e2e-spec.ts` (módulo de C): la prueba «de dos cambios simultáneos con destinos distintos» usaba `PAID` contra `CANCELLED`. Como `PENDING→PAID→CANCELLED` es válido en secuencia, si la segunda petición leía después de la primera ganaban las dos y la prueba fallaba. Ahora usa `PAID` contra `EXPIRED`, que no se pueden encadenar. Es el intermitente que ya había tumbado el CI de `main`.
+
+#### Decisiones y por qué
+- Se arreglaron las pruebas y no el CI (`--runInBand`): es un cambio mínimo, no hace más lenta la ejecución y deja las pruebas independientes del paralelismo.
+
+#### Cómo probarlo
+- En `rentsmart-back`, con una BD de test: `npm run test:e2e` varias veces seguidas. `booking-state` pasó 6 de 6 corridas y el catálogo 3 de 3.
+
+#### Estado de verificación
+- e2e completo en verde (454 de 454) en 2 de 3 corridas completas antes del arreglo de `booking-state`; lint en verde.
+
+#### Pendientes y bloqueos
+- Tras el push, esperar al CI y pedir a Gonzalo que revise el PR.
+
+#### Para el resto del equipo
+- C (@gonzzza-lol): toqué una línea de `test/booking-state.e2e-spec.ts` (el par de estados de la prueba de concurrencia); revisa que te parezca bien.
+
+---
