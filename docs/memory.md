@@ -2330,3 +2330,75 @@ Con Node 24 y la base de test levantada y migrada. En `rentsmart-back`: `npm run
 - **A (@AlejandroMG):** te toca revisar por rotación. No hay cambios en `schema.prisma`.
 
 ---
+
+### 2026-10-08 · C (gonzzza-lol) · RE-05 cancelar una reserva
+
+**Issues:** #42 (RE-05) · decide #81 (P-14)
+**Rama / PR:** `feat/RE-05-cancelar-reserva` · sin PR todavía
+**Duración aproximada:** 2 h
+**Herramientas:** Claude Code
+
+#### Objetivo
+Que el arrendatario o el propietario puedan cancelar una reserva con un motivo, aplicando una política de cancelación acordada. La historia es del milestone "Post 9 de octubre" y dependía de RE-01 (ya fusionada) y de dos cosas abiertas: la política (P-14) y el contrato del endpoint.
+
+#### Qué se hizo
+- **P-14 decidida** y registrada en `docs/decisiones.md`: cancelación gratis hasta 24 horas antes; con menos, sin reembolso; si cancela el propietario, reembolso total siempre; el reembolso incluye la comisión.
+- **Cambio de contrato** de `POST /api/bookings/:id/cancel`: ahora recibe `{ reason }` (obligatorio, de 5 a 500 caracteres) y puede llamarlo el arrendatario o el dueño del espacio. Antes no recibía cuerpo y era solo del arrendatario. Actualizados Swagger, `types.ts`, el mock con su test y la tabla de `arquitectura.md`.
+- **Back:** `BookingsService.cancel`. 404 si no existe, 403 si no es el arrendatario ni el dueño, 409 desde cualquier estado que no sea `PENDING` o `CONFIRMED`. Una `PENDING` con el plazo de pago vencido pasa a `EXPIRED` (por el sistema) y responde 409. El estado cambia solo con `BookingStateService.transition`, con `actorId` y el motivo.
+- **Política como función pura:** `cancellationRefund(booking, cancelledBy, now)` en `cancellation-policy.ts`, probada en los bordes (24 horas exactas, un milisegundo menos, propietario, estados sin pago).
+- **`booking-view.ts`:** `BOOKING_VIEW` y `toBookingDto` arman el `BookingDto` con `addressDetail` solo en `CONFIRMED`. RE-02 todavía no existía, así que quedó en un archivo aparte para que lo reutilice.
+- **Front:** `CancelBookingDialog` (con `Modal`, `Textarea` y `Button`), `cancelBooking` en `bookings-api.ts` y `cancellation.ts` (largo del motivo, `canCancel` y `refundsOnCancel`). No está puesto en ninguna pantalla: los paneles son de A y de B.
+- **Pruebas:** 38 unitarias nuevas del back (política y servicio), `test/booking-cancel.e2e-spec.ts` con 23 e2e (200 de cada actor, 400, 401, 403, 404 y 409) y 24 tests nuevos del front (diálogo, reglas y mock). De `booking-contract.e2e-spec.ts` salió la línea de 501 de cancelar.
+
+#### Decisiones y por qué
+| Decisión | Alternativas consideradas | Por qué se eligió |
+|---|---|---|
+| P-14: gratis hasta 24 horas antes, sin reembolso después, total si cancela el propietario, comisión incluida | 50 % con menos de 24 horas; impedir la cancelación tardía; conservar la comisión | Es la recomendación del issue #81; "gratis" se entiende mejor si se devuelve todo. La aprobó Gonzalo en la sesión |
+| Las 24 horas exactas cuentan como a tiempo | Exigir más de 24 horas | "Hasta 24 horas antes" incluye el borde; queda fijado en un test |
+| Con menos de 24 horas el arrendatario puede cancelar igual (200), sin reembolso | Responder 409 | La política decide el dinero, no si se puede cancelar: cancelar libera el horario para otra persona |
+| No se cancela desde `PAID` (409), aunque la tabla de transiciones lo permite | Permitirlo | `PAID → CANCELLED` es de la validación automática (RE-04), que además reembolsa. `PAID` dura un instante |
+| Antes de cancelar se bloquea la fila en el estado revisado (un `updateMany` condicionado dentro de la transacción) | Confiar solo en `transition` | Si el pago llega entre la revisión y el cambio, `transition` vería `PAID` y la cancelaría igual, porque esa transición es válida. Con el bloqueo responde 409 |
+| Una `PENDING` vencida pasa a `EXPIRED` en su propia transacción y luego responde 409 | Solo responder 409; cancelarla | Es lo que pide la historia ("trátala como vencida"). Va en otra transacción porque el 409 desharía el cambio |
+| Quien es arrendatario y dueño a la vez cuenta como arrendatario | Tratarlo como propietario | Caso raro (reservar el espacio propio); había que elegir uno |
+| El reembolso pendiente se escribe en el registro del servidor | Guardarlo en la base; no dejar nada | No se puede tocar `schema.prisma` y `Payment` es de PA-03. El aviso deja rastro mientras tanto |
+| El diálogo recibe `{ id, status, startAt }` y el total aparte y opcional | Recibir un `Booking` completo | La reserva del panel del propietario (`OwnerBooking`) no trae `total` ni `space`; así sirve para los dos paneles |
+| La regla de las 24 horas está repetida en el front (`refundsOnCancel`) | Que el back devuelva el monto antes de cancelar | El diálogo necesita explicarlo antes de confirmar y no hay un endpoint de vista previa. Si cambia P-14, cambian los dos |
+
+Cambió una decisión abierta: P-14 pasó a decidida. No se tocó `schema.prisma`.
+
+#### Archivos principales
+- `rentsmart-back/src/bookings/bookings.service.ts`: `cancel`.
+- `rentsmart-back/src/bookings/cancellation-policy.ts`: la política.
+- `rentsmart-back/src/bookings/booking-view.ts`: armado del `BookingDto`.
+- `rentsmart-back/src/bookings/dto/cancel-booking.dto.ts` y `bookings.controller.ts`: el cuerpo y Swagger.
+- `rentsmart-back/src/bookings/*.spec.ts` y `test/booking-cancel.e2e-spec.ts`: pruebas.
+- `rentsmart-front/src/features/bookings/CancelBookingDialog.tsx`, `cancellation.ts`, `bookings-api.ts` y sus tests.
+- `rentsmart-front/src/mocks/bookings-handlers.ts` y su test: el mock pide el motivo.
+- `docs/decisiones.md`, `docs/arquitectura.md`, `docs/producto.md`.
+
+#### Cómo probarlo
+Con Node 24 y la base de test levantada y migrada. En `rentsmart-back`: `npm run build`, `npm run lint`, `npm test` y `npm run test:e2e`. En `rentsmart-front`: `npm run build`, `npm run lint` y `npm test`. En Swagger: `POST /api/bookings/:id/cancel` con `{ "reason": "Se suspendió la reunión" }` sobre una reserva `CONFIRMED` (hoy solo se crean por la base o el seed, porque RE-02 no existe). El diálogo no se puede ver en la app todavía: no está en ninguna pantalla.
+
+#### Estado de verificación
+- Build: ✅ back y front
+- Lint: ✅ back y front
+- Tests: back 370 unitarias ✅ · front 658 tests (50 archivos) ✅ · e2e del back 469: pasaron completos en 3 de 5 corridas; en las otras 2 falló `test/catalog.e2e-spec.ts`, que no es de esta rama (abajo)
+- **No lo probé en un navegador:** el diálogo solo se ejercitó en sus tests (teclado, foco y axe). Falta verlo a 375 px cuando esté integrado.
+
+#### Pendientes y bloqueos
+- **`test/catalog.e2e-spec.ts` falla a veces** ("lista solo los espacios activos, los más recientes primero" y, una vez, "pagina con page y pageSize"). El test supone que sus tres espacios activos son los más recientes de la base, pero los archivos e2e corren en paralelo sobre la misma base y otros crean espacios `ACTIVE` al mismo tiempo (once archivos lo hacen, entre ellos `schedule.e2e-spec.ts` de DI-01). El espacio de los e2e de cancelar es `INACTIVE` para no sumarse. No lo arreglé: es un test de B; las salidas son que filtre por sus propios datos o correr los e2e en serie (`--runInBand`), que haría el CI más lento.
+- **El reembolso no ocurre todavía.** Cancelar cambia el estado y libera el horario, pero no devuelve dinero ni toca `Payment`: eso es PA-03 (#47). El diálogo ya le dice al arrendatario "se te reembolsa el total"; no conviene integrarlo en producción antes de PA-03.
+- **El motivo no se muestra en ninguna parte.** Queda en `BookingEvent.reason`; el diálogo dice "Lo verá el propietario/arrendatario", pero ningún endpoint lo devuelve aún.
+- **P-14 dice que la política "se muestra en el detalle y al reservar":** no está hecho; es del detalle (B) y del widget de reserva (RE-02).
+- No se avisa a la otra parte cuando se cancela (no hay notificaciones).
+- Se puede cancelar una reserva `CONFIRMED` que ya empezó y todavía no pasa a `FINISHED`; el arrendatario no recibe reembolso y el propietario sí lo genera. No está definido si debería impedirse.
+- El issue #81 (P-14) sigue abierto en GitHub: falta dejar el comentario con la decisión y cerrarlo.
+
+#### Para el resto del equipo
+- **A (@AlejandroMG), panel del arrendatario (PN-03):** para cancelar, usa `<CancelBookingDialog booking={reserva o null} cancelledBy="RENTER" total={reserva.total} onClose={...} onCancelled={(cancelada) => ...} />` de `src/features/bookings/`. Muestra el botón solo si `canCancel(reserva.status)`. `onCancelled` recibe la reserva ya cancelada: reemplázala en tu lista y cierra el diálogo. P-14 quedó decidida en esta sesión; si no estás de acuerdo, dilo en el PR antes de fusionar.
+- **B (@xReNatS), `OwnerBookingsPage`:** lo mismo con `cancelledBy="OWNER"` y sin `total` (tu `OwnerBooking` no lo trae; el diálogo dice "reembolso total" sin monto). Le sirve tu `OwnerBooking` tal cual, porque solo usa `id`, `status` y `startAt`. La respuesta es la vista del arrendatario (`Booking`), no un `OwnerBooking`: después de cancelar, recarga tu lista o marca la reserva como `CANCELLED`. No toqué ninguna pantalla tuya.
+- **PA-03 (#47), reembolsos:** el punto de llamada está marcado en `BookingsService.cancel`, después de la transacción, con el monto en `refund` (CLP enteros, 0 si no corresponde). Falta: crear el reembolso en Stripe por ese monto, actualizar `Payment.refundedAmount` y `Payment.status`, y decidir qué pasa si Stripe falla después de que la reserva ya quedó `CANCELLED`. `cancellationRefund` devuelve 0 para todo lo que no sea `CONFIRMED`.
+- **RE-02:** `BOOKING_VIEW` y `toBookingDto` de `booking-view.ts` ya arman el `BookingDto`. `BookingsService` ahora recibe `PrismaService` y `BookingStateService` en el constructor.
+- **Mock de MSW:** `POST /api/bookings/:id/cancel` ahora responde 400 sin `reason` y 409 desde `PAID`. No distingue arrendatario de propietario ni aplica las 24 horas.
+
+---

@@ -17,6 +17,7 @@ Cada decisión del producto tiene un ID `P-xx` que coincide con su issue en GitH
 | [P-09](#p-09--ubicación-pública-con-detalle-privado) | Ubicación pública con detalle privado | Decidida | 25-09-2026 |
 | [P-10](#p-10--fotos-en-supabase-storage) | Fotos en Supabase Storage | Decidida | 25-09-2026 |
 | [P-11](#p-11--meta-de-pruebas) | Meta de pruebas | En espera del profesor | — |
+| [P-14](#p-14--cancelación-gratis-hasta-24-horas-antes) | Cancelación gratis hasta 24 horas antes | Decidida | 08-10-2026 |
 | [P-18](#p-18--tipo-y-comuna-también-son-obligatorios-para-publicar) | Tipo y comuna también son obligatorios para publicar | Decidida | 05-10-2026 |
 | [T-01](#t-01--dominios-verticales-por-integrante) | Dominios verticales por integrante | Decidida | 25-09-2026 |
 | [T-02](#t-02--quitar-nestjsobserve) | Quitar `@nestjs/observe` | Decidida | 25-09-2026 |
@@ -113,6 +114,19 @@ Decisiones abiertas: ver [al final](#decisiones-abiertas).
 - **Contexto:** el ramo puede exigir una cobertura mínima, ciertos tipos de prueba o informes.
 - **Decisión provisoria:** no se fija una meta de cobertura hasta tener la respuesta. Mientras tanto, cada historia exige tests según la [definición de terminado](flujo-de-trabajo.md#definición-de-terminado). F-10 (plan de pruebas y Playwright) quedó para después del 9 de octubre.
 
+## P-14 · Cancelación gratis hasta 24 horas antes
+
+- **Estado:** Decidida, 08-10-2026 · Issue [#81](https://github.com/AlejandroMG/inf331-equipo-3/issues/81)
+- **Contexto:** RE-05 (cancelar una reserva) y PA-03 (reembolsos) necesitan saber cuánto se devuelve según quién cancela y cuándo. La recomendación del issue no decía qué pasa con la comisión.
+- **Decisión:**
+  - Si cancela el **arrendatario** hasta **24 horas antes** del inicio (inclusive), se le reembolsa el **total**. Con menos de 24 horas puede cancelar igual, pero **sin reembolso**.
+  - Si cancela el **propietario**, siempre se reembolsa el **total**, falte lo que falte.
+  - El total incluye la **comisión**: en un reembolso se devuelve el subtotal y la comisión.
+  - Se cancela con un **motivo** obligatorio, de 5 a 500 caracteres, que queda en el historial de la reserva.
+  - Una reserva `Pendiente` no tiene pago: cancelarla solo libera el horario.
+- **Alternativas descartadas:** reembolso parcial del 50 % con menos de 24 horas; impedir que el arrendatario cancele con menos de 24 horas; que la plataforma conserve la comisión.
+- **Consecuencias:** `POST /api/bookings/:id/cancel` recibe `{ reason }` y acepta al arrendatario o al dueño del espacio (cambio del contrato de F-05). La política es la función pura `cancellationRefund` (`src/bookings/cancellation-policy.ts`). El reembolso en Stripe lo ejecuta PA-03 con ese monto. Falta mostrar la política en el detalle del espacio y al reservar.
+
 ## P-18 · Tipo y comuna también son obligatorios para publicar
 
 - **Estado:** Decidida, 05-10-2026 · Sin issue todavía
@@ -164,7 +178,6 @@ Decisiones abiertas: ver [al final](#decisiones-abiertas).
 | [P-13](https://github.com/AlejandroMG/inf331-equipo-3/issues/80) | ¿De cuánto es la comisión y quién la paga? | 10 % sumado al arrendatario, visible en el desglose | 3 de octubre (RE-02) |
 | [P-15](https://github.com/AlejandroMG/inf331-equipo-3/issues/82) | ¿Qué proveedor de IA y quién paga la API? | Un modelo pequeño con visión; preguntar si el ramo da créditos | 3 de octubre (IA-01) |
 | [P-17](https://github.com/AlejandroMG/inf331-equipo-3/issues/84) | ¿Dónde desplegamos? | Vercel (front), Render o Railway (back), Neon o Supabase (BD) | 3 de octubre (QA-03) |
-| [P-14](https://github.com/AlejandroMG/inf331-equipo-3/issues/81) | ¿Política de cancelación y reembolso? | Gratis hasta 24 h antes; si cancela el propietario, reembolso total | Después del 9 de octubre |
 | [P-16](https://github.com/AlejandroMG/inf331-equipo-3/issues/83) | ¿Reseñas en una o ambas direcciones? | Solo al espacio en el MVP | Después del 9 de octubre |
 
 ## Plantilla para una decisión nueva

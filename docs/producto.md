@@ -57,6 +57,8 @@ Reserva inmediata, sin aprobación del propietario ([P-05](decisiones.md#p-05--r
 5. Al terminar el horario pasa a **Finalizada**.
 6. Si el arrendatario no paga en 30 minutos, pasa a **Expirada** y libera el horario.
 
+Cancelación ([P-14](decisiones.md#p-14--cancelación-gratis-hasta-24-horas-antes)): el arrendatario o el propietario pueden cancelar una reserva **Pendiente** o **Confirmada**, con un motivo. Si cancela el arrendatario hasta 24 horas antes del inicio, o si cancela el propietario, se reembolsa el total (con la comisión); si el arrendatario cancela con menos de 24 horas, no hay reembolso.
+
 El diagrama de estados está en [arquitectura.md](arquitectura.md#ciclo-de-vida-de-una-reserva).
 
 ### Pendiente de definir
@@ -68,5 +70,4 @@ El diagrama de estados está en [arquitectura.md](arquitectura.md#ciclo-de-vida-
 | Proveedor de IA | [P-15](https://github.com/AlejandroMG/inf331-equipo-3/issues/82) | 3 de octubre |
 | Dónde desplegar | [P-17](https://github.com/AlejandroMG/inf331-equipo-3/issues/84) | 3 de octubre |
 | Qué exige el ramo en pruebas | [P-11](https://github.com/AlejandroMG/inf331-equipo-3/issues/78) | Respuesta del profesor |
-| Política de cancelación y reembolso | [P-14](https://github.com/AlejandroMG/inf331-equipo-3/issues/81) | Después del 9 de octubre |
 | Reseñas en una o ambas direcciones | [P-16](https://github.com/AlejandroMG/inf331-equipo-3/issues/83) | Después del 9 de octubre |

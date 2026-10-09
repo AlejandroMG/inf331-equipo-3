@@ -9,6 +9,7 @@ import type {
   Payment,
   Schedule,
 } from '../features/bookings/types'
+import { canCancel, MAX_CANCEL_REASON, MIN_CANCEL_REASON } from '../features/bookings/cancellation'
 import type { ScheduleRule } from '../features/catalog/types'
 import { catalogData } from './catalog-data'
 
@@ -288,12 +289,18 @@ export const bookingHandlers = [
     return HttpResponse.json(toBooking(booking))
   }),
 
-  // RE-05 (fuera del MVP): cancelar. Libera el horario; si ya estaba pagada, el pago queda reembolsado.
-  http.post('*/api/bookings/:id/cancel', ({ params, request }) => {
+  // RE-05: cancelar con motivo. Libera el horario; si ya estaba pagada, el pago queda reembolsado. A diferencia
+  // del back, no distingue al arrendatario del propietario ni aplica el plazo de 24 horas (no depende del reloj).
+  http.post('*/api/bookings/:id/cancel', async ({ params, request }) => {
     if (!hasSession(request)) return unauthorized()
+    const body = (await request.json().catch(() => null)) as { reason?: unknown } | null
+    const reason = typeof body?.reason === 'string' ? body.reason.trim() : ''
+    if (reason.length < MIN_CANCEL_REASON || reason.length > MAX_CANCEL_REASON) {
+      return badRequest(`reason debe tener entre ${MIN_CANCEL_REASON} y ${MAX_CANCEL_REASON} caracteres`)
+    }
     const booking = bookings.find((item) => item.id === params.id)
     if (!booking) return notFound('La reserva no existe')
-    if (!BLOCKING.includes(booking.status)) return conflict('La reserva ya no se puede cancelar')
+    if (!canCancel(booking.status)) return conflict(`Una reserva en estado ${booking.status} no se puede cancelar`)
     booking.status = 'CANCELLED'
     return HttpResponse.json(toBooking(booking))
   }),

@@ -16,6 +16,7 @@ import type { AuthUser } from '../common/auth/auth-user';
 import { CurrentUser } from '../common/auth/current-user.decorator';
 import { BookingsService } from './bookings.service';
 import { BookingCheckoutDto, BookingDto, BookingsPageDto } from './dto/booking.dto';
+import { CancelBookingDto } from './dto/cancel-booking.dto';
 import { CreateBookingDto } from './dto/create-booking.dto';
 import { PageQueryDto } from './dto/page-query.dto';
 
@@ -74,15 +75,23 @@ export class BookingsController {
   @Post(':id/cancel')
   @HttpCode(200)
   @ApiOperation({
-    summary: 'Cancela una reserva mía',
+    summary: 'Cancela una reserva',
     description:
-      'Fuera del MVP del 9 de octubre (RE-05): la política de cancelación y reembolso sigue abierta (P-14). Queda en el contrato para no cambiar la forma después.',
+      'La cancela su arrendatario o el dueño del espacio, desde `PENDING` o `CONFIRMED`, con un motivo que queda en el historial. Política (P-14): si cancela el propietario se reembolsa el total; si cancela el arrendatario, el total hasta 24 horas antes del inicio y nada después. El reembolso en Stripe llega con PA-03.',
   })
   @ApiOkResponse({ type: BookingDto })
-  @ApiForbiddenResponse({ description: 'La reserva es de otro usuario' })
+  @ApiBadRequestResponse({ description: 'Falta el motivo o no tiene entre 5 y 500 caracteres' })
+  @ApiForbiddenResponse({ description: 'La reserva no es tuya ni de un espacio tuyo' })
   @ApiNotFoundResponse({ description: 'La reserva no existe' })
-  @ApiConflictResponse({ description: 'La reserva ya no se puede cancelar (finalizada, cancelada o expirada)' })
-  cancel(@CurrentUser() user: AuthUser, @Param('id') id: string): Promise<BookingDto> {
-    return this.service.cancel(user.id, id);
+  @ApiConflictResponse({
+    description:
+      'La reserva no se puede cancelar: está pagada sin confirmar, finalizada, cancelada, expirada o venció su plazo de pago',
+  })
+  cancel(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Body() dto: CancelBookingDto,
+  ): Promise<BookingDto> {
+    return this.service.cancel(user.id, id, dto);
   }
 }
