@@ -120,7 +120,7 @@ Decisiones abiertas: ver [al final](#decisiones-abiertas).
 
 - **Estado:** Decidida, 05-10-2026 · Sin issue todavía
 - **Contexto:** `producto.md` exigía foto, precio, capacidad, descripción y horario para publicar. Un espacio sin tipo ni comuna se mostraría en el catálogo sin esos datos y nunca aparecería en los filtros por tipo y comuna (BU-03).
-- **Decisión:** para publicar también se exigen el tipo de espacio y la comuna. Las mismas reglas valen para reactivar un espacio desactivado y para editar uno ya publicado: no puede quedar sin alguno de esos datos (ni sin su última foto); para dejarlo incompleto hay que desactivarlo primero.
+- **Decisión:** para publicar también se exigen el tipo de espacio y la comuna. Las mismas reglas valen para reactivar un espacio desactivado y para editar uno ya publicado: no puede quedar sin alguno de esos datos (ni sin su última foto); para dejarlo incompleto hay que desactivarlo primero. Aclaración (08-10-2026): solo cuenta lo que la edición quita. Si el espacio ya venía sin fotos u horario (que se cargan aparte, p. ej. los espacios del seed), `PATCH /api/spaces/:id` lo deja editar para poder completarlo; lo que sí rechaza es que la edición deje sin un dato que antes tenía.
 - **Alternativas descartadas:** exigir solo lo que decía `producto.md` y tolerar tipo o comuna vacíos en el catálogo (queda como respaldo, pero esos espacios no saldrían en los filtros).
 - **Consecuencias:** `POST /api/spaces/:id/publish` y `PATCH /api/spaces/:id/status` responden 409 con `missing` (`type`, `description`, `capacity`, `commune`, `price`, `photos`, `schedule`). El formulario del front debe agregar tipo y comuna a la lista "Para publicar necesitas".
 

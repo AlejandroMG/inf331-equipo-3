@@ -144,6 +144,15 @@ describe('PublicationService', () => {
       });
     });
 
+    it('no reactiva un espacio desactivado que no tiene fotos', async () => {
+      given({ status: 'INACTIVE', _count: { photos: 0, rulesWeek: 5 } });
+
+      await expect(
+        service.changeStatus('u1', 's1', 'ACTIVE' as never),
+      ).rejects.toMatchObject({ missing: ['photos'] });
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
     it('no reactiva uno que quedó incompleto mientras estaba desactivado', async () => {
       given({ status: 'INACTIVE', pricePerHour: null });
 

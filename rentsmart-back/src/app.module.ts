@@ -10,6 +10,9 @@ import { StorageModule } from './storage/storage.module';
 import { AuthModule } from './auth/auth.module';
 import { CatalogModule } from './catalog/catalog.module';
 import { OwnerModule } from './owner/owner.module';
+import { AvailabilityModule } from './availability/availability.module';
+import { BookingsModule } from './bookings/bookings.module';
+import { PaymentsModule } from './payments/payments.module';
 
 @Module({
   imports: [
@@ -21,6 +24,9 @@ import { OwnerModule } from './owner/owner.module';
     AuthModule,
     CatalogModule,
     OwnerModule,
+    AvailabilityModule,
+    BookingsModule,
+    PaymentsModule,
   ],
   controllers: [AppController],
   providers: [AppService],
