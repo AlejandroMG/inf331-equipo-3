@@ -2527,7 +2527,7 @@ Revisar el repo contra el enunciado de la Entrega 1 y corregir lo desactualizado
 - Cifras tomadas de una corrida local con Node 24: 343 unitarias, 454 de integración, 641 del front; cobertura de líneas 45,59 % y de ramas 39,16 %.
 
 #### Pendientes y bloqueos
-- Siguen con `PENDIENTE_`: enlace al video, líder de equipo, herramienta inscrita en Aula y capturas de JIRA/Slack y de la app. Hacen falta los datos del equipo.
+- Sigue con `PENDIENTE_` el enlace al video (README y Wiki). El líder de equipo quedó definido: Renato Ramírez.
 - El tag `v1.0-entrega1` apunta a un commit anterior de `main` (`92c324b`): tras mergear #128 hay que moverlo al nuevo commit y corregir el texto del Release (coordinar con A).
 - El PR #127 (RE-05) apunta a `main` en vez de `develop`.
 

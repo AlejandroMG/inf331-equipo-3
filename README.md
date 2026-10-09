@@ -21,7 +21,7 @@ Proyecto de INF331 Pruebas de Software, Universidad Técnica Federico Santa Mar�
 | B | Renato Ramírez | [@xReNatS](https://github.com/xReNatS) | Espacios y catálogo |
 | C | Gonzalo Gutierrez | [@gonzzza-lol](https://github.com/gonzzza-lol) | Reservas, pagos y CI |
 
-Líder de equipo: PENDIENTE_LIDER.
+Líder de equipo: Renato Ramírez ([@xReNatS](https://github.com/xReNatS)).
 
 ## Estado de la Entrega 1
 
