@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   Param,
@@ -12,6 +13,7 @@ import {
   ApiBadRequestResponse,
   ApiConflictResponse,
   ApiCreatedResponse,
+  ApiNoContentResponse,
   ApiForbiddenResponse,
   ApiBearerAuth,
   ApiNotFoundResponse,
@@ -29,6 +31,7 @@ import { OwnerSpaceSummaryDto } from './dto/owner-space-summary.dto';
 import { SpaceDto } from './dto/space.dto';
 import { UpdateSpaceDto } from './dto/update-space.dto';
 import { PublicationService } from './publication.service';
+import { SpaceRemovalService } from './space-removal.service';
 import { SpacesService } from './spaces.service';
 
 @ApiTags('Espacios del propietario')
@@ -40,6 +43,7 @@ export class SpacesController {
   constructor(
     private readonly service: SpacesService,
     private readonly publication: PublicationService,
+    private readonly removal: SpaceRemovalService,
   ) {}
 
   @Post()
@@ -125,5 +129,20 @@ export class SpacesController {
     @Body() dto: ChangeStatusDto,
   ): Promise<SpaceDto> {
     return this.publication.changeStatus(user.id, id, dto.status);
+  }
+
+  @Delete(':id')
+  @HttpCode(204)
+  @ApiOperation({
+    summary: 'Elimina un espacio propio',
+    description:
+      'Borra el espacio con sus fotos, equipamiento, horario y favoritos. Solo se puede si nunca tuvo reservas; si tiene, hay que desactivarlo para conservar el historial.',
+  })
+  @ApiNoContentResponse({ description: 'Eliminado' })
+  @ApiConflictResponse({ description: 'El espacio tiene reservas: se desactiva en vez de eliminarse' })
+  @ApiForbiddenResponse({ description: 'El espacio es de otro usuario o está bloqueado por un administrador' })
+  @ApiNotFoundResponse({ description: 'El espacio no existe' })
+  remove(@CurrentUser() user: AuthUser, @Param('id') id: string): Promise<void> {
+    return this.removal.remove(user.id, id);
   }
 }

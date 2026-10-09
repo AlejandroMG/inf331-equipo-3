@@ -154,7 +154,9 @@ describe('Estados de la reserva (e2e)', () => {
 
   it.each([
     ['el mismo destino', 'PAID', 'PAID'],
-    ['destinos distintos', 'PAID', 'CANCELLED'],
+    // PAID y EXPIRED no se pueden encadenar (PAID→EXPIRED no existe): con CANCELLED, si la segunda
+    // lee después de la primera, ambas ganarían legítimamente (PENDING→PAID→CANCELLED) y el test fallaría a veces.
+    ['destinos distintos', 'PAID', 'EXPIRED'],
   ] as const)('de dos cambios simultáneos con %s pasa uno solo', async (_caso, first, second) => {
     // Varias rondas: una sola podría pasar por suerte aunque la actualización no fuera condicionada.
     for (let round = 0; round < 10; round++) {

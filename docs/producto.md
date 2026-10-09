@@ -39,6 +39,7 @@ Lo que no entra quedó en el milestone [Post 9 de octubre](https://github.com/Al
 - **Publicación**: un espacio solo se publica si tiene tipo, descripción, capacidad, comuna, precio (por hora o por día), al menos una foto y horario semanal ([P-18](decisiones.md#p-18--tipo-y-comuna-también-son-obligatorios-para-publicar)). Mientras tanto queda como borrador. Un espacio publicado no puede perder alguno de esos datos al editarlo: para dejarlo incompleto hay que desactivarlo primero.
 - **Desactivar** un espacio lo saca del catálogo y bloquea nuevas reservas; las reservas ya confirmadas se mantienen.
 - **Cambios de precio** aplican solo a reservas nuevas.
+- **Eliminar** un espacio ([P-20](decisiones.md#p-20--un-espacio-con-reservas-no-se-elimina-se-desactiva)) lo borra junto con sus fotos, equipamiento, horario y favoritos, y no se puede deshacer. Solo se permite si el espacio nunca tuvo reservas; si tiene, se desactiva para conservar el historial. Un espacio bloqueado por un administrador no se puede eliminar.
 
 ### Disponibilidad
 
