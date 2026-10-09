@@ -2430,3 +2430,47 @@ Cumplir lo que le toca a B en la Entrega 1 (enunciado "Construcción inicial apl
 - Todos: los PR nuevos van hacia `develop`. Como `Closes #N` solo cierra issues al llegar a `main`, ciérrenlos a mano al mergear a `develop`.
 
 ---
+
+### 2026-10-08 · B (xReNatS) · Sincronizar main en develop
+
+**Issues:** ninguno (mantenimiento de ramas)
+**Rama / PR:** `sync/main-en-develop` · PR hacia `develop`
+**Duración aproximada:** 1 h
+**Herramientas:** Claude Code
+
+#### Objetivo
+`main` y `develop` estaban separadas: los PR de C iban a `main` y los de B y los entregables de la Entrega 1 a `develop`. Ninguna rama tenía el botón "Eliminar" (ES-08) y el horario semanal (DI-01) a la vez, y la demo necesita ambos.
+
+#### Qué se hizo
+- Se creó `sync/main-en-develop` desde `origin/develop` y se hizo el merge de `origin/main`: contrato de reservas y pagos (F-05), horario semanal (DI-01), estados de la reserva (RE-01), favoritos simultáneos (BU-08), edición de espacios publicados y fotos en el seed (ES-05, #124) y la asignación automática de revisor.
+- Único conflicto: `docs/memory.md`. Las dos ramas agregaron entradas al final del archivo; se conservaron las de `main` completas y, al final, las de `develop`.
+- Verificación con Node 24: front 641 pruebas, integración de la API 454 (contra una base local de prueba) y unitarias del back en verde salvo `PrismaService`, que necesita la base que dice el `.env`.
+
+#### Decisiones y por qué
+| Decisión | Alternativas consideradas | Por qué se eligió |
+|---|---|---|
+| Sincronizar con un PR hacia `develop` y un merge commit | Empujar el merge directo a `develop`; hacer *squash* | El flujo de trabajo exige PR con CI y revisión. Con *squash* no quedaría registrado que `develop` ya contiene a `main`, y las ramas seguirían apareciendo como separadas |
+| Resolver `memory.md` conservando ambos lados | Quedarse con una sola versión | Es la bitácora de las tres personas; no se debe perder ninguna entrada |
+
+#### Archivos principales
+- `docs/memory.md` (conflicto resuelto y esta entrada). El resto lo trae el merge, sin cambios propios.
+
+#### Cómo probarlo
+- Desde esta rama: `npm run build` y `npm run start:prod` en `rentsmart-back`, y `npm run dev` en `rentsmart-front`.
+- En "Mis espacios" debe verse el botón **Eliminar**, y al publicar, el horario semanal.
+
+#### Estado de verificación
+- Front: lint, tipos y 641 pruebas en verde.
+- Back: lint y tipos en verde; integración 454 en verde; unitarias 342 de 343 (la de `PrismaService` depende de la BD del `.env`, no del código).
+
+#### Pendientes y bloqueos
+- **Mergear con merge commit, no con *squash*.**
+- Después, crear `release/v1.0-entrega1` desde `develop`, mergearla a `main` y hacer el tag con su Release.
+- El CI de `main` falló en el último merge por un test de concurrencia de reservas (`booking-state`), que parece intermitente: lo revisa C.
+
+#### Para el resto del equipo
+- C (@gonzzza-lol): desde ahora conviene abrir los PR hacia `develop` (GitFlow, decisión T-05); `main` solo recibe releases.
+- A (@AlejandroMG): sin cambios en tu dominio.
+- Todos: tras el merge, `main` y `develop` quedan alineadas.
+
+---
