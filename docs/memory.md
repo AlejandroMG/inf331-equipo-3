@@ -2505,3 +2505,34 @@ El job de Backend del CI falló en el PR de sincronización con 1 test e2e en ro
 - C (@gonzzza-lol): toqué una línea de `test/booking-state.e2e-spec.ts` (el par de estados de la prueba de concurrencia); revisa que te parezca bien.
 
 ---
+
+### 2026-10-09 · B (xReNatS) · Revisión final de la Entrega 1: README y Wiki
+
+**Issues:** ninguno (documentación de la entrega)
+**Rama / PR:** `docs/ajustes-entrega-1` · PR hacia `release/v1.0-entrega1`
+**Duración aproximada:** 1 h
+**Herramientas:** Claude Code
+
+#### Objetivo
+Revisar el repo contra el enunciado de la Entrega 1 y corregir lo desactualizado en el README y en la Wiki.
+
+#### Qué se hizo
+- `README.md`: sección «Estado de la Entrega 1» (qué funciona y qué no), paso `npx prisma generate`, aviso de `JWT_SECRET` para quien ya tenía un `.env`, resultados de las pruebas (1438 en verde, 45,6 % de cobertura de líneas) y forma de trabajo con GitFlow (antes decía `feat/` y PR a `main`).
+- Wiki (publicada aparte, repositorio `.wiki`): cifras de pruebas y cobertura actualizadas, «Agregar» pasa a ✅ porque el horario semanal (DI-01) ya se carga desde la app, estados de la reserva (RE-01) en ✅, el CI enlazado es el de la rama de release y se reemplazó el problema «publicar requiere DI-01» por los dos problemas reales de pruebas intermitentes y del favorito con peticiones simultáneas.
+
+#### Decisiones y por qué
+- El PR va hacia `release/v1.0-entrega1` y no hacia `develop`: así el PR #128 (release → `main`) lo recoge sin otro merge. Después hay que devolver la rama de release a `develop`.
+
+#### Estado de verificación
+- Cifras tomadas de una corrida local con Node 24: 343 unitarias, 454 de integración, 641 del front; cobertura de líneas 45,59 % y de ramas 39,16 %.
+
+#### Pendientes y bloqueos
+- Sigue con `PENDIENTE_` el enlace al video (README y Wiki). El líder de equipo quedó definido: Renato Ramírez.
+- El tag `v1.0-entrega1` apunta a un commit anterior de `main` (`92c324b`): tras mergear #128 hay que moverlo al nuevo commit y corregir el texto del Release (coordinar con A).
+- El PR #127 (RE-05) apunta a `main` en vez de `develop`.
+
+#### Para el resto del equipo
+- A (@AlejandroMG): el tag y el Release los creaste tú; hay que moverlos al commit final de `main` y completar los enlaces del texto del Release.
+- C (@gonzzza-lol): conviene cambiar la base del PR #127 a `develop`.
+
+---

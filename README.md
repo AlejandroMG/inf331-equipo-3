@@ -21,7 +21,13 @@ Proyecto de INF331 Pruebas de Software, Universidad Técnica Federico Santa Mar�
 | B | Renato Ramírez | [@xReNatS](https://github.com/xReNatS) | Espacios y catálogo |
 | C | Gonzalo Gutierrez | [@gonzzza-lol](https://github.com/gonzzza-lol) | Reservas, pagos y CI |
 
-Líder de equipo: PENDIENTE_LIDER.
+Líder de equipo: Renato Ramírez ([@xReNatS](https://github.com/xReNatS)).
+
+## Estado de la Entrega 1
+
+**Funciona:** registro e inicio de sesión con roles; CRUD de espacios (publicar por pasos con fotos y horario semanal, listar, buscar con filtros, ver el detalle con galería y mapa, editar y eliminar); panel "Mis espacios" del propietario; favoritos; administración de espacios y de tipos de espacio.
+
+**Todavía no:** reservar y pagar (Entrega 2), IA, administración de usuarios y despliegue público. La aplicación corre en local.
 
 ## Estructura
 
@@ -49,9 +55,12 @@ Líder de equipo: PENDIENTE_LIDER.
    docker compose up -d
    cd rentsmart-back
    npm install
-   npx prisma migrate dev   # crear las tablas y generar el cliente de Prisma
+   npx prisma migrate dev   # crear las tablas
+   npx prisma generate      # generar el cliente de Prisma
    npm run seed             # carga datos de prueba
    ```
+
+   Si ya tenías un `rentsmart-back/.env` de antes, revisa que tenga `JWT_SECRET` (mínimo 32 caracteres, como en `.env.example`): sin él la API no arranca.
 
    Usuarios de prueba (contraseña `Password123`): `admin@rentsmart.test`, `propietario@rentsmart.test` y `arrendatario@rentsmart.test`.
 3. Backend (queda en http://localhost:3000):
@@ -104,6 +113,8 @@ DATABASE_URL=postgresql://testuser:testpassword@localhost:5433/testdb npx prisma
 npm run test:e2e
 ```
 
+**Resultados de la Entrega 1:** 1438 pruebas en verde (343 unitarias y 454 de integración del back, 641 del front). Cobertura de líneas de las unitarias del back: 45,6 %.
+
 El CI (`.github/workflows/ci.yml`) corre lint, tests unitarios con cobertura, tests de integración y build del back y del front en cada pull request. La estrategia completa está en la [Wiki](https://github.com/AlejandroMG/inf331-equipo-3/wiki/Proyecto-Estrategia-de-pruebas).
 
 ## Documentación
@@ -115,10 +126,10 @@ El CI (`.github/workflows/ci.yml`) corre lint, tests unitarios con cobertura, te
 ## Forma de trabajo
 
 - El backlog vive en los [issues del repositorio](https://github.com/AlejandroMG/inf331-equipo-3/issues), con milestones por sprint y etiquetas por responsable (A, B, C), épica y prioridad.
-- Una rama por historia: `feat/<ID>-descripcion-corta` (por ejemplo `feat/RE-02-reservar-espacio`).
+- GitFlow: una rama por historia, `feature/<ID>-descripcion-corta` (por ejemplo `feature/RE-02-reservar-espacio`), que sale de `develop` y vuelve a `develop` por pull request. `main` solo recibe releases (`release/vX.0-entregaN`) con su tag.
 - **Los commits son manuales**: ningún agente de IA commitea sin preguntar.
 - Cada sesión de trabajo se registra en `docs/memory.md` con la plantilla.
-- Todo cambio entra a `main` por pull request, con CI verde y la aprobación de un compañero. Detalle en [`docs/flujo-de-trabajo.md`](docs/flujo-de-trabajo.md).
+- Todo cambio entra por pull request, con CI verde y la aprobación de un compañero. Detalle en [`docs/flujo-de-trabajo.md`](docs/flujo-de-trabajo.md).
 
 ## Contribuir y contacto
 
