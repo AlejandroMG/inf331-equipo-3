@@ -8,7 +8,7 @@ Proyecto de INF331 Pruebas de Software, Universidad Técnica Federico Santa Mar�
 
 | | |
 |---|---|
-| Video Entrega 1 | [Ver en YouTube](PENDIENTE_LINK_VIDEO) |
+| Video Entrega 1 | [Ver en YouTube](https://youtu.be/QrpY-6-MbvQ) |
 | Wiki (documentación de entregas) | [github.com/AlejandroMG/inf331-equipo-3/wiki](https://github.com/AlejandroMG/inf331-equipo-3/wiki) |
 | Release Entrega 1 | [`v1.0-entrega1`](https://github.com/AlejandroMG/inf331-equipo-3/releases/tag/v1.0-entrega1) · [Release notes](CHANGELOG.md) |
 | Backlog | [Issues y milestones](https://github.com/AlejandroMG/inf331-equipo-3/issues) |
