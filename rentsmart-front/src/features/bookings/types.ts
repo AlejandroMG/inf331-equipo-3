@@ -57,6 +57,11 @@ export interface BookingCheckout {
   checkoutUrl: string
 }
 
+/** POST /api/bookings/:id/cancel: el motivo, de 5 a 500 caracteres. Cancela el arrendatario o el dueño del espacio. */
+export interface CancelBookingPayload {
+  reason: string
+}
+
 /** El espacio de una reserva, como lo ve el arrendatario. */
 export interface BookingSpace {
   id: string

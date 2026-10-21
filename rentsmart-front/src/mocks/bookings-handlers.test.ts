@@ -15,6 +15,7 @@ const availability = (from: string, to: string, spaceId = SPACE) =>
   http.get<Availability>(`/spaces/${spaceId}/availability`, { params: { from, to } })
 const book = (payload: object = MONDAY_10_TO_12) => http.post<BookingCheckout>('/bookings', payload)
 const booking = (id: string) => http.get<Booking>(`/bookings/${id}`)
+const REASON = { reason: 'Se suspendió la reunión' }
 
 beforeEach(() => setToken('mock-token'))
 
@@ -183,17 +184,38 @@ describe('reservas simuladas', () => {
 
   it('una reserva que no existe responde 404', async () => {
     await expect(booking('no-existe')).rejects.toMatchObject({ status: 404 })
-    await expect(http.post('/bookings/no-existe/cancel')).rejects.toMatchObject({ status: 404 })
+    await expect(http.post('/bookings/no-existe/cancel', REASON)).rejects.toMatchObject({ status: 404 })
   })
 
   it('cancelar libera el horario y no se puede repetir (409)', async () => {
     const { bookingId } = await book()
 
-    const cancelled = await http.post<Booking>(`/bookings/${bookingId}/cancel`)
+    const cancelled = await http.post<Booking>(`/bookings/${bookingId}/cancel`, REASON)
 
     expect(cancelled.status).toBe('CANCELLED')
     expect((await availability('2026-10-12', '2026-10-12')).days[0].slots).toHaveLength(12)
-    await expect(http.post(`/bookings/${bookingId}/cancel`)).rejects.toMatchObject({ status: 409 })
+    await expect(http.post(`/bookings/${bookingId}/cancel`, REASON)).rejects.toMatchObject({ status: 409 })
+  })
+
+  it('cancelar pide un motivo de 5 a 500 caracteres (400) y sin él no cancela', async () => {
+    const { bookingId } = await book()
+
+    for (const body of [undefined, {}, { reason: 'nada' }, { reason: '        ' }, { reason: 'a'.repeat(501) }]) {
+      await expect(http.post(`/bookings/${bookingId}/cancel`, body)).rejects.toMatchObject({ status: 400 })
+    }
+
+    expect((await booking(bookingId)).status).not.toBe('CANCELLED')
+  })
+
+  it('una reserva pagada sin confirmar no se puede cancelar (409); confirmada, sí', async () => {
+    const { bookingId } = await book()
+    await booking(bookingId)
+    expect((await booking(bookingId)).status).toBe('PAID')
+
+    await expect(http.post(`/bookings/${bookingId}/cancel`, REASON)).rejects.toMatchObject({ status: 409 })
+
+    expect((await booking(bookingId)).status).toBe('CONFIRMED')
+    expect((await http.post<Booking>(`/bookings/${bookingId}/cancel`, REASON)).status).toBe('CANCELLED')
   })
 })
 
@@ -223,7 +245,9 @@ describe('pagos simulados', () => {
       status: 'SUCCEEDED',
       createdAt: expect.any(String),
     })
-    await http.post(`/bookings/${bookingId}/cancel`)
+    // Pagada sin confirmar no se cancela: la tercera consulta la deja confirmada.
+    await booking(bookingId)
+    await http.post(`/bookings/${bookingId}/cancel`, REASON)
     expect((await http.get<PaymentsPage>('/payments/me')).items[0]).toMatchObject({ status: 'REFUNDED', refundedAmount: 26400 })
   })
 })

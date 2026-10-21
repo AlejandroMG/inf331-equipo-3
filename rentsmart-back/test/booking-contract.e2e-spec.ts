@@ -60,7 +60,7 @@ describe('Contrato de disponibilidad, reservas y pagos (e2e)', () => {
       ['post', '/api/bookings', ['201', '400', '401', '404', '409']],
       ['get', '/api/bookings/me', ['200', '400', '401']],
       ['get', '/api/bookings/{id}', ['200', '401', '403', '404']],
-      ['post', '/api/bookings/{id}/cancel', ['200', '401', '403', '404', '409']],
+      ['post', '/api/bookings/{id}/cancel', ['200', '400', '401', '403', '404', '409']],
       ['post', '/api/payments/webhook', ['200', '400']],
       ['get', '/api/payments/me', ['200', '400', '401']],
     ])('documenta %s %s con sus respuestas', (method, path, codes) => {
@@ -183,7 +183,6 @@ describe('Contrato de disponibilidad, reservas y pagos (e2e)', () => {
       ['get', '/api/bookings/me', undefined],
       ['get', '/api/bookings/me?page=2&pageSize=50', undefined],
       ['get', `/api/bookings/${BOOKING}`, undefined],
-      ['post', `/api/bookings/${BOOKING}/cancel`, undefined],
       ['get', '/api/payments/me?page=1&pageSize=10', undefined],
     ] as const)('%s %s responde 501 con datos válidos', (method, path, body) => {
       return request(server())[method](path).set(auth()).send(body).expect(501);
