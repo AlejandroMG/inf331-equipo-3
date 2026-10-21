@@ -3,11 +3,11 @@
 ## Del issue al merge
 
 1. Toma un issue asignado a ti del sprint actual. Cuando exista el tablero de GitHub Projects (F-11), muévelo a *In progress*.
-2. Crea una rama desde `main` actualizado: `feat/<ID>-descripcion-corta` (por ejemplo `feat/RE-02-reservar-espacio`). Para arreglos usa `fix/…` y para documentación `docs/…`.
+2. Crea una rama desde `develop` actualizado: `feature/<ID>-descripcion-corta` (por ejemplo `feature/RE-02-reservar-espacio`). Usamos GitFlow ([T-05](decisiones.md#t-05--gitflow-desde-la-entrega-1)); el detalle de las ramas está en [`CONTRIBUTING.md`](../CONTRIBUTING.md#ramas-gitflow).
 3. Trabaja. Si usas un agente de IA, debe seguir [`AGENTS.md`](../AGENTS.md).
 4. Antes de commitear, corre build, lint y tests de la app que tocaste.
 5. Agrega tu entrada en [`memory.md`](memory.md) con la plantilla.
-6. Haz commit (ver reglas abajo) y abre un PR hacia `main` con `Closes #N` en la descripción.
+6. Haz commit (ver reglas abajo) y abre un PR hacia `develop` con `Closes #N` en la descripción. Ojo: GitHub cierra el issue solo cuando el cambio llega a la rama por defecto (`main`); al mergear a `develop`, ciérralo a mano si quedó terminado.
 7. Un compañero revisa, según la rotación. Con CI verde y una aprobación, se hace merge con *squash*.
 
 ## Commits
@@ -17,7 +17,11 @@
   - Tipos: `feat`, `fix`, `test`, `docs`, `refactor`, `chore`, `ci`.
   - Ejemplo: `feat(bookings): RE-02 crear reserva pendiente con retención de 30 min`.
 - Commits chicos y con sentido propio. Nada de `.env` ni secretos.
-- Integra a `main` al menos dos veces por semana. Nadie acumula una rama de una semana entera.
+- Integra a `develop` al menos dos veces por semana. Nadie acumula una rama de una semana entera.
+
+## Entregas
+
+Cada entrega del ramo es un release: `release/vX.0-entregaN` desde `develop`, PR a `main`, tag `vX.0-entregaN` sobre ese commit con su Release en GitHub y las notas en [`CHANGELOG.md`](../CHANGELOG.md), y `main` de vuelta a `develop`. Ver [`CONTRIBUTING.md`](../CONTRIBUTING.md#ramas-gitflow).
 
 ## Pull requests
 

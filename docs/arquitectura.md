@@ -186,6 +186,7 @@ Requieren sesión y ser el dueño (403 si es de otro, 404 si no existe).
 |---|---|
 | `POST /api/spaces/:id/publish` | Pasa un borrador a `ACTIVE` y marca la cuenta como propietaria (`isHost`, P-02). 409 si falta algo o el espacio no es un borrador |
 | `PATCH /api/spaces/:id/status` | `{ status: "ACTIVE" \| "INACTIVE" }`. Desactivar saca el espacio del catálogo (las reservas confirmadas se mantienen); activar exige seguir cumpliendo lo necesario. Pedir el estado que ya tiene no hace nada |
+| `DELETE /api/spaces/:id` | Elimina el espacio con sus fotos (también del almacenamiento), equipamiento, horario y favoritos (ES-08). 204 si se borró; 409 si tiene reservas de cualquier estado (hay que desactivarlo, [P-20](decisiones.md#p-20--un-espacio-con-reservas-no-se-elimina-se-desactiva)); 403 si es de otro o está bloqueado; 404 si no existe |
 
 - **Qué se exige para publicar** ([P-18](decisiones.md#p-18--tipo-y-comuna-también-son-obligatorios-para-publicar)): tipo, descripción, capacidad, comuna, precio (por hora o por día), al menos una foto y horario semanal (al menos una `AvailabilityRule`). Si falta algo, la respuesta es `409` con `{ statusCode, error, message, missing: [...] }`, donde `missing` usa los códigos `type`, `description`, `capacity`, `commune`, `price`, `photos` y `schedule`.
 - **Estados:** `DRAFT` → `ACTIVE` solo por `publish`; `ACTIVE` ↔ `INACTIVE` por `status`; `BLOCKED` solo lo pone un admin y el propietario no puede cambiarlo (403). Un borrador no se activa ni desactiva por `status` (409).

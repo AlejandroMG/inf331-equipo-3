@@ -19,10 +19,13 @@ Cada decisión del producto tiene un ID `P-xx` que coincide con su issue en GitH
 | [P-11](#p-11--meta-de-pruebas) | Meta de pruebas | En espera del profesor | — |
 | [P-14](#p-14--cancelación-gratis-hasta-24-horas-antes) | Cancelación gratis hasta 24 horas antes | Decidida | 08-10-2026 |
 | [P-18](#p-18--tipo-y-comuna-también-son-obligatorios-para-publicar) | Tipo y comuna también son obligatorios para publicar | Decidida | 05-10-2026 |
+| [P-19](#p-19--ubicación-en-el-mapa-el-propietario-marca-el-punto-y-el-público-ve-una-zona-aproximada) | Ubicación en el mapa con zona aproximada | Decidida | 06-10-2026 |
+| [P-20](#p-20--un-espacio-con-reservas-no-se-elimina-se-desactiva) | Un espacio con reservas no se elimina, se desactiva | Decidida | 07-10-2026 |
 | [T-01](#t-01--dominios-verticales-por-integrante) | Dominios verticales por integrante | Decidida | 25-09-2026 |
 | [T-02](#t-02--quitar-nestjsobserve) | Quitar `@nestjs/observe` | Decidida | 25-09-2026 |
 | [T-03](#t-03--nodejs-249-o-superior) | Node.js 24.9 o superior | Decidida | 25-09-2026 |
 | [T-04](#t-04--commits-manuales-y-bitácora-de-sesiones) | Commits manuales y bitácora de sesiones | Decidida | 25-09-2026 |
+| [T-05](#t-05--gitflow-desde-la-entrega-1) | GitFlow desde la Entrega 1 | Decidida | 07-10-2026 |
 
 Decisiones abiertas: ver [al final](#decisiones-abiertas).
 
@@ -131,7 +134,7 @@ Decisiones abiertas: ver [al final](#decisiones-abiertas).
 
 - **Estado:** Decidida, 05-10-2026 · Sin issue todavía
 - **Contexto:** `producto.md` exigía foto, precio, capacidad, descripción y horario para publicar. Un espacio sin tipo ni comuna se mostraría en el catálogo sin esos datos y nunca aparecería en los filtros por tipo y comuna (BU-03).
-- **Decisión:** para publicar también se exigen el tipo de espacio y la comuna. Las mismas reglas valen para reactivar un espacio desactivado y para editar uno ya publicado: no puede quedar sin alguno de esos datos (ni sin su última foto); para dejarlo incompleto hay que desactivarlo primero.
+- **Decisión:** para publicar también se exigen el tipo de espacio y la comuna. Las mismas reglas valen para reactivar un espacio desactivado y para editar uno ya publicado: no puede quedar sin alguno de esos datos (ni sin su última foto); para dejarlo incompleto hay que desactivarlo primero. Aclaración (08-10-2026): solo cuenta lo que la edición quita. Si el espacio ya venía sin fotos u horario (que se cargan aparte, p. ej. los espacios del seed), `PATCH /api/spaces/:id` lo deja editar para poder completarlo; lo que sí rechaza es que la edición deje sin un dato que antes tenía.
 - **Alternativas descartadas:** exigir solo lo que decía `producto.md` y tolerar tipo o comuna vacíos en el catálogo (queda como respaldo, pero esos espacios no saldrían en los filtros).
 - **Consecuencias:** `POST /api/spaces/:id/publish` y `PATCH /api/spaces/:id/status` responden 409 con `missing` (`type`, `description`, `capacity`, `commune`, `price`, `photos`, `schedule`). El formulario del front debe agregar tipo y comuna a la lista "Para publicar necesitas".
 
@@ -142,6 +145,14 @@ Decisiones abiertas: ver [al final](#decisiones-abiertas).
 - **Decisión:** el propietario puede marcar el punto de su espacio en un mapa (Leaflet con teselas de OpenStreetMap) al publicar; es opcional. El detalle público muestra un círculo de unos 150 m, no un pin: la API redondea las coordenadas a 3 decimales (~110 m) y el punto real queda siempre dentro del círculo. La dirección escrita sigue siendo pública (P-09). Las coordenadas exactas solo las ve el dueño.
 - **Alternativas descartadas:** geocodificar la dirección con Nominatim (depende de un servicio externo con límite de uso y no siempre encuentra direcciones chilenas); usar solo el centro de la comuna (todos los espacios de una comuna caerían en el mismo punto); mostrar el pin exacto (el issue pide una ubicación "aproximada").
 - **Consecuencias:** `Space` agrega `latitude` y `longitude` (`Float?`, siempre juntas: lo exige un `CHECK` de la BD). Es un cambio de `schema.prisma` y lo revisa A. Los endpoints públicos nunca devuelven el punto exacto y un test e2e lo comprueba. Las teselas públicas de OSM tienen una política de uso razonable: sirven para el MVP, y con tráfico real hay que cambiar `TILE_URL` por un proveedor propio.
+
+## P-20 · Un espacio con reservas no se elimina, se desactiva
+
+- **Estado:** Decidida, 07-10-2026 · Issue [#116](https://github.com/AlejandroMG/inf331-equipo-3/issues/116) (ES-08)
+- **Contexto:** la Entrega 1 pide el CRUD completo y faltaba eliminar un espacio. Las reservas y sus pagos apuntan al espacio y son el historial del arrendatario, del propietario y de la plataforma.
+- **Decisión:** el propietario puede eliminar un espacio propio (borrador, activo o inactivo) solo si nunca tuvo reservas, de ningún estado. Se borra de verdad, con sus fotos (también del almacenamiento), equipamiento, horario y favoritos. Si tiene reservas, la API responde 409 y sugiere desactivarlo (ES-06). Un espacio bloqueado por un administrador no se puede eliminar, para no borrar el rastro de la moderación.
+- **Alternativas descartadas:** borrado lógico con un estado `DELETED` (exige cambiar `schema.prisma` y filtrar ese estado en todas las consultas, a dos días de la entrega); borrar también las reservas en cascada (se pierde el historial de pagos).
+- **Consecuencias:** `DELETE /api/spaces/:id` responde 204, 403, 404 o 409. No cambia el schema: la llave foránea de `Booking` ya impide borrar un espacio con reservas, y una reserva creada entre la revisión y el borrado también termina en 409. Si más adelante se quiere eliminar espacios con historial, el camino es el borrado lógico.
 
 ## T-01 · Dominios verticales por integrante
 
@@ -167,6 +178,14 @@ Decisiones abiertas: ver [al final](#decisiones-abiertas).
 - **Estado:** Decidida, 25-09-2026
 - **Decisión:** los commits son manuales: ningún agente de IA commitea sin preguntar y recibir un "sí" explícito. Cada sesión de trabajo se registra en [memory.md](memory.md) con la plantilla común.
 - **Por qué:** cada integrante mantiene el control de lo que entra al repo, y el razonamiento detrás de cada cambio queda escrito para el resto del equipo y para los agentes que retomen el trabajo.
+
+## T-05 · GitFlow desde la Entrega 1
+
+- **Estado:** Decidida, 07-10-2026
+- **Contexto:** el enunciado de la Entrega 1 exige GitFlow y un tag `vX.0-entregaN` sobre `main` por entrega. Hasta ahora cada rama entraba directo a `main` (T-01, flujo de trabajo).
+- **Decisión:** `main` guarda solo versiones entregadas; `develop` integra el trabajo del sprint; cada historia va en `feature/<ID>-…` desde `develop`; cada entrega pasa por `release/vX.0-entregaN` y termina con el tag y su Release; los arreglos urgentes sobre una entrega van en `hotfix/…`. El CI corre también en `develop`.
+- **Alternativas descartadas:** seguir con ramas directo a `main` (no cumple el enunciado); GitFlow con merge commits en vez de *squash* (el historial de `develop` queda más difícil de leer).
+- **Consecuencias:** `develop` se crea desde `main` al adoptar esta decisión. Los PR abiertos contra `main` se reapuntan a `develop`. Como GitHub solo cierra issues con `Closes #N` cuando el cambio llega a `main`, los issues terminados se cierran a mano al mergear a `develop` (o quedan cerrados al hacer el release). Las ramas `feat/…` ya creadas siguen sirviendo; las nuevas usan `feature/…`.
 
 ---
 

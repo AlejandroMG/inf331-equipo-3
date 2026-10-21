@@ -2349,6 +2349,120 @@ Que el arrendatario o el propietario puedan cancelar una reserva con un motivo, 
 - **`booking-view.ts`:** `BOOKING_VIEW` y `toBookingDto` arman el `BookingDto` con `addressDetail` solo en `CONFIRMED`. RE-02 todavía no existía, así que quedó en un archivo aparte para que lo reutilice.
 - **Front:** `CancelBookingDialog` (con `Modal`, `Textarea` y `Button`), `cancelBooking` en `bookings-api.ts` y `cancellation.ts` (largo del motivo, `canCancel` y `refundsOnCancel`). No está puesto en ninguna pantalla: los paneles son de A y de B.
 - **Pruebas:** 38 unitarias nuevas del back (política y servicio), `test/booking-cancel.e2e-spec.ts` con 23 e2e (200 de cada actor, 400, 401, 403, 404 y 409) y 24 tests nuevos del front (diálogo, reglas y mock). De `booking-contract.e2e-spec.ts` salió la línea de 501 de cancelar.
+### 2026-10-08 · B (xReNatS) · Editar un espacio publicado: guardado bloqueado y falta botón (ES-05)
+
+**Issues:** #24
+**Rama / PR:** `fix/ES-05-editar-publicado` · sin PR todavía
+**Duración aproximada:** 1 h
+**Herramientas:** Claude Code
+
+#### Objetivo
+Corregir lo que impedía editar un espacio publicado: el comentario de @gonzzza-lol en #24 (no hay botón para guardar) y el 409 "Un espacio publicado debe seguir teniendo lo necesario para publicar" al cambiar cualquier campo.
+
+#### Qué se hizo
+- **Back:** `SpacesService.update` comparaba lo que falta *después* de la edición con una lista vacía. Un espacio activo que ya venía sin fotos o sin horario (los 10 del seed no tienen fotos, y el horario semanal aún no se carga desde la UI) rechazaba toda edición, aunque no tuviera relación. Ahora solo rechaza lo que la edición quita (lo que falta después y no faltaba antes). El 409 sigue trayendo `missing` con eso.
+- **Front:** el último paso de un espacio no borrador tiene el botón "Guardar cambios" (deshabilitado si no hay cambios). Si el guardado responde 409 con `missing`, el mensaje dice qué quedaría faltando en vez del texto genérico.
+- **Reactivar sin fotos:** era el mismo problema de raíz (los espacios del seed estaban publicados sin fotos, así que desactivarlos los dejaba sin poder volver a activarse). Se resolvió por el lado de los datos, sin relajar la regla: el seed ahora sube una foto por espacio.
+- **Fotos del seed** (`prisma/seed-photos.ts`, `prisma/seed.ts`): una ilustración SVG por tipo de espacio (sala de reuniones, cowork, estudio, sala de ensayo, cocina, cancha, salón de eventos, taller), generada en código: no se descarga nada ni se guardan binarios. Las sube por el mismo `StorageService` de la API (disco local o Supabase según `STORAGE_DRIVER`) y las descripciones del seed ahora hablan de lo que muestra la foto. Es idempotente: no repite la foto si el espacio ya tiene una; las descripciones sí se reescriben.
+- Tests: 2 unitarios en `spaces.service.spec.ts`, 1 en `publication.service.spec.ts` (sin fotos no reactiva) y 2 en `PublishSpacePage.test.tsx`.
+
+#### Decisiones y por qué
+| Decisión | Alternativas | Por qué |
+|---|---|---|
+| Poner fotos al seed y mantener estricta la reactivación | Que reactivar no exija fotos | El problema eran los datos del seed, no la regla: si reactivar no exigiera fotos, se podría borrar la última foto desactivado y volver a publicar sin ella |
+| Aclarar P-18: solo cuenta lo que la edición quita | Mantenerla estricta y arreglar solo el front | Con la regla estricta, un cambio en el paso 1 hacía fallar el guardado y no se podía llegar al paso 4 a subir la foto que faltaba: callejón sin salida. Aclaración registrada en `decisiones.md` |
+
+#### Archivos principales
+- `rentsmart-back/prisma/seed.ts` y `prisma/seed-photos.ts`, `rentsmart-back/src/spaces/spaces.service.ts` (+ spec), `rentsmart-front/src/features/spaces/SpaceWizard.tsx` (+ test), `docs/decisiones.md`, `docs/producto.md`.
+
+#### Cómo probarlo
+0. En `rentsmart-back`: `npm run seed` (agrega las fotos a los espacios del seed que no las tengan).
+1. Entrar como `host` del seed y abrir "Editar" en un espacio activo (sin fotos).
+2. Cambiar un campo y pasar al paso 5: guarda sin error y aparece "Guardar cambios".
+3. Borrar la descripción de un espacio con descripción: responde que quedaría sin descripción.
+
+#### Estado de verificación
+- Front: vitest de `src/features/spaces` (123), `tsc -b` y lint OK. Back: jest de `src/spaces` (102, con Node 24), lint y build OK.
+- Seed corrido contra `devdb` (en Docker, puerto 5434 porque el 5432 lo ocupaba un Postgres de Windows) y API levantada a mano: los 10 espacios tienen foto (`coverUrl` en el catálogo y `/api/uploads/seed/*.svg` responde 200); editar un espacio publicado sin fotos da 200; desactivar y reactivar da 200; quitar la descripción da 409 con `missing: ['description']`. No se corrieron los e2e.
+
+#### Pendientes y bloqueos
+- El horario semanal sigue sin poder cargarse desde la UI (DI-01, de C): sin él un borrador no se puede publicar de forma normal.
+
+#### Para el resto del equipo
+- C (@gonzzza-lol): el botón de guardar que pediste en #24 ya está en el paso "Revisar".
+
+---
+
+### 2026-10-07 · B (xReNatS) · ES-08 eliminar un espacio y entregables de la Entrega 1
+
+**Issues:** #116 (ES-08)
+**Rama / PR:** `feat/ES-08-eliminar-espacio` (código) y `docs/entrega-1` (README, CHANGELOG, CONTRIBUTING, GitFlow, esta bitácora) · Wiki del repositorio
+**Duración aproximada:** 3 h
+**Herramientas:** Claude Code
+
+#### Objetivo
+Cumplir lo que le toca a B en la Entrega 1 (enunciado "Construcción inicial aplicación y pruebas automatizadas"): completar el CRUD de espacios con "eliminar", y dejar los entregables del repositorio y de la Wiki que pide la sección 5.
+
+#### Qué se hizo
+- **ES-08 en la API:** `DELETE /api/spaces/:id` en un servicio nuevo, `SpaceRemovalService`. Borra el espacio con sus fotos (también del almacenamiento), equipamiento, horario y favoritos en cascada. Responde 409 si el espacio tiene reservas de cualquier estado, 403 si es de otro o está bloqueado, 404 si no existe y 204 si lo borró. Tiene 8 pruebas unitarias y 7 de integración (`test/space-delete.e2e-spec.ts`).
+- **ES-08 en el front:** botón "Eliminar" en cada fila de Mis espacios (salvo los bloqueados), con un diálogo de confirmación. Al borrar, la fila sale de la lista sin recargar y se muestra un aviso; con 409 se muestra el mensaje del servidor. Tiene 5 pruebas nuevas.
+- **Decisión P-20** y su regla en `producto.md` y `arquitectura.md`. Se creó el issue #116.
+- **Repositorio (5.1):** el README ahora tiene enlaces (video, Wiki, release), integrantes, una sección de pruebas, contribución y contacto, y licencia. Se agregaron `CHANGELOG.md` (release notes de `v1.0-entrega1`) y `CONTRIBUTING.md`.
+- **GitFlow (3.2):** decisión T-05; `CONTRIBUTING.md`, `flujo-de-trabajo.md` y `AGENTS.md` describen `develop`, `feature/*`, `release/*` y `hotfix/*`; el CI ahora también corre en `develop`.
+- **Wiki (5.2 y Anexo C):** páginas de Resumen y alcance, Requisitos y trazabilidad, Arquitectura y tecnologías, Estrategia de pruebas, Supuestos y dependencias, Evidencias y Entrega 1, más los marcadores de las entregas 2 y 3, y la Home actualizada.
+
+#### Decisiones y por qué
+| Decisión | Alternativas consideradas | Por qué se eligió |
+|---|---|---|
+| Solo se elimina un espacio sin reservas; con reservas, 409 y se sugiere desactivarlo (P-20) | Borrado lógico con estado `DELETED`; borrar las reservas en cascada | Las reservas y pagos son el historial de ambas partes. El borrado lógico exige cambiar `schema.prisma` (de A) y filtrar el estado en todas las consultas, a dos días de la entrega. La llave foránea de `Booking` ya protege el caso sin tocar el schema |
+| Un espacio bloqueado no se puede eliminar | Permitirlo | Borrarlo eliminaría el rastro de la moderación del administrador |
+| Servicio aparte (`SpaceRemovalService`) | Agregar el método a `SpacesService` | `SpacesService` no conoce el almacenamiento; inyectarlo obligaba a cambiar el setup de sus pruebas existentes |
+| Las fotos se borran del almacenamiento después del borrado en la BD, y si falla solo se registra | Borrarlas antes | Si el borrado en la BD falla (por ejemplo con 409), las fotos siguen ahí; una foto huérfana es preferible a un espacio sin fotos. Es el mismo criterio que al borrar una foto |
+| GitFlow con *squash* hacia `develop` (T-05) | Seguir directo a `main` | El enunciado exige GitFlow y el tag de cada entrega sobre `main` |
+
+#### Archivos principales
+- `rentsmart-back/src/spaces/space-removal.service.ts` y su `.spec.ts`, `spaces.controller.ts`, `spaces.module.ts`, `test/space-delete.e2e-spec.ts`.
+- `rentsmart-front/src/features/owner/OwnerSpacesPage.tsx`, `OwnerSpaceRow.tsx`, `OwnerSpacesPage.test.tsx`, `src/features/spaces/spaces-api.ts`.
+- `docs/producto.md`, `docs/decisiones.md` (P-20 y T-05), `docs/arquitectura.md`, `docs/flujo-de-trabajo.md`, `AGENTS.md`.
+- `README.md`, `CHANGELOG.md`, `CONTRIBUTING.md`, `.github/workflows/ci.yml` (disparadores en `develop`).
+
+#### Cómo probarlo
+- Back: `npm test` y `npm run test:e2e` (BD de test migrada) con Node 24.
+- Front: `npm test`.
+- A mano: entra como `propietario@rentsmart.test`, ve a Mis espacios y elimina un espacio sin reservas. Uno con reservas del seed muestra el aviso de que hay que desactivarlo.
+
+#### Estado de verificación
+- Back: lint ✅ · build ✅ · unitarias ✅ 229 de 230 con Node 24. La que falla es `prisma.service.spec.ts`, porque necesita la BD; también falla en `main` sin la BD.
+- Integración: ❌ **no se corrió en local.** Docker Desktop respondía con error 500 y el PostgreSQL nativo del puerto 5432 no es el del proyecto. La corre el CI en el PR.
+- Front: lint ✅ · build ✅ · 592 pruebas ✅ con Node 24.
+
+#### Pendientes y bloqueos
+- **Publicar desde la app no funciona:** el formulario exige el horario semanal (DI-01, de C) y todavía no se puede cargar. "Agregar" deja el espacio como borrador. Es lo más importante que falta para la demo del CRUD.
+- **GitFlow:** falta crear `develop` desde `main` y reapuntar los PR abiertos. Al cerrar la entrega hay que crear `release/v1.0-entrega1`, mergearla a `main` y hacer el tag con su Release.
+- **Marcadores `PENDIENTE_` en el README y la Wiki:** link al video, líder de equipo, herramienta inscrita en Aula y capturas (app, JIRA y Slack/Discord).
+- **Fuera del repo:** tablero JIRA, integración con Slack o Discord, organización de GitHub (Anexo D) y video.
+
+#### Para el resto del equipo
+- C (@gonzzza-lol): el CI ahora también corre en `develop` (solo cambiaron los disparadores de `ci.yml`). DI-01 desbloquea publicar desde la app.
+- A (@AlejandroMG): ES-08 no cambia `schema.prisma`; usa la cascada que ya tenían fotos, equipamiento, horario y favoritos, y la llave foránea de `Booking`.
+- Todos: los PR nuevos van hacia `develop`. Como `Closes #N` solo cierra issues al llegar a `main`, ciérrenlos a mano al mergear a `develop`.
+
+---
+
+### 2026-10-08 · B (xReNatS) · Sincronizar main en develop
+
+**Issues:** ninguno (mantenimiento de ramas)
+**Rama / PR:** `sync/main-en-develop` · PR hacia `develop`
+**Duración aproximada:** 1 h
+**Herramientas:** Claude Code
+
+#### Objetivo
+`main` y `develop` estaban separadas: los PR de C iban a `main` y los de B y los entregables de la Entrega 1 a `develop`. Ninguna rama tenía el botón "Eliminar" (ES-08) y el horario semanal (DI-01) a la vez, y la demo necesita ambos.
+
+#### Qué se hizo
+- Se creó `sync/main-en-develop` desde `origin/develop` y se hizo el merge de `origin/main`: contrato de reservas y pagos (F-05), horario semanal (DI-01), estados de la reserva (RE-01), favoritos simultáneos (BU-08), edición de espacios publicados y fotos en el seed (ES-05, #124) y la asignación automática de revisor.
+- Único conflicto: `docs/memory.md`. Las dos ramas agregaron entradas al final del archivo; se conservaron las de `main` completas y, al final, las de `develop`.
+- Verificación con Node 24: front 641 pruebas, integración de la API 454 (contra una base local de prueba) y unitarias del back en verde salvo `PrismaService`, que necesita la base que dice el `.env`.
 
 #### Decisiones y por qué
 | Decisión | Alternativas consideradas | Por qué se eligió |
@@ -2400,5 +2514,125 @@ Con Node 24 y la base de test levantada y migrada. En `rentsmart-back`: `npm run
 - **PA-03 (#47), reembolsos:** el punto de llamada está marcado en `BookingsService.cancel`, después de la transacción, con el monto en `refund` (CLP enteros, 0 si no corresponde). Falta: crear el reembolso en Stripe por ese monto, actualizar `Payment.refundedAmount` y `Payment.status`, y decidir qué pasa si Stripe falla después de que la reserva ya quedó `CANCELLED`. `cancellationRefund` devuelve 0 para todo lo que no sea `CONFIRMED`.
 - **RE-02:** `BOOKING_VIEW` y `toBookingDto` de `booking-view.ts` ya arman el `BookingDto`. `BookingsService` ahora recibe `PrismaService` y `BookingStateService` en el constructor.
 - **Mock de MSW:** `POST /api/bookings/:id/cancel` ahora responde 400 sin `reason` y 409 desde `PAID`. No distingue arrendatario de propietario ni aplica las 24 horas.
+| Sincronizar con un PR hacia `develop` y un merge commit | Empujar el merge directo a `develop`; hacer *squash* | El flujo de trabajo exige PR con CI y revisión. Con *squash* no quedaría registrado que `develop` ya contiene a `main`, y las ramas seguirían apareciendo como separadas |
+| Resolver `memory.md` conservando ambos lados | Quedarse con una sola versión | Es la bitácora de las tres personas; no se debe perder ninguna entrada |
+
+#### Archivos principales
+- `docs/memory.md` (conflicto resuelto y esta entrada). El resto lo trae el merge, sin cambios propios.
+
+#### Cómo probarlo
+- Desde esta rama: `npm run build` y `npm run start:prod` en `rentsmart-back`, y `npm run dev` en `rentsmart-front`.
+- En "Mis espacios" debe verse el botón **Eliminar**, y al publicar, el horario semanal.
+
+#### Estado de verificación
+- Front: lint, tipos y 641 pruebas en verde.
+- Back: lint y tipos en verde; integración 454 en verde; unitarias 342 de 343 (la de `PrismaService` depende de la BD del `.env`, no del código).
+
+#### Pendientes y bloqueos
+- **Mergear con merge commit, no con *squash*.**
+- Después, crear `release/v1.0-entrega1` desde `develop`, mergearla a `main` y hacer el tag con su Release.
+- El CI de `main` falló en el último merge por un test de concurrencia de reservas (`booking-state`), que parece intermitente: lo revisa C.
+
+#### Para el resto del equipo
+- C (@gonzzza-lol): desde ahora conviene abrir los PR hacia `develop` (GitFlow, decisión T-05); `main` solo recibe releases.
+- A (@AlejandroMG): sin cambios en tu dominio.
+- Todos: tras el merge, `main` y `develop` quedan alineadas.
+
+---
+
+### 2026-10-08 · B (xReNatS) · Arreglar dos tests e2e intermitentes que tumbaron el CI del PR de sincronización
+
+**Issues:** ninguno (mantenimiento de pruebas)
+**Rama / PR:** `sync/main-en-develop` · PR de sincronización de `main` en `develop`
+**Duración aproximada:** 40 min
+**Herramientas:** Claude Code
+
+#### Objetivo
+El job de Backend del CI falló en el PR de sincronización con 1 test e2e en rojo (453 de 454). El merge no tenía relación: eran pruebas que dependen del orden en que corren las suites.
+
+#### Qué se hizo
+- `rentsmart-back/test/catalog.e2e-spec.ts`: la prueba «pagina con page y pageSize» comparaba el `total` de dos peticiones sobre todo el catálogo. Jest corre las suites en paralelo sobre la misma BD, así que otra suite creaba espacios activos entre ambas peticiones (esperaba 6, recibió 3). Ahora filtra por la comuna única de la suite (`communeId`).
+- `rentsmart-back/test/booking-state.e2e-spec.ts` (módulo de C): la prueba «de dos cambios simultáneos con destinos distintos» usaba `PAID` contra `CANCELLED`. Como `PENDING→PAID→CANCELLED` es válido en secuencia, si la segunda petición leía después de la primera ganaban las dos y la prueba fallaba. Ahora usa `PAID` contra `EXPIRED`, que no se pueden encadenar. Es el intermitente que ya había tumbado el CI de `main`.
+
+#### Decisiones y por qué
+- Se arreglaron las pruebas y no el CI (`--runInBand`): es un cambio mínimo, no hace más lenta la ejecución y deja las pruebas independientes del paralelismo.
+
+#### Cómo probarlo
+- En `rentsmart-back`, con una BD de test: `npm run test:e2e` varias veces seguidas. `booking-state` pasó 6 de 6 corridas y el catálogo 3 de 3.
+
+#### Estado de verificación
+- e2e completo en verde (454 de 454) en 2 de 3 corridas completas antes del arreglo de `booking-state`; lint en verde.
+
+#### Pendientes y bloqueos
+- Tras el push, esperar al CI y pedir a Gonzalo que revise el PR.
+
+#### Para el resto del equipo
+- C (@gonzzza-lol): toqué una línea de `test/booking-state.e2e-spec.ts` (el par de estados de la prueba de concurrencia); revisa que te parezca bien.
+
+---
+
+### 2026-10-09 · B (xReNatS) · Revisión final de la Entrega 1: README y Wiki
+
+**Issues:** ninguno (documentación de la entrega)
+**Rama / PR:** `docs/ajustes-entrega-1` · PR hacia `release/v1.0-entrega1`
+**Duración aproximada:** 1 h
+**Herramientas:** Claude Code
+
+#### Objetivo
+Revisar el repo contra el enunciado de la Entrega 1 y corregir lo desactualizado en el README y en la Wiki.
+
+#### Qué se hizo
+- `README.md`: sección «Estado de la Entrega 1» (qué funciona y qué no), paso `npx prisma generate`, aviso de `JWT_SECRET` para quien ya tenía un `.env`, resultados de las pruebas (1438 en verde, 45,6 % de cobertura de líneas) y forma de trabajo con GitFlow (antes decía `feat/` y PR a `main`).
+- Wiki (publicada aparte, repositorio `.wiki`): cifras de pruebas y cobertura actualizadas, «Agregar» pasa a ✅ porque el horario semanal (DI-01) ya se carga desde la app, estados de la reserva (RE-01) en ✅, el CI enlazado es el de la rama de release y se reemplazó el problema «publicar requiere DI-01» por los dos problemas reales de pruebas intermitentes y del favorito con peticiones simultáneas.
+
+#### Decisiones y por qué
+- El PR va hacia `release/v1.0-entrega1` y no hacia `develop`: así el PR #128 (release → `main`) lo recoge sin otro merge. Después hay que devolver la rama de release a `develop`.
+
+#### Estado de verificación
+- Cifras tomadas de una corrida local con Node 24: 343 unitarias, 454 de integración, 641 del front; cobertura de líneas 45,59 % y de ramas 39,16 %.
+
+#### Pendientes y bloqueos
+- Sigue con `PENDIENTE_` el enlace al video (README y Wiki). El líder de equipo quedó definido: Renato Ramírez.
+- El tag `v1.0-entrega1` apunta a un commit anterior de `main` (`92c324b`): tras mergear #128 hay que moverlo al nuevo commit y corregir el texto del Release (coordinar con A).
+- El PR #127 (RE-05) apunta a `main` en vez de `develop`.
+
+#### Para el resto del equipo
+- A (@AlejandroMG): el tag y el Release los creaste tú; hay que moverlos al commit final de `main` y completar los enlaces del texto del Release.
+- C (@gonzzza-lol): conviene cambiar la base del PR #127 a `develop`.
+
+---
+
+### 2026-10-09 · B (xReNatS) · Cierre del release de la Entrega 1
+
+**Issues:** ninguno (cierre de la entrega)
+**Rama / PR:** `docs/bitacora-cierre-entrega-1` · PR hacia `develop`. Antes: #128 (release → `main`), #129 y #130
+**Duración aproximada:** 2 h
+**Herramientas:** Claude Code
+
+#### Objetivo
+Dejar el repositorio conforme al enunciado de la Entrega 1: `main` con el código final, tag y Release sobre el mismo commit, y `develop` alineada con `main`.
+
+#### Qué se hizo
+- Se mergeó el #129 (README y bitácora) a `release/v1.0-entrega1` y el #128 (release → `main`) con *merge commit*. `main` quedó en `a1004eb` con el CI en verde.
+- El #129 hizo que el #128 tuviera un conflicto en el README (el paso de `prisma generate`). Se resolvió con un merge de `main` en la rama de release, conservando la versión de la rama de release.
+- El tag `v1.0-entrega1` apuntaba a un commit de `main` anterior a la entrega (`92c324b`, sin ES-08 ni los documentos). Se movió a `a1004eb` con un force-push del tag, autorizado por la persona del equipo. El Release sigue publicado sobre ese tag y se corrigió su texto (enlace al CI en `main`; el enlace al video se agregará al README).
+- El #130 devolvió la rama de release a `develop`.
+- Wiki actualizada y publicada: cifras de pruebas (1438) y cobertura (45,6 %), herramientas de testing, capturas de la aplicación y evidencia de la gestión con GitHub y Discord. Líder de equipo: Renato Ramírez.
+
+#### Decisiones y por qué
+- Los PR a `release/*` no ejecutan el CI porque `ci.yml` solo corre en PR hacia `main` y `develop`. El #129 era solo documentación y se mergeó sin CI propio; el CI del #128 validó el resultado final.
+- Se usa GitHub (issues, milestones y etiquetas) y Discord en lugar de JIRA y Slack para el tablero y la comunicación. Quedó declarado en la Wiki.
+
+#### Estado de verificación
+- CI en verde en `main` sobre `a1004eb`. El tag, `main` y el Release apuntan a ese mismo commit.
+
+#### Pendientes y bloqueos
+- Falta el enlace al video en el README y en el `Home` de la Wiki (`PENDIENTE_LINK_VIDEO`).
+- Los milestones de GitHub tienen descripciones y fechas desactualizadas (el Sprint 2 dice «con reserva con pago» y el Sprint 1 figura vencido); conviene ajustarlos antes de mostrarlos como evidencia.
+- Que el CI corra también en PR hacia `release/*` (decisión de C, dueño del CI).
+
+#### Para el resto del equipo
+- A (@AlejandroMG): el tag y el Release que creaste se movieron a `a1004eb`; el Release tiene el texto corregido.
+- C (@gonzzza-lol): el PR #127 (RE-05) apunta a `main`; cámbialo a `develop` para no adelantar `main` respecto al tag.
 
 ---

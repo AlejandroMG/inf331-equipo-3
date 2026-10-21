@@ -35,6 +35,9 @@ export const deletePhoto = (spaceId: string, photoId: string) =>
 /** Publica un borrador. Responde 409 con `missing` si falta algo (ver `missingFromError`). */
 export const publishSpace = (id: string) => http.post<OwnerSpace>(`/spaces/${encodeURIComponent(id)}/publish`)
 
+/** Elimina un espacio propio. Responde 409 si tiene reservas: en ese caso hay que desactivarlo. */
+export const deleteSpace = (id: string) => http.delete<void>(`/spaces/${encodeURIComponent(id)}`)
+
 /** Desactiva un espacio publicado (INACTIVE) o lo vuelve a activar (ACTIVE). */
 export const changeSpaceStatus = (id: string, status: 'ACTIVE' | 'INACTIVE') =>
   http.patch<OwnerSpace>(`/spaces/${encodeURIComponent(id)}/status`, { status })

@@ -6,7 +6,7 @@ import { usePageTitle } from '../../lib/page-title'
 import { paths } from '../../lib/paths'
 import { useRequest } from '../../lib/useRequest'
 import { missingFromError } from '../spaces/form'
-import { changeSpaceStatus } from '../spaces/spaces-api'
+import { changeSpaceStatus, deleteSpace } from '../spaces/spaces-api'
 import { fetchMySpaces } from './owner-api'
 import { OwnerNav } from './OwnerNav'
 import { OwnerSpaceRow } from './OwnerSpaceRow'
@@ -35,7 +35,7 @@ function SkeletonRow() {
   )
 }
 
-/** Panel del propietario (PN-01): sus espacios con el estado de cada uno y los accesos a editar y activar o desactivar. */
+/** Panel del propietario (PN-01): sus espacios con el estado de cada uno y los accesos a editar, activar o desactivar y eliminar (ES-08). */
 export function OwnerSpacesPage() {
   usePageTitle('Mis espacios')
   const toast = useToast()
@@ -44,8 +44,14 @@ export function OwnerSpacesPage() {
   const [statuses, setStatuses] = useState<Record<string, OwnerSpaceSummary['status']>>({})
   const [pending, setPending] = useState<ReadonlySet<string>>(new Set())
   const [confirming, setConfirming] = useState<OwnerSpaceSummary | null>(null)
+  // Los eliminados se quitan de la lista cargada sin recargarla.
+  const [removed, setRemoved] = useState<ReadonlySet<string>>(new Set())
+  const [deleting, setDeleting] = useState<OwnerSpaceSummary | null>(null)
+  const [deletePending, setDeletePending] = useState(false)
 
-  const spaces = data?.map((space) => ({ ...space, status: statuses[space.id] ?? space.status }))
+  const spaces = data
+    ?.filter((space) => !removed.has(space.id))
+    .map((space) => ({ ...space, status: statuses[space.id] ?? space.status }))
   const counts = countByStatus(spaces ?? [])
 
   async function change(space: OwnerSpaceSummary, status: 'ACTIVE' | 'INACTIVE') {
@@ -83,6 +89,23 @@ export function OwnerSpacesPage() {
     if (!confirming) return
     await change(confirming, 'INACTIVE')
     setConfirming(null)
+  }
+
+  async function confirmDeletion() {
+    if (!deleting) return
+    const space = deleting
+    setDeletePending(true)
+    try {
+      await deleteSpace(space.id)
+      setRemoved((current) => new Set(current).add(space.id))
+      toast.show(`«${space.name}» se eliminó.`)
+    } catch (failure) {
+      // Con reservas el servidor responde 409 y su mensaje sugiere desactivarlo.
+      toast.show(failure instanceof Error ? failure.message : 'No pudimos eliminar el espacio. Intenta de nuevo.', 'error')
+    } finally {
+      setDeletePending(false)
+      setDeleting(null)
+    }
   }
 
   return (
@@ -146,7 +169,13 @@ export function OwnerSpacesPage() {
               </h2>
               <ul className="flex flex-col gap-3.5">
                 {spaces.map((space) => (
-                  <OwnerSpaceRow key={space.id} space={space} pending={pending.has(space.id)} onToggle={toggle} />
+                  <OwnerSpaceRow
+                    key={space.id}
+                    space={space}
+                    pending={pending.has(space.id)}
+                    onToggle={toggle}
+                    onDelete={setDeleting}
+                  />
                 ))}
               </ul>
             </section>
@@ -181,6 +210,25 @@ export function OwnerSpacesPage() {
       >
         «{confirming?.name}» saldrá del catálogo y no recibirá nuevas reservas. Las reservas ya confirmadas se mantienen. Puedes
         volver a activarlo cuando quieras.
+      </Modal>
+
+      <Modal
+        open={deleting !== null}
+        onClose={() => setDeleting(null)}
+        title="¿Eliminar este espacio?"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setDeleting(null)}>
+              Cancelar
+            </Button>
+            <Button loading={deletePending} onClick={() => void confirmDeletion()}>
+              Eliminar
+            </Button>
+          </>
+        }
+      >
+        «{deleting?.name}» se borrará junto con sus fotos y no se puede deshacer. Si el espacio ya tiene reservas no se puede eliminar:
+        en ese caso desactívalo.
       </Modal>
     </div>
   )

@@ -325,6 +325,84 @@ describe('OwnerSpacesPage', () => {
     })
   })
 
+  describe('eliminar (ES-08)', () => {
+    /** Guarda los ids que se piden eliminar y responde 204, como el back. */
+    function serveDeletes() {
+      const deleted: string[] = []
+      server.use(
+        mswHttp.delete('*/api/spaces/:id', ({ params }) => {
+          deleted.push(String(params.id))
+          return new HttpResponse(null, { status: 204 })
+        }),
+      )
+      return deleted
+    }
+
+    it('pide confirmación y no elimina nada si se cancela', async () => {
+      const deleted = serveDeletes()
+      await openPanel([summary()])
+
+      await userEvent.click(screen.getByRole('button', { name: 'Eliminar Sala Alameda' }))
+      const dialog = screen.getByRole('dialog', { name: '¿Eliminar este espacio?' })
+      expect(within(dialog).getByText(/no se puede deshacer/)).toBeInTheDocument()
+      await userEvent.click(within(dialog).getByRole('button', { name: 'Cancelar' }))
+
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+      expect(screen.getByRole('heading', { level: 3, name: 'Sala Alameda' })).toBeInTheDocument()
+      expect(deleted).toEqual([])
+    })
+
+    it('al confirmar lo quita de la lista, actualiza los contadores y avisa', async () => {
+      const deleted = serveDeletes()
+      await openPanel([summary(), summary({ id: 's2', name: 'Estudio Luz' })])
+
+      await userEvent.click(screen.getByRole('button', { name: 'Eliminar Sala Alameda' }))
+      await userEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Eliminar' }))
+
+      await waitFor(() => expect(screen.queryByRole('heading', { level: 3, name: 'Sala Alameda' })).not.toBeInTheDocument())
+      expect(deleted).toEqual(['s1'])
+      expect(screen.getByRole('heading', { level: 3, name: 'Estudio Luz' })).toBeInTheDocument()
+      expect(tile('Activos en el catálogo')).toHaveTextContent('1')
+      expect(await screen.findByText('«Sala Alameda» se eliminó.')).toBeInTheDocument()
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    })
+
+    it('un borrador también se puede eliminar', async () => {
+      const deleted = serveDeletes()
+      await openPanel([summary({ id: 's3', name: 'Taller San Miguel', status: 'DRAFT' })])
+
+      await userEvent.click(screen.getByRole('button', { name: 'Eliminar Taller San Miguel' }))
+      await userEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Eliminar' }))
+
+      await waitFor(() => expect(deleted).toEqual(['s3']))
+    })
+
+    it('si tiene reservas, el espacio se queda y se muestra el motivo del servidor', async () => {
+      server.use(
+        mswHttp.delete('*/api/spaces/:id', () =>
+          HttpResponse.json(
+            { message: 'Este espacio tiene reservas: desactívalo en vez de eliminarlo, así se conserva su historial', statusCode: 409 },
+            { status: 409 },
+          ),
+        ),
+      )
+      await openPanel([summary()])
+
+      await userEvent.click(screen.getByRole('button', { name: 'Eliminar Sala Alameda' }))
+      await userEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Eliminar' }))
+
+      expect(await screen.findByRole('alert')).toHaveTextContent(/desactívalo en vez de eliminarlo/)
+      expect(screen.getByRole('heading', { level: 3, name: 'Sala Alameda' })).toBeInTheDocument()
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    })
+
+    it('un espacio bloqueado por el administrador no se puede eliminar', async () => {
+      await openPanel([summary({ status: 'BLOCKED' })])
+
+      expect(screen.queryByRole('button', { name: /^Eliminar/ })).not.toBeInTheDocument()
+    })
+  })
+
   it('tiene la navegación del panel con "Mis espacios" como la página actual', async () => {
     await openPanel([summary()])
 

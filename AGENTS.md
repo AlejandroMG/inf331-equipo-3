@@ -84,6 +84,7 @@ El detalle está en [`docs/producto.md`](docs/producto.md) y [`docs/decisiones.m
 - **API:** REST JSON bajo `/api`, Swagger en `/docs`, fechas ISO 8601 en UTC, paginación con `?page=&pageSize=`.
 - **Front:** código por dominio en `src/features/<dominio>/`, componentes base en `src/components/`, cliente HTTP en `src/lib/`. Mocks de MSW en `src/mocks/` mientras el endpoint real no exista.
 - Commits con prefijo convencional y el ID de la historia: `feat(bookings): RE-02 crear reserva pendiente`.
+- **Ramas con GitFlow** ([T-05](docs/decisiones.md#t-05--gitflow-desde-la-entrega-1)): `feature/<ID>-…` desde `develop` y PR hacia `develop`; `main` solo recibe releases (`release/vX.0-entregaN`) con su tag. Detalle en [`CONTRIBUTING.md`](CONTRIBUTING.md#ramas-gitflow).
 
 ## Documentación
 

@@ -101,11 +101,21 @@ export function SpaceWizard({ types, amenities, region, communes, initialSpace }
       setMissing(null)
       return id
     } catch (error) {
-      setSaveError(error instanceof Error ? error.message : 'No pudimos guardar el borrador.')
+      const lacking = missingFromError(error)
+      if (lacking && lacking.length > 0) {
+        setSaveError(`Este cambio dejaría el espacio sin: ${lacking.map((code) => REQUIREMENTS[code].label.toLowerCase()).join(', ')}. Un espacio publicado debe seguir completo; desactívalo desde Mis espacios si quieres dejarlo incompleto.`)
+      } else {
+        setSaveError(error instanceof Error ? error.message : 'No pudimos guardar el borrador.')
+      }
       return null
     } finally {
       setSaving(false)
     }
+  }
+
+  /** Guarda los cambios de un espacio ya publicado (o desactivado) desde el último paso. */
+  async function saveChanges() {
+    if (dirty) await save()
   }
 
   async function goTo(next: number) {
@@ -419,12 +429,17 @@ export function SpaceWizard({ types, amenities, region, communes, initialSpace }
                   </Button>
                 </div>
               ) : (
-                <div className="rounded-card bg-primary-soft p-4 text-[15px] text-primary-dark">
-                  {status === 'ACTIVE'
-                    ? 'Este espacio ya está publicado. Tus cambios se guardan al pasar de paso.'
-                    : status === 'INACTIVE'
-                      ? 'Este espacio está desactivado: actívalo desde Mis espacios para que vuelva al catálogo.'
-                      : 'Un administrador bloqueó esta publicación.'}
+                <div className="flex flex-col items-start gap-3">
+                  <div className="rounded-card bg-primary-soft p-4 text-[15px] text-primary-dark">
+                    {status === 'ACTIVE'
+                      ? 'Este espacio ya está publicado. Guarda los cambios para que se vean en el catálogo.'
+                      : status === 'INACTIVE'
+                        ? 'Este espacio está desactivado: actívalo desde Mis espacios para que vuelva al catálogo.'
+                        : 'Un administrador bloqueó esta publicación.'}
+                  </div>
+                  <Button onClick={() => void saveChanges()} loading={saving} disabled={!dirty}>
+                    Guardar cambios
+                  </Button>
                 </div>
               )}
             </>
