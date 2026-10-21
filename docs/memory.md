@@ -2571,3 +2571,49 @@ Dejar el repositorio conforme al enunciado de la Entrega 1: `main` con el códig
 - C (@gonzzza-lol): el PR #127 (RE-05) apunta a `main`; cámbialo a `develop` para no adelantar `main` respecto al tag.
 
 ---
+
+### 2026-10-21 · C (gonzzza-lol) · Ordenar GitFlow después de la Entrega 1
+
+**Issues:** No aplica (mantención de GitFlow, T-05)
+**Rama / PR:** `fix/assign-reviewer-develop` · sin PR todavía; además `sync/main-en-develop-entrega1`
+**Duración aproximada:** 1 h
+**Herramientas:** Claude Code
+
+#### Objetivo
+Corregir tres desvíos de GitFlow que quedaron después de la Entrega 1: `main` tenía un cambio que `develop` no, el PR de RE-05 apuntaba a `main` y el workflow que asigna revisores no corría en los PR hacia `develop`.
+
+#### Qué se hizo
+- `assign-reviewer.yml` ahora se dispara en los PR hacia `main`, `develop` y `release/**`. Antes solo corría hacia `main`, así que desde que se adoptó GitFlow ningún PR hacia `develop` recibía revisor automático.
+- `docs/flujo-de-trabajo.md` describe las ramas en las que se pide revisión.
+- Se sincroniza `main` en `develop` (rama `sync/main-en-develop-entrega1`): trae el enlace al video de la Entrega 1 en el README, que entró directo a `main` en el #132.
+- El PR #127 (RE-05) se reapuntó a `develop` a mano. Su base ya estaba en `develop`, así que el PR solo muestra su propio commit.
+
+#### Decisiones y por qué
+| Decisión | Alternativas consideradas | Por qué se eligió |
+|---|---|---|
+| Incluir `release/**` en el workflow de revisores | Solo agregar `develop` | Los ajustes de una entrega llegan por PR a la rama de release (como el #129) y también necesitan revisión |
+| Llevar el cambio del #132 a `develop` con un PR de sincronización | Revertirlo en `main` y rehacerlo como hotfix | El cambio es correcto y ya está en la entrega; solo faltaba en `develop`. Es el mismo procedimiento que el #125 |
+| Rama `fix/…` para el cambio del workflow | `ci/…` o `feature/…` | CONTRIBUTING no define prefijos para documentación ni CI; se reutilizó `fix/`, que ya se usa en el repo, hasta que el equipo acuerde una convención |
+
+#### Archivos principales
+- `.github/workflows/assign-reviewer.yml`: ramas destino del disparador.
+- `docs/flujo-de-trabajo.md`: texto de la revisión automática.
+
+#### Cómo probarlo
+Abrir un PR (que no sea borrador) hacia `develop` y revisar que el job «Pedir revisión» asigne al revisor de la rotación. El workflow de un PR se toma del PR mismo, así que este PR ya debería pedir su propia revisión.
+
+#### Estado de verificación
+- Build: no aplica
+- Lint: no aplica
+- Tests: no aplica (solo cambia el disparador de un workflow y la documentación)
+
+#### Pendientes y bloqueos
+- El PR #127 (RE-05) tiene un conflicto con `develop` en `docs/memory.md`, y el CI no corre mientras exista. Hay que mergear `develop` en `feat/RE-05-cancelar-reserva` y conservar ambas entradas.
+- CONTRIBUTING no define prefijos de rama para documentación ni CI (`docs/…`, `ci/…`). Conviene acordarlo y registrarlo como ampliación de T-05.
+- `ci.yml` todavía no corre en PR hacia `release/*` (pendiente de la sesión de cierre de la Entrega 1).
+- Quedan unas 40 ramas remotas ya mergeadas que se pueden borrar.
+
+#### Para el resto del equipo
+- Los cambios en `main` hechos desde el editor web de GitHub (como el #126 y el #132) se saltan GitFlow. Lo que no sea un release o un hotfix va por PR hacia `develop`.
+
+---

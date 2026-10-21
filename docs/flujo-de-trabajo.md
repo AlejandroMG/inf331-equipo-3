@@ -40,7 +40,7 @@ Cada entrega del ramo es un release: `release/vX.0-entregaN` desde `develop`, PR
 
 Así cada uno conoce, además del suyo, un segundo dominio.
 
-La revisión se pide sola: al abrir un PR hacia `main` (o al sacarlo de borrador), el workflow [`assign-reviewer.yml`](../.github/workflows/assign-reviewer.yml) asigna a quien toca por rotación y, además, al dueño de cada módulo ajeno que el PR toca (incluido A si cambia algo en `rentsmart-back/prisma/`). Un PR en borrador no pide revisión. Si cambia el equipo, un dominio o un módulo, hay que actualizar las tablas de ese archivo.
+La revisión se pide sola: al abrir un PR hacia `develop`, `main` o una rama `release/*` (o al sacarlo de borrador), el workflow [`assign-reviewer.yml`](../.github/workflows/assign-reviewer.yml) asigna a quien toca por rotación y, además, al dueño de cada módulo ajeno que el PR toca (incluido A si cambia algo en `rentsmart-back/prisma/`). Un PR en borrador no pide revisión. Si cambia el equipo, un dominio o un módulo, hay que actualizar las tablas de ese archivo.
 
 ## Definición de terminado
 
