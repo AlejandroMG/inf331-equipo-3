@@ -2682,3 +2682,43 @@ Abrir un PR (que no sea borrador) hacia `develop` y revisar que el job «Pedir r
 - Los cambios en `main` hechos desde el editor web de GitHub (como el #126 y el #132) se saltan GitFlow. Lo que no sea un release o un hotfix va por PR hacia `develop`.
 
 ---
+
+### 2026-10-23 · C (gonzzza-lol) · Corregir la rotación de revisión en CONTRIBUTING
+
+**Issues:** No aplica (documentación del flujo de trabajo)
+**Rama / PR:** `feature/rotacion-revision-contributing` · sin PR todavía
+**Duración aproximada:** 0,5 h
+**Herramientas:** Claude Code
+
+#### Objetivo
+Que `CONTRIBUTING.md` describa la misma rotación de revisión que la tabla de `docs/flujo-de-trabajo.md` y que `assign-reviewer.yml`.
+
+#### Qué se hizo
+- `CONTRIBUTING.md` decía «A revisa a B, B revisa a C y C revisa a A», que es la rotación al revés. Ahora dice «B revisa a A, C revisa a B y A revisa a C» y enlaza a la tabla de rotación.
+
+#### Decisiones y por qué
+| Decisión | Alternativas consideradas | Por qué se eligió |
+|---|---|---|
+| Corregir CONTRIBUTING y no la tabla ni el workflow | Cambiar la tabla y el workflow para que calcen con CONTRIBUTING | La tabla, el workflow y los PR revisados hasta ahora (#112, #114, #121, #123, #124) siguen todos la misma rotación; solo la frase estaba al revés |
+| Rama `feature/…` para un cambio de documentación | `docs/…` o `fix/…` | GitFlow puro: todo lo que va a `develop` sale de `feature/`; el tipo del commit (`docs:`) dice qué es |
+
+#### Archivos principales
+- `CONTRIBUTING.md`: frase de la rotación de revisión.
+
+#### Cómo probarlo
+Comparar la frase con la tabla «Rotación de revisión» de `docs/flujo-de-trabajo.md` y con `ROTATION` en `.github/workflows/assign-reviewer.yml`.
+
+#### Estado de verificación
+- Build: no aplica
+- Lint: no aplica
+- Tests: no aplica
+
+#### Pendientes y bloqueos
+- El issue #42 (RE-05) sigue abierto aunque el #127 ya se mergeó a `develop`; hay que cerrarlo a mano (T-05).
+- Las ramas `fix/assign-reviewer-develop` y `sync/main-en-develop-entrega1` siguen en el remoto después del merge.
+- Sigue pendiente acordar la convención de ramas (solo `feature/`, `release/` y `hotfix/`) y proteger `develop` con el ruleset de `main`.
+
+#### Para el resto del equipo
+- La rotación vigente es: los PR de A los revisa B, los de B los revisa C y los de C los revisa A. `assign-reviewer.yml` ya la aplica en los PR hacia `develop`.
+
+---
