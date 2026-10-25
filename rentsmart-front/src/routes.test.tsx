@@ -31,7 +31,7 @@ describe('rutas', () => {
     expect(await screen.findByRole('heading', { level: 1, name: 'Sala Alameda' })).toBeInTheDocument()
   })
 
-  it.each(['/publish', '/owner/spaces'])('sin sesión, %s redirige a /login y recuerda la ruta pedida', async (path) => {
+  it.each(['/profile', '/publish', '/owner/spaces'])('sin sesión, %s redirige a /login y recuerda la ruta pedida', async (path) => {
     const router = renderAt(path)
 
     expect(await screen.findByRole('heading', { level: 1, name: 'Iniciar sesión' })).toBeInTheDocument()
