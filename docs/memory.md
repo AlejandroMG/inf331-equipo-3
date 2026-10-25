@@ -2682,3 +2682,71 @@ Abrir un PR (que no sea borrador) hacia `develop` y revisar que el job «Pedir r
 - Los cambios en `main` hechos desde el editor web de GitHub (como el #126 y el #132) se saltan GitFlow. Lo que no sea un release o un hotfix va por PR hacia `develop`.
 
 ---
+
+### 2026-10-24 · C (gonzzza-lol) · F-10 plan de pruebas v1 y smoke test con Playwright
+
+**Issues:** #10 (F-10); se diseña, sin implementar, el E2E de #64 (QA-01)
+**Rama / PR:** `feature/F-10-plan-de-pruebas-playwright` · sin PR todavía
+**Duración aproximada:** 2 h
+**Herramientas:** Claude Code
+
+#### Objetivo
+Dejar escrito el plan de pruebas por nivel (unitarias, integración y E2E), configurar Playwright en el front con un smoke test que corra en el CI y cerrar el pendiente de que el CI corra también en los PR hacia `release/**`.
+
+#### Qué se hizo
+- `docs/plan-de-pruebas.md` (nuevo): principios, qué se prueba y qué no en cada nivel, dónde viven los archivos, cómo se corren, qué corre cada job del CI, conteo de archivos de test, dónde se ve la cobertura, la meta de cobertura pendiente de P-11 y el diseño del E2E del flujo completo para QA-01. Enlazado desde `docs/README.md`, `AGENTS.md`, `README.md` y `docs/flujo-de-trabajo.md`.
+- Playwright 1.64.1 (`@playwright/test`, devDependency) en `rentsmart-front/` con `playwright.config.ts`: solo Chromium; `webServer` levanta Vite en el puerto 5180 con `VITE_USE_MOCKS=true` y `VITE_API_URL=http://localhost:5180`, y reutiliza el servidor fuera del CI.
+- `e2e/smoke.spec.ts`: 3 tests con selectores accesibles. La página de inicio muestra el catálogo de los mocks (14 espacios, «Sala Alameda»); la página 2 muestra «Taller de cerámica»; una tarjeta abre el detalle de «Estudio Luz Norte».
+- Script `test:e2e` (`playwright test`) en `package.json`.
+- Vitest excluye `e2e/**` (si no, toma `smoke.spec.ts` por su nombre); `tsconfig.node.json` incluye `playwright.config.ts` y `e2e/` para que `tsc -b` los revise; ESLint ignora los reportes de Playwright; el `.gitignore` del front ignora `playwright-report/`, `test-results/` y `blob-report/`.
+- `ci.yml`: job nuevo «E2E (Playwright)», que instala Chromium con `--with-deps`, corre `npm run test:e2e` y sube el artefacto `playwright-report` si falla. `pull_request` ahora incluye `'release/**'`.
+- `ci.yml`: el paso de cobertura del back pasa `--coverageReporters=text --coverageReporters=lcov --coverageReporters=json-summary`. Al revisarlo para el plan se vio que Jest, con sus reporteros por defecto (clover, json, lcov, text), no genera `coverage/coverage-summary.json`, así que el paso «Publicar resumen de cobertura» siempre caía en la rama del `else` y nunca mostraba la tabla.
+
+#### Decisiones y por qué
+| Decisión | Alternativas consideradas | Por qué se eligió |
+|---|---|---|
+| Job aparte «E2E (Playwright)» | Agregar los pasos al job «Frontend (React)» | Corre en paralelo, su falla se ve por separado y no cambia el check obligatorio «Frontend (React)» del ruleset de `main` |
+| Smoke contra Vite con MSW | Contra el back real; contra `vite preview` | No necesita back ni BD en el CI. Con `vite preview` habría que hacer un build aparte con `VITE_USE_MOCKS=true`; el dev server es como el equipo ya usa los mocks |
+| Puerto fijo 5180 con `--strictPort` | 5173, el de `npm run dev` | Con `reuseExistingServer` en local, usar 5173 podría reutilizar un dev server sin mocks conectado al back real y dar falsos verdes o rojos |
+| `VITE_API_URL` al mismo origen en el `webServer` | Dejar el valor del `.env` (o el `http://localhost:3000` por defecto del CI) | Las variables del proceso ganan al `.env` en Vite; así las llamadas son del mismo origen y MSW las responde igual en local y en el CI |
+| Revisar `e2e/` con `tsconfig.node.json` | Un `tsconfig.e2e.json` aparte | Los tests de Playwright corren en Node, igual que `vite.config.ts`; menos archivos de configuración |
+| No fijar meta de cobertura | Proponer una cifra provisoria | P-11 sigue en espera del profesor; rige la definición de terminado |
+| Corregir los reporteros de cobertura en el CI | Dejarlo como pendiente | C es dueño del CI y el plan dice que el CI publica la tabla: sin el cambio, eso no era cierto |
+
+#### Archivos principales
+- `docs/plan-de-pruebas.md`: plan de pruebas v1 (nuevo).
+- `rentsmart-front/playwright.config.ts`, `rentsmart-front/e2e/smoke.spec.ts`: configuración de Playwright y smoke test (nuevos).
+- `rentsmart-front/package.json`, `package-lock.json`: `@playwright/test` y el script `test:e2e`.
+- `rentsmart-front/vite.config.ts`: `test.exclude` con `e2e/**`.
+- `rentsmart-front/tsconfig.node.json`, `rentsmart-front/eslint.config.js`, `rentsmart-front/.gitignore`: incluir y excluir los archivos de Playwright.
+- `.github/workflows/ci.yml`: job E2E, `release/**` en los PR y reporteros de cobertura.
+- `README.md`, `AGENTS.md`, `docs/README.md`, `docs/flujo-de-trabajo.md`: comando `npm run test:e2e` y enlaces al plan.
+
+#### Cómo probarlo
+```bash
+cd rentsmart-front
+npm ci
+npx playwright install chromium   # solo la primera vez
+npm run test:e2e                  # 3 tests en Chromium, sin back
+npx playwright show-report
+```
+En GitHub, el PR debería mostrar el check «E2E (Playwright)» además de los dos de siempre, y el resumen del job Backend debería traer la tabla «Cobertura del Backend».
+
+#### Estado de verificación
+- Build: ✅ (`npm run build` del front)
+- Lint: ✅ (`npm run lint` del front)
+- Tests: ✅ front: 665 tests en 50 archivos con Vitest; 3 tests de Playwright en Chromium (también con `CI=true`). `ci.yml` se validó con js-yaml. No se corrieron los e2e del back. Las unitarias del back se corrieron solo para revisar los archivos de cobertura, sin base de datos: 380 de 381 pasan; la que falla es `src/prisma/prisma.service.spec.ts`, que necesita PostgreSQL. Esa medición local dio 47,05 % de líneas, pero no es la cifra oficial, que es la del CI.
+
+#### Pendientes y bloqueos
+- Meta de cobertura: espera la respuesta del profesor (P-11, #78).
+- Cuando «E2E (Playwright)» lleve un tiempo estable, agregarlo a los checks obligatorios del ruleset de `main` (lo configura quien administra el repo).
+- QA-01 (#64): implementar el E2E del flujo completo según la sección del plan. Depende de PA-02 (#46).
+- Comprobar en el primer CI de este PR que la tabla de cobertura aparece en el resumen del job Backend.
+- La entrada de P-11 en `docs/decisiones.md` todavía dice que F-10 quedó para después del 9 de octubre; se puede actualizar cuando se resuelva P-11.
+
+#### Para el resto del equipo
+- B (@xReNatS): esta historia tocó archivos de la base del front: `vite.config.ts` (`test.exclude` con `e2e/**`), `package.json` (devDependency `@playwright/test` y script `test:e2e`), `.gitignore` (reportes de Playwright), además de `tsconfig.node.json` y `eslint.config.js`. No cambia nada de la app ni de los tests de Vitest.
+- El smoke depende de los textos del catálogo y de `src/mocks/catalog-data.ts` (nombres de espacios, 14 en total, 12 por página). Si cambian, hay que ajustar `e2e/smoke.spec.ts`.
+- Para correr Playwright en local hay que instalar Chromium una vez con `npx playwright install chromium`. Si el puerto 5180 está ocupado, la prueba no arranca (`--strictPort`).
+
+---
