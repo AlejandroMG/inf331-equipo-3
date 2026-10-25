@@ -59,6 +59,7 @@ src/bookings/
 - REST JSON bajo el prefijo `/api`. Swagger (`@nestjs/swagger`) en `/docs`.
 - Autenticación con `Authorization: Bearer <jwt>`.
 - DTOs validados con `class-validator` mediante un `ValidationPipe` global.
+- Seguridad base (CU-05): `helmet` agrega cabeceras HTTP; CORS permite solo el origen configurado en `FRONTEND_URL`; el endpoint de login limita a 10 intentos por IP cada 15 minutos y responde 429 al excederlos. El rate limit usa almacenamiento en memoria por instancia de API. Se omite solo Content-Security-Policy en `/docs` para que Swagger UI pueda iniciar sus scripts inline; las demás cabeceras Helmet siguen activas.
 - Códigos de error: 400 validación, 401 sin sesión, 403 sin permiso, 404 no existe, 409 conflicto de estado o de horario.
 - Fechas en ISO 8601 y UTC. Montos en CLP como enteros.
 - Listados paginados con `?page=1&pageSize=20`; la respuesta trae `{ items, total, page, pageSize }`.

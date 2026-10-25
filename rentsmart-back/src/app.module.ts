@@ -13,10 +13,12 @@ import { OwnerModule } from './owner/owner.module';
 import { AvailabilityModule } from './availability/availability.module';
 import { BookingsModule } from './bookings/bookings.module';
 import { PaymentsModule } from './payments/payments.module';
+import { ThrottlerModule } from '@nestjs/throttler';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true, validate }),
+    ThrottlerModule.forRoot([{ ttl: 15 * 60 * 1000, limit: 10 }]),
     PrismaModule,
     StorageModule,
     SpaceTypesModule,

@@ -121,4 +121,32 @@ describe('POST /api/auth/register (e2e)', () => {
 
     expect(res.headers['access-control-allow-origin']).toBe(origin);
   });
+
+  it('no habilita CORS para un origen que no sea el front configurado', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/api/space-types')
+      .set('Origin', 'https://sitio-no-autorizado.example')
+      .expect(200);
+
+    expect(res.headers['access-control-allow-origin']).toBeUndefined();
+  });
+
+  it('incluye cabeceras de seguridad de Helmet', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/api/space-types')
+      .expect(200);
+
+    expect(res.headers['x-content-type-options']).toBe('nosniff');
+    expect(res.headers['x-frame-options']).toBe('SAMEORIGIN');
+    expect(res.headers['referrer-policy']).toBe('no-referrer');
+    expect(res.headers['content-security-policy']).toBeDefined();
+  });
+
+  it('mantiene Swagger disponible con las cabeceras Helmet', async () => {
+    const res = await request(app.getHttpServer()).get('/docs/').expect(200);
+
+    expect(res.text).toContain('Swagger UI');
+    expect(res.headers['x-content-type-options']).toBe('nosniff');
+    expect(res.headers['content-security-policy']).toBeUndefined();
+  });
 });
