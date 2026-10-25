@@ -2682,3 +2682,67 @@ Abrir un PR (que no sea borrador) hacia `develop` y revisar que el job «Pedir r
 - Los cambios en `main` hechos desde el editor web de GitHub (como el #126 y el #132) se saltan GitFlow. Lo que no sea un release o un hotfix va por PR hacia `develop`.
 
 ---
+
+### 2026-10-24 · C (gonzzza-lol) · RE-06 vencimientos automáticos
+
+**Issues:** #43
+**Rama / PR:** `feature/RE-06-vencimientos` · sin PR todavía
+**Duración aproximada:** 2 h
+**Herramientas:** Claude Code
+
+#### Objetivo
+Que las reservas cambien solas de estado cuando vencen: una `CONFIRMED` cuyo `endAt` ya pasó queda `FINISHED`, y una `PENDING` cuyo `expiresAt` ya pasó (porque el webhook `checkout.session.expired` no llegó) queda `EXPIRED`. Además, dejar lista para RE-02 la función que expira las pendientes de un espacio dentro de su transacción.
+
+#### Qué se hizo
+- `src/bookings/booking-expiry.service.ts`: `BookingExpiryService` con `sweep(now, batchSize?)`, que lee las vencidas por lotes de 100 y cambia cada una en su propia transacción, y `expireStalePending(tx, now, spaceId?)`, que expira las pendientes vencidas dentro de la transacción de quien llama. Todo cambio pasa por `BookingStateService.transition` con `actorId: null` y un motivo que empieza con «Sistema:».
+- `src/bookings/booking-expiry.scheduler.ts`: `BookingExpiryScheduler` registra un intervalo en el `SchedulerRegistry` de `@nestjs/schedule` En `onModuleDestroy` lo quita y espera el barrido en curso, para que Prisma no se desconecte a mitad de uno. Variables nuevas `BOOKING_SWEEP_ENABLED` y `BOOKING_SWEEP_INTERVAL_MS` (de 1000 a 2 147 483 647, el máximo de `setInterval`), validadas en `env.validation.ts`.
+- `@nestjs/schedule@^12.0.2` instalado (aprobado). Funciona con Jest en ES Modules sin cambios, así que no hizo falta un temporizador propio.
+- `ScheduleModule.forRoot()` en `AppModule`. `BookingsModule` provee el servicio y la tarea, y exporta `BookingExpiryService`.
+- `test/utils/setup-env.ts` apaga la tarea en los e2e.
+- Pruebas: 22 unitarias del servicio (reloj fijo, límites, estados que no se tocan, lote con fallas, lotes, idempotencia y `expireStalePending` con un `tx` de mocks propios), 7 de la tarea (fake timers, aislados de `process.env`) y 7 de las variables nuevas. `test/booking-expiry.e2e-spec.ts` con 5 e2e.
+- Docs: tabla de transiciones y sección «Vencimientos automáticos (RE-06)» en `arquitectura.md`, el párrafo de reservas cruzadas, la tabla de variables y `.env.example`.
+- **Arreglo de RE-05 (#42, ya cerrado), aprobado por el usuario para ir en el PR de RE-06:** `BookingsService.cancel` respondía 200 con una `CONFIRMED` cuyo horario ya había terminado mientras el barrido no la pasaba a `FINISHED`, y si cancelaba el propietario, P-14 devolvía el total por una reserva ya usada. Ahora, si `endAt <= now`, responde 409 «La reserva ya terminó; no se puede cancelar» antes de calcular el reembolso, sin cambiar el estado ni dejar evento. Tests: 3 unitarios en `bookings.service.spec.ts` (terminó hace una hora, termina justo ahora y en curso) y 1 e2e en `booking-cancel.e2e-spec.ts`. Se actualizaron el 409 de Swagger en `bookings.controller.ts` y la sección de cancelación de `arquitectura.md`.
+
+#### Decisiones y por qué
+| Decisión | Alternativas consideradas | Por qué se eligió |
+|---|---|---|
+| El límite cuenta como vencido (`endAt <= now`, `expiresAt <= now`) | `<` estricto | El rango de una reserva es `[startAt, endAt)`, y RE-05 ya trata `expiresAt <= now` como vencida al cancelar |
+| Cada reserva en su propia transacción, y 409 o 404 cuentan como saltadas | Una transacción por lote | Si el webhook paga una reserva entre la búsqueda y el cambio, `transition` responde 409 y las demás siguen. Con una sola transacción, un error de base deshace el lote completo |
+| Avanzar por id (keyset) entre lotes | Volver a leer desde el principio | Una reserva que falla siempre volvería en cada lote y el barrido no terminaría |
+| `expireStalePending` propaga los errores inesperados | Atraparlos como en `sweep` | Después de un error de la base la transacción de quien llama ya está abortada; seguir solo esconde el problema |
+| Intervalo dinámico con `SchedulerRegistry.addInterval` | `@Interval(60000)` o `@Cron` | El decorador solo acepta una constante y el intervalo tenía que salir de la configuración |
+| Encendida por defecto, apagada solo con `false` | Apagada por defecto | Si en el despliegue se olvida la variable, la tarea igual corre. Los e2e la apagan siempre |
+| Los e2e barren con un reloj del año 2000 | Barrer con la hora real | `sweep` sin espacio toca toda la base; con fechas del 2000 solo alcanza los datos de ese archivo, aunque los demás e2e corran en paralelo |
+| Cancelar una `CONFIRMED` terminada responde 409 sin tocarla | Pasarla a `FINISHED` en ese momento, como RE-05 hace con una `PENDING` vencida | Lo aprobó el usuario así: responder 409 sin evento y dejar el cambio de estado al barrido |
+| Sin margen de gracia después de `expiresAt` | Esperar unos minutos más antes de expirar | P-06 fija la retención en 30 minutos; un margen cambiaría esa decisión (ver pendientes) |
+
+#### Archivos principales
+- `rentsmart-back/src/bookings/booking-expiry.service.ts` y `.spec.ts`: la lógica y sus unitarias.
+- `rentsmart-back/src/bookings/booking-expiry.scheduler.ts` y `.spec.ts`: la ejecución periódica.
+- `rentsmart-back/src/bookings/bookings.module.ts`, `src/app.module.ts`: registro de providers y de `ScheduleModule`.
+- `rentsmart-back/src/config/env.validation.ts` y `.spec.ts`: las dos variables nuevas.
+- `rentsmart-back/test/booking-expiry.e2e-spec.ts`: e2e contra la base de test.
+- `rentsmart-back/test/utils/setup-env.ts`: apaga la tarea en los e2e.
+- `.env.example`, `docs/arquitectura.md`.
+- Arreglo de RE-05: `rentsmart-back/src/bookings/bookings.service.ts`, su `.spec.ts`, `bookings.controller.ts` (Swagger) y `test/booking-cancel.e2e-spec.ts`.
+
+#### Cómo probarlo
+- `npm test -- booking-expiry` y `npm run test:e2e -- booking-expiry` en `rentsmart-back`.
+- A mano: `npm run start:dev` con `BOOKING_SWEEP_INTERVAL_MS=5000`, crear con Prisma Studio una `CONFIRMED` con `endAt` en el pasado y ver que a los 5 segundos queda `FINISHED`, con su `BookingEvent` y el log «Barrido: 1 finalizadas…».
+
+#### Estado de verificación
+- Build: ✅
+- Lint: ✅
+- Tests: ✅ 420 unitarias en 27 suites y 482 e2e en 23 suites
+
+#### Pendientes y bloqueos
+- PA-02 (#46): la sesión de Checkout no vence exactamente en `expiresAt`. Stripe exige que su `expires_at` quede al menos 30 minutos después de crearla, y se crea después que la reserva, así que vence un poco más tarde. Además, `checkout.session.completed` puede llegar atrasado. Por eso el barrido puede dejar `EXPIRED` una reserva que sí se pagó, y PA-02 tiene que manejar un `completed` que llega sobre una `EXPIRED` (`EXPIRED → PAID` no es válida). Quedó escrito en `arquitectura.md`. Un margen de gracia antes de expirar cambiaría P-06 y lo decide el usuario; no se agregó.
+- La búsqueda de `CONFIRMED` vencidas filtra por `status` y `endAt`, y no hay un índice `(status, endAt)` (el de `(status, expiresAt)` sí existe). Con pocos datos no importa; si crece, se le pide a A.
+- RE-05 (`BookingsService.cancel`) expira una pendiente vencida con su propio motivo («Venció el plazo de pago»). Se podría pasar a `EXPIRED_REASON` para que el historial diga lo mismo.
+
+#### Para el resto del equipo
+- **RE-02 (C):** antes de insertar la reserva, dentro de la misma transacción, llama a `bookingExpiry.expireStalePending(tx, now, dto.spaceId)` (inyecta `BookingExpiryService`, que está en el mismo módulo). Una pendiente vencida sigue contando para `booking_no_overlap`; el barrido periódico no basta porque entre una pasada y otra puede quedar alguna. Un error inesperado se propaga y deshace la transacción completa.
+- **A (despliegue, QA-03):** hay dos variables nuevas, las dos opcionales: `BOOKING_SWEEP_ENABLED` (por defecto encendida; `false` la apaga) y `BOOKING_SWEEP_INTERVAL_MS` (por defecto 60 000; de 1000 a 2 147 483 647). Si se levantan varias instancias del back, todas barren; es seguro, porque las transiciones van condicionadas al estado, pero basta con dejarla encendida en una.
+- Para probar algo que dependa de que una reserva venza, llama a `BookingExpiryService.sweep(now)` con la hora que necesites; no esperes al temporizador, que en los e2e está apagado.
+
+---

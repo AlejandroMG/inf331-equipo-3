@@ -146,6 +146,28 @@ describe('BookingsService.cancel', () => {
     expect(state.transition).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ['terminó hace una hora', -HOUR],
+    ['termina justo ahora', 0],
+  ])('una confirmada cuyo horario %s responde 409, sin cambiarla ni calcular reembolso', async (_name, ms) => {
+    stored('CONFIRMED', { startAt: new Date(NOW.getTime() + ms - 2 * HOUR), endAt: new Date(NOW.getTime() + ms) });
+
+    await expect(service.cancel('owner', 'b1', DTO)).rejects.toThrow('La reserva ya terminó; no se puede cancelar');
+    await expect(service.cancel('renter', 'b1', DTO)).rejects.toThrow(ConflictException);
+
+    expect(state.transition).not.toHaveBeenCalled();
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('una confirmada que todavía no termina (en curso) sí se cancela', async () => {
+    stored('CONFIRMED', { startAt: new Date(NOW.getTime() - HOUR), endAt: new Date(NOW.getTime() + 1) });
+
+    const cancelled = await service.cancel('owner', 'b1', DTO);
+
+    expect(cancelled.status).toBe('CANCELLED');
+  });
+
   it('responde 404 si la reserva no existe', async () => {
     prisma.booking.findUnique.mockResolvedValue(null);
 

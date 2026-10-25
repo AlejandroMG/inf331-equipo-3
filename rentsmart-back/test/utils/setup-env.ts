@@ -15,3 +15,7 @@ process.env.DATABASE_URL = testUrl;
 // Las fotos de los e2e se guardan en una carpeta temporal, nunca en ./uploads, y siempre con el almacenamiento local.
 process.env.STORAGE_DRIVER = 'local';
 process.env.UPLOADS_DIR = join(tmpdir(), 'rentsmart-e2e-uploads');
+
+// Sin el barrido periódico de vencimientos (RE-06): no deja temporizadores abiertos en Jest ni cambia los datos de
+// otras pruebas. test/booking-expiry.e2e-spec.ts llama al servicio directamente, con su propio reloj.
+process.env.BOOKING_SWEEP_ENABLED = 'false';

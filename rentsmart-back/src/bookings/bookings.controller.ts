@@ -85,7 +85,7 @@ export class BookingsController {
   @ApiNotFoundResponse({ description: 'La reserva no existe' })
   @ApiConflictResponse({
     description:
-      'La reserva no se puede cancelar: está pagada sin confirmar, finalizada, cancelada, expirada o venció su plazo de pago',
+      'La reserva no se puede cancelar: está pagada sin confirmar, finalizada, cancelada, expirada, venció su plazo de pago o su horario ya terminó',
   })
   cancel(
     @CurrentUser() user: AuthUser,
