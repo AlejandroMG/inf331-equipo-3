@@ -2682,3 +2682,97 @@ Abrir un PR (que no sea borrador) hacia `develop` y revisar que el job «Pedir r
 - Los cambios en `main` hechos desde el editor web de GitHub (como el #126 y el #132) se saltan GitFlow. Lo que no sea un release o un hotfix va por PR hacia `develop`.
 
 ---
+
+### 2026-10-24 · C (gonzzza-lol) · DI-02 servicio de disponibilidad
+
+**Issues:** #36 (DI-02)
+**Rama / PR:** `feature/DI-02-servicio-disponibilidad` (desde `develop`) · sin PR todavía
+**Duración aproximada:** 3 h
+**Herramientas:** Claude Code
+
+#### Objetivo
+Saber qué horas de un espacio se pueden reservar: implementar `GET /api/spaces/:id/availability` (el contrato de F-05 no cambió) y `AvailabilityService.isAvailable`, que RE-02 y RE-04 llamarán dentro de su transacción.
+
+#### Qué se hizo
+- **`src/availability/availability-slots.ts`** (nuevo, sin Nest ni Prisma): pasa el horario semanal de un día de Chile a bloques UTC de una hora, descuenta los ocupados y los que ya empezaron, y arma el `fullDay`. De ahí salen el endpoint y `isAvailable`, así que los dos aplican las mismas reglas.
+- **`AvailabilityService.findAvailability(spaceId, query, now?)`**: 400 si una fecha no existe, `from` es posterior a `to` o son más de 31 días; 404 si el espacio no existe o no está `ACTIVE`. Lee el espacio, las reglas y las reservas del rango con una consulta cada una.
+- **`AvailabilityService.isAvailable(spaceId, startAt, endAt, options?)`**: verdadero solo si el espacio está `ACTIVE`, el rango son horas cerradas y no ha empezado, cabe en el horario y no lo traslapa una `PENDING` vigente, `PAID` o `CONFIRMED`. Las opciones `{ tx, now, unit, excludeBookingId, allowStarted }` resuelven los casos de RE-02 (reservar un día con pausa) y RE-04 (validar la propia reserva `PAID`, aunque el bloque ya haya empezado). `AvailabilityModule` ya exportaba el servicio.
+- **`src/common/santiago-time.ts`** (de B): arreglé `santiagoStartOfDay` y agregué `santiagoWallClock` y la constante `TIME_ZONE` (ver "Para el resto del equipo").
+- **Front:** `getAvailability(spaceId, from, to, signal?)` en `src/features/bookings/bookings-api.ts`, con su test contra MSW. No hay pantalla: el widget es RE-02. El mock de la disponibilidad (`src/mocks/bookings-handlers.ts`) ahora responde 400 con una fecha que no existe (`2026-02-30`), como el back.
+- **Pruebas:** 58 unitarias de `availability-slots`, 36 del servicio y 4 de `santiago-time`, con todos los casos de borde pedidos (abajo) y cada opción de `isAvailable`. En `test/booking-contract.e2e-spec.ts` la línea de 501 de la disponibilidad pasó a 18 e2e reales contra la base, incluidos 7 de `isAvailable` (el día con pausa reservado entero, `excludeBookingId`, `allowStarted` y uno dentro de una transacción). Front: 4 tests de `getAvailability` y 1 del mock.
+- **Documentación:** `docs/arquitectura.md`: intro, tabla (el 400 por una fecha que no existe) y reglas de la disponibilidad en la sección de F-05, firma de `isAvailable`, "Fechas y dinero" y "Cómo se evitan reservas cruzadas" (una `PENDING` vencida sigue contando para `booking_no_overlap` hasta que `expireStalePending` de RE-06 la pase a `EXPIRED`). La descripción de `FullDayDto.available` (Swagger y `types.ts` del front) dice que una reserva en la pausa también lo deja en falso.
+
+Casos de borde cubiertos, en unitarias y la mayoría también en e2e: reservas contiguas (rangos semiabiertos), una `PENDING` vencida que ya no ocupa, horas pasadas (un bloque ya pasó desde que empieza), un día con dos rangos y una pausa, un horario hasta `24:00` con una reserva que cruza la medianoche, el día de Chile contra el día UTC (el lunes de 21:00 a 24:00 se lista en el lunes), el domingo de 23 horas de septiembre (sin bloque de 00:00) y el sábado de 25 horas de abril (dos bloques de 23:00).
+
+#### Decisiones y por qué
+| Decisión | Alternativas consideradas | Por qué se eligió |
+|---|---|---|
+| Recorrer las horas reales de cada día (de su medianoche a la siguiente) y comparar cada una con lo que marca el reloj en Chile | Convertir cada hora local del horario a UTC | Una hora local que no existe o que se repite no tiene una sola conversión. Así el día de 23 horas no tiene las 00:00, el de 25 tiene dos veces las 23:00 y dos rangos contiguos quedan pegados, sin hueco ni traslape |
+| Arreglar `santiagoStartOfDay` en vez de escribir otra función | Una función propia en `availability` | Daba mal el domingo del cambio de septiembre (las 03:00 UTC, que son las 23:00 del sábado). Duplicarla dejaba el error en el panel del propietario |
+| `isAvailable` recibe un objeto de opciones `{ tx, now, unit, excludeBookingId, allowStarted }`, con `tx` adentro | `tx` posicional y las demás en un quinto parámetro | Con cinco opcionales, un solo objeto se lee mejor en cada llamada (`{ tx, unit }`) y no obliga a pasar `undefined`. El usuario aprobó resolver los dos casos en esta historia |
+| Con `unit: 'DAY'` el rango debe ser exactamente el `fullDay`, la pausa no tiene que estar en el horario y una reserva en ella lo impide | Exigir el horario también en la pausa (lo que hacía la primera versión) | Es la regla de `fullDay.available`: lo que el endpoint ofrece como día completo, `isAvailable` lo acepta. Un test lo comprueba con varios casos |
+| `excludeBookingId` y `allowStarted` | Que RE-04 consulte las reservas por su cuenta | Sin ellas, RE-04 siempre cancelaría: la reserva `PAID` ocupa su propio horario, y un pago a las 10:02 por el bloque de 10:00 ya "empezó". Un rango que ya terminó sigue siendo falso |
+| `now` como opción de `isAvailable` y tercer parámetro de `findAvailability` | Un reloj inyectable como provider | Es lo más simple que permite probar con un reloj fijo; los que llaman en producción no lo pasan |
+| Un bloque ya pasó desde que empieza | Ofrecerlo mientras no termine | No se puede vender una hora que ya está corriendo |
+| La consulta trae las reservas en `PENDING`, `PAID` y `CONFIRMED` y la `PENDING` vencida (y la de `excludeBookingId`) se descarta en código | Poner también el vencimiento en el `where` | La regla queda en un solo lugar, probada sin base. Una `PENDING` sin `expiresAt` cuenta como vigente, igual que en `booking_no_overlap` y en RE-05 |
+| `fullDay.available` es falso si una reserva cae en la pausa | Mirar solo las horas del horario | Cambiar el horario no toca las reservas que existen (DI-01): si queda una en lo que hoy es pausa, la base rechazaría el día completo; mejor no ofrecerlo |
+| `isAvailable` nunca lanza, y descarta sin consultar un rango inválido, que ya empezó o de más de 31 días | 404 si el espacio no existe; sin tope | Es una pregunta de sí o no para otros servicios: el código (404 o 409) lo decide quien llama. El tope evita recorrer años de horario con un rango enviado por un cliente |
+| Los e2e van en `booking-contract.e2e-spec.ts`, en un `describe` propio con sus usuarios y espacios | Un archivo nuevo, como `schedule.e2e-spec.ts` | Lo pedía la tarea: reemplazar ahí la línea de 501. Las fechas son de 2030, para que no pasen |
+| `getAvailability` va en `bookings-api.ts` | Un `availability-api.ts` aparte | Es una función; ahí ya está `cancelBooking` |
+
+No se cambió ninguna decisión de `decisiones.md`, ni `schema.prisma`, ni el contrato de F-05.
+
+#### Archivos principales
+- `rentsmart-back/src/availability/availability-slots.ts` y `availability-slots.spec.ts` (nuevos): la lógica y sus casos de borde.
+- `rentsmart-back/src/availability/availability.service.ts` y su spec: `findAvailability`, `isAvailable` y la marca de DI-03.
+- `rentsmart-back/src/common/santiago-time.ts` y su spec: el arreglo de `santiagoStartOfDay`, `santiagoWallClock` y `TIME_ZONE`.
+- `rentsmart-back/test/booking-contract.e2e-spec.ts`: los e2e de la disponibilidad en lugar del 501.
+- `rentsmart-back/src/availability/dto/availability.dto.ts`: la descripción de `FullDayDto.available`.
+- `rentsmart-front/src/features/bookings/bookings-api.ts` y `bookings-api.test.ts` (nuevo).
+- `rentsmart-front/src/mocks/bookings-handlers.ts` y su test: 400 con una fecha que no existe. `src/features/bookings/types.ts`: comentario de `FullDay.available`.
+- `docs/arquitectura.md`.
+
+#### Cómo probarlo
+Con Node 24 y la base de test levantada y migrada. En `rentsmart-back`: `npm test -- availability santiago-time` y `npm run test:e2e -- booking-contract`. En `rentsmart-front`: `npx vitest run src/features/bookings/bookings-api.test.ts`. A mano, con el back y el seed: `GET http://localhost:3000/api/spaces/<id de un espacio del seed>/availability?from=<un lunes futuro>&to=<el domingo siguiente>` devuelve 12 bloques por día de lunes a viernes (09:00 a 21:00 de Chile) y ninguno el fin de semana.
+
+#### Estado de verificación
+- Build: ✅ back y front
+- Lint: ✅ back y front
+- Tests: back 26 suites, 479 unitarias ✅ · e2e 22 suites, 493 tests ✅ (contra una base de test propia, `testdb_di02`) · front 51 archivos, 670 tests ✅
+- No se levantó la API a mano: el endpoint se comprobó con los e2e. "Funciona a 375 px" no aplica: no hay pantalla.
+
+#### Pendientes y bloqueos
+- **Bloqueos (DI-03, #37):** el issue pide combinar "horario, bloqueos y reservas activas", pero los bloqueos son un extra y no tienen modelo. No se hicieron. El punto donde se sumarían como intervalos ocupados está comentado en `AvailabilityService.loadRange`, que usan tanto `findAvailability` como `isAvailable`: basta agregar ahí una consulta del rango.
+- **RE-02 depende de `expireStalePending(tx, now, spaceId?)` de RE-06** (otra rama, sin mergear): una `PENDING` vencida no cuenta para `isAvailable` pero sí para `booking_no_overlap`, así que hay que expirarlas en la transacción antes de insertar.
+- El borrador viejo de DI-02 sigue en el stash compartido (`epitaxy: pre-switch from feat/DI-02-disponibilidad`) y en la rama local `feat/DI-02-disponibilidad`. Lo usé solo como referencia; no lo apliqué ni lo borré. Cuando esta rama se fusione, se pueden borrar los dos.
+- Si un espacio solo tiene horario de 00:00 a 01:00 un domingo, el domingo del cambio de septiembre queda sin horario (`fullDay: null`), porque esa hora no existe. Es lo correcto, pero puede sorprender.
+- `npx tsc --noEmit -p tsconfig.json` marca un error de tipos en `src/spaces/spaces.service.spec.ts` (línea 125) que ya estaba en `develop`; no afecta al build ni a los tests.
+
+#### Para el resto del equipo
+- **RE-02 y RE-04 (yo, o quien las tome).** El módulo que la use importa `AvailabilityModule` e inyecta `AvailabilityService`:
+  ```ts
+  isAvailable(spaceId: string, startAt: Date, endAt: Date, options?: {
+    tx?: Prisma.TransactionClient; // lee dentro de la transacción de quien llama y ve lo que ya escribió
+    now?: Date;                    // solo para los tests
+    unit?: 'HOUR' | 'DAY';         // HOUR por defecto; DAY: el rango debe ser exactamente el fullDay de ese día
+    excludeBookingId?: string;     // ignora esa reserva al buscar traslapes
+    allowStarted?: boolean;        // acepta un rango que ya empezó y no ha terminado
+  }): Promise<boolean>
+  ```
+  ```ts
+  // RE-02, dentro de su transacción:
+  await this.bookings.expireStalePending(tx, now, dto.spaceId); // RE-06
+  if (!(await this.availability.isAvailable(dto.spaceId, startAt, endAt, { tx, unit: dto.unit }))) {
+    throw new ConflictException('Ese horario no está disponible');
+  }
+
+  // RE-04, al validar una reserva PAID (el pago puede llegar con el bloque ya empezado):
+  const ok = await this.availability.isAvailable(b.spaceId, b.startAt, b.endAt, {
+    tx, unit: b.unit, excludeBookingId: b.id, allowStarted: true,
+  });
+  ```
+  Lo que no hace: (1) no dice por qué es falso, así que el 404 de "el espacio no existe" lo decide quien llama; (2) no revisa que el espacio tenga precio en esa unidad (el 400 del contrato); (3) no reemplaza a `booking_no_overlap`: dos solicitudes a la vez pueden recibir verdadero y la base rechaza a la segunda. Una `PENDING` vencida no cuenta para `isAvailable`, pero **sí** para la restricción: por eso va antes `expireStalePending`.
+- **B (@xReNatS):** (1) **`BookingWidget` ya puede usar datos reales:** `getAvailability(spaceId, from, to, signal?)` en `src/features/bookings/bookings-api.ts` devuelve lo mismo que el mock (`Availability` de `types.ts`). Diferencias con el mock, a propósito del mock: el back no ofrece las horas que ya empezaron, una `PENDING` vence a los 30 minutos y no existe el bloque fijo ocupado de los miércoles. Para reservar se mandan tal cual el `startAt` y el `endAt` de un bloque o del `fullDay`. (2) Toqué `src/common/santiago-time.ts`, que usan tus servicios del panel (`owner-bookings` y `owner-metrics`): `santiagoStartOfDay` da lo mismo que antes todos los días salvo el domingo del cambio de septiembre, en que devolvía las 03:00 UTC (las 23:00 del sábado) y ahora las 04:00 UTC, que es cuando empieza ese día. Tus tests siguen pasando. Además el formateador de `Intl` ahora se crea una sola vez, porque la disponibilidad lo consulta por cada hora de hasta 31 días.
+- **A (@AlejandroMG):** no hay cambios en `schema.prisma`. La consulta de reservas usa el índice `Booking(spaceId, startAt, endAt)` que ya existe.
+
+---
