@@ -79,7 +79,8 @@ describe('SpaceDetailPage', () => {
     expect(aside).toHaveTextContent('$12.000')
     expect(aside).toHaveTextContent('/ hora')
     expect(aside).toHaveTextContent('o $90.000 / día')
-    expect(aside).toHaveTextContent('La reserva en línea estará disponible muy pronto.')
+    // El widget de reserva (RE-02) ocupa el lugar del aviso provisorio.
+    expect(within(aside).getByRole('button', { name: 'Reservar' })).toBeInTheDocument()
   })
 
   it('con solo precio por día lo muestra como precio principal', async () => {

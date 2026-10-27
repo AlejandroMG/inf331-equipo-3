@@ -116,7 +116,7 @@ describe('reservas simuladas', () => {
   it('crea la reserva pendiente, con el desglose y a dónde ir a pagar', async () => {
     const { bookingId, checkoutUrl } = await book()
 
-    expect(checkoutUrl).toContain(`/bookings/${bookingId}/success`)
+    expect(checkoutUrl).toMatch(new RegExp(`/bookings/${bookingId}$`))
     expect(await booking(bookingId)).toEqual({
       id: bookingId,
       status: 'PENDING',
@@ -163,7 +163,11 @@ describe('reservas simuladas', () => {
     const { bookingId } = await book({ spaceId: DAY_SPACE, startAt, endAt, unit: 'DAY' })
 
     expect(await booking(bookingId)).toMatchObject({ unit: 'DAY', subtotal: 120000, fee: 12000, total: 132000 })
-    await expect(book({ spaceId: DAY_SPACE, startAt: '2026-10-13T12:00:00.000Z', endAt: '2026-10-13T15:00:00.000Z', unit: 'DAY' })).rejects.toMatchObject({ status: 400 })
+    // Un día que no cubre todo el horario: 409, igual que el back.
+    await expect(book({ spaceId: DAY_SPACE, startAt: '2026-10-13T12:00:00.000Z', endAt: '2026-10-13T15:00:00.000Z', unit: 'DAY' })).rejects.toMatchObject({
+      status: 409,
+      message: 'Una reserva por día toma el horario completo de ese día',
+    })
     // Este espacio solo se arrienda por hora.
     await expect(book({ spaceId: SPACE, startAt: '2026-10-13T12:00:00.000Z', endAt: '2026-10-14T00:00:00.000Z', unit: 'DAY' })).rejects.toMatchObject({ status: 400 })
   })

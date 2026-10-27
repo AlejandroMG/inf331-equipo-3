@@ -88,7 +88,8 @@ export class BookingCheckoutDto {
 
   @ApiProperty({
     example: 'https://checkout.stripe.com/c/pay/cs_test_...',
-    description: 'Stripe Checkout: el front redirige aquí. Vence junto con la retención del horario',
+    description:
+      'El enlace de pago, donde el front redirige: Stripe Checkout desde PA-01; mientras tanto, la página de la reserva en el front (`/bookings/<id>`)',
   })
   checkoutUrl: string;
 }

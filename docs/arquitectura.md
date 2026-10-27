@@ -200,14 +200,14 @@ Hasta que A entregue el login (CU-03), los endpoints protegidos usan `DevAuthGua
 
 ### Disponibilidad, reservas y pagos (F-05)
 
-Módulos `availability`, `bookings` y `payments` (C). Las rutas, los DTOs y la validación de entrada de todos existen y están en Swagger. **Ya están implementados el horario semanal (DI-01), la disponibilidad (DI-02) y cancelar (RE-05);** el resto es todavía solo el contrato y sus servicios responden `501` hasta que entre la historia de cada uno. El front trabaja mientras tanto contra los mocks de MSW (`src/mocks/bookings-handlers.ts`), que tienen las mismas formas y códigos. Los campos de cada DTO están en `/docs`; aquí va lo que Swagger no cuenta.
+Módulos `availability`, `bookings` y `payments` (C). Las rutas, los DTOs y la validación de entrada de todos existen y están en Swagger. **Ya están implementados el horario semanal (DI-01), la disponibilidad (DI-02), reservar y consultar reservas (RE-02) y cancelar (RE-05);** el resto es todavía solo el contrato y sus servicios responden `501` hasta que entre la historia de cada uno. El front trabaja mientras tanto contra los mocks de MSW (`src/mocks/bookings-handlers.ts`), que tienen las mismas formas y códigos. Los campos de cada DTO están en `/docs`; aquí va lo que Swagger no cuenta.
 
 | Endpoint | Sesión | Qué hace | Historia |
 |---|---|---|---|
 | `GET /api/spaces/:id/availability?from=&to=` | No | Bloques libres de una hora por cada día pedido: `{ spaceId, timeZone, days: [{ date, slots: [{ startAt, endAt }], fullDay }] }`. 400 si falta una fecha, no es `AAAA-MM-DD`, no existe (`2026-02-30`), `from` es posterior a `to` o se piden más de 31 días; 404 si el espacio no existe o no está activo | DI-02 |
 | `GET /api/spaces/:id/schedule` | Sí, el dueño | El horario semanal de un espacio propio, también de un borrador: `{ rules: [{ weekday, startTime, endTime }] }` | DI-01 |
 | `PUT /api/spaces/:id/schedule` | Sí, el dueño | Reemplaza el horario completo con `{ rules }` y lo devuelve ordenado. 400 si un día u hora no vale, el fin no es posterior al inicio o dos rangos del mismo día se traslapan; 409 con `missing: ["schedule"]` si dejaría sin horario a un espacio publicado | DI-01 |
-| `POST /api/bookings` | Sí | `{ spaceId, startAt, endAt, unit }` → `201 { bookingId, checkoutUrl }`. Crea la reserva `PENDING` (retiene el horario 30 min) y la sesión de Stripe Checkout. 400 si las fechas no valen o el espacio no se arrienda en esa unidad; 404 si el espacio no existe o no está activo; 409 si el horario está fuera del horario semanal o ya está ocupado | RE-02, PA-01 |
+| `POST /api/bookings` | Sí | `{ spaceId, startAt, endAt, unit }` → `201 { bookingId, checkoutUrl }`. Crea la reserva `PENDING` (retiene el horario 30 min) y entrega el enlace de pago (Stripe Checkout desde PA-01; mientras tanto, la página de la reserva). 400 si las fechas no valen, el inicio ya pasó, el rango supera 31 días, el total supera el máximo que cabe en la base (2 147 483 647 CLP) o el espacio no se arrienda en esa unidad; 403 si el espacio es de quien reserva; 404 si el espacio no existe o no está activo; 409 si el horario está fuera del horario semanal o ya está ocupado | RE-02, PA-01 |
 | `GET /api/bookings/me?page=&pageSize=` | Sí | Mis reservas como arrendatario, de cualquier estado, las más recientes primero: `{ items, total, page, pageSize }`. `page` ≥ 1, `pageSize` de 1 a 50 (20 por defecto) | RE-02 |
 | `GET /api/bookings/:id` | Sí, el arrendatario | Una reserva: `{ id, status, unit, startAt, endAt, subtotal, fee, total, expiresAt, createdAt, space }`. 403 si es de otro usuario | RE-02 |
 | `POST /api/bookings/:id/cancel` | Sí, el arrendatario o el dueño del espacio | `{ reason }` (de 5 a 500 caracteres) → la reserva ya cancelada. Se cancela desde `PENDING` o `CONFIRMED`. 400 si falta el motivo o su largo no vale, 403 si la reserva no es tuya ni de un espacio tuyo, 404 si no existe, 409 desde cualquier otro estado, si la `PENDING` ya venció (queda `EXPIRED`) o si el horario de la `CONFIRMED` ya terminó (`endAt` pasado) | RE-05 |
@@ -249,9 +249,21 @@ Módulos `availability`, `bookings` y `payments` (C). Las rutas, los DTOs y la v
 - **Quién ve qué:** estos endpoints son la vista del arrendatario. El propietario ve las reservas de sus espacios en `GET /api/owner/bookings` ([Panel del propietario](#panel-del-propietario-pn-02-pn-04), de B).
 - **Cancelar, implementado (RE-05):** `BookingsService.cancel` cambia el estado solo con `BookingStateService.transition`, con el id de quien cancela y el motivo, así queda el `BookingEvent`. Cuánto se reembolsa lo decide la función pura `cancellationRefund(booking, cancelledBy, now)` de `src/bookings/cancellation-policy.ts` ([P-14](decisiones.md#p-14--cancelación-gratis-hasta-24-horas-antes)): el total si cancela el propietario, o el arrendatario hasta 24 horas antes del inicio; nada después ni desde `PENDING`. Una `CONFIRMED` cuyo `endAt` ya pasó (incluido `endAt = now`) responde 409 «La reserva ya terminó; no se puede cancelar» antes de calcular el reembolso, sin cambiar el estado ni dejar evento: ya se usó y el barrido de RE-06 la pasará a `FINISHED`; sin esto, si cancelaba el propietario se devolvía el total por una reserva usada. **El reembolso en Stripe todavía no existe (PA-03):** el servicio calcula el monto y lo deja en el registro, y `Payment` no cambia. `booking-view.ts` (`BOOKING_VIEW` y `toBookingDto`) arma el `BookingDto` con `addressDetail` solo en `CONFIRMED`; RE-02 lo puede reutilizar.
 
+- **Reservar, implementado (RE-02):** `BookingsService.create(userId, dto, now?)` hace todo en una sola `prisma.$transaction` (con un tiempo máximo de 15 s, para que quepa la llamada a Stripe de PA-01):
+  1. 400 si `endAt` no es posterior a `startAt`, si el rango supera 31 días (`MAX_RANGE_MS`, el mismo tope de la disponibilidad) o si el inicio ya pasó (`startAt <= now`: un bloque ya pasó desde que empieza, como en DI-02). Esto se revisa antes de abrir la transacción.
+  2. Lee el espacio: 404 si no existe o no está `ACTIVE`; 403 si es de quien reserva; 400 «Este espacio no se arrienda por hora/día» si no tiene precio en esa unidad.
+  3. `expireStalePending(tx, now, spaceId)` y luego `isAvailable(..., { tx, now, unit })`; si es falso, 409.
+  4. Calcula los montos con la función pura `bookingAmounts` (`src/bookings/pricing.ts`, [P-13](decisiones.md#p-13--comisión-del-10--sumada-al-arrendatario)): `HOUR` cobra `pricePerHour × horas`, `DAY` cobra `pricePerDay`, `fee = Math.round(subtotal × 10 / 100)`.
+  5. 400 si el `total` supera el máximo de un `Int` de Postgres (2 147 483 647), antes de insertar. Stripe probablemente tiene un tope menor; se confirma en PA-01.
+  6. Crea la reserva `PENDING` con `expiresAt = now + 30 min` y su evento inicial (`BookingStateService.recordCreation`).
+  7. Pide a dónde ir a pagar al **puerto de checkout** y, si devuelve un `sessionId`, lo guarda en `stripeCheckoutSessionId`.
+  - **Puerto de checkout:** la interfaz `CheckoutGateway` (`src/payments/checkout-gateway.ts`, token `CHECKOUT_GATEWAY`) con `createSession(booking): Promise<{ url, sessionId? }>`. La registra `CheckoutModule` (aparte de `PaymentsModule`, para que el webhook de PA-02 pueda importar `BookingsModule` sin un ciclo). La implementación de RE-02, `PendingCheckoutGateway`, **no llama a Stripe**: devuelve `${FRONTEND_URL}/bookings/<id>`, la página de la reserva en el front. PA-01 (#45) la reemplaza por Stripe Checkout en `CheckoutModule` sin tocar `BookingsService`. Se llama dentro de la transacción: si falla, no queda una reserva reteniendo el horario sin forma de pagarla (lo prueba un e2e con un gateway que falla). El caso inverso, una sesión de Stripe creada cuyo COMMIT después falla, deja una sesión sin reserva: el webhook de PA-02 debe tolerar un evento de una reserva que no existe.
+  - **Concurrencia, pendiente de RE-03 (#40):** con read committed, dos solicitudes simultáneas por el mismo horario pueden pasar las dos `isAvailable`. `booking_no_overlap` impide que se inserten ambas, pero hoy la segunda recibe un 500 en vez de un 409. Traducir ese error y probarlo con dos solicitudes simultáneas es RE-03.
+  - `findMine` ordena por `createdAt` y luego por `id` (descendentes), así las páginas no se cruzan. `findOne` responde 404 si no existe y 403 si no es del arrendatario (tampoco la ve el dueño del espacio: él usa `GET /api/owner/bookings`).
+  - **Front:** `BookingWidget` (`src/features/bookings/`) va en la caja «Reservar» del detalle del espacio. Pide la disponibilidad de los próximos 14 días, deja elegir por hora o por día según los precios, el día y bloques seguidos, muestra el desglose y, al reservar, va a `checkoutUrl`: si es del mismo origen o su ruta es `/bookings/<id>`, navega dentro de la app a `paths.booking(bookingId)` (así no depende de que `FRONTEND_URL` sea exactamente el origen del front); si no, cambia de página (Stripe). Sin sesión lleva al login. La página `/bookings/:id` (`BookingPage`) muestra el estado, el horario, el desglose y cuánto queda de la retención.
+
 **Supuestos mientras las decisiones sigan abiertas** (si el equipo las cierra distinto, se registra en `decisiones.md` y se ajusta el contrato):
 
-- [P-13](https://github.com/AlejandroMG/inf331-equipo-3/issues/80), comisión: se asume la recomendación, **10 % sumado al arrendatario** y visible en el desglose. El contrato no fija el porcentaje, solo que `fee` existe y que `total = subtotal + fee`; el mock usa 10 %.
 - [P-12](https://github.com/AlejandroMG/inf331-equipo-3/issues/79), Stripe: se asume **Checkout en modo test, sin Connect**. La plataforma cobra el total y registra la comisión en `Payment.fee`; no hay traspaso al propietario. Por eso el contrato no tiene nada de cuentas conectadas.
 
 ## Frontend
@@ -421,14 +433,15 @@ sequenceDiagram
     Arr->>F: Elige espacio y horario
     F->>A: POST /api/bookings
     A->>DB: Transacción: expira pendientes vencidas, valida horario, crea Booking PENDING (expiresAt = ahora + 30 min)
-    A->>S: Crea Checkout Session (CLP, expires_at = expiresAt)
+    A->>S: Crea Checkout Session (CLP, success_url = /bookings/:id)
+    Note over A,S: PA-01 (#45): Stripe exige expires_at ≥ creación + 30 min, así que no puede ser igual a expiresAt#59; se decide en PA-01
     A-->>F: { bookingId, checkoutUrl }
     F->>S: Redirige a Checkout
     Arr->>S: Paga con tarjeta de prueba
     S->>A: Webhook checkout.session.completed
     A->>DB: PENDING → PAID, guarda Payment
     A->>DB: Valida espacio y horario → CONFIRMED
-    S-->>F: Redirige a /bookings/:id/success
+    S-->>F: Redirige a /bookings/:id (success_url)
     F->>A: GET /api/bookings/:id (consulta hasta ver CONFIRMED)
 ```
 
@@ -508,7 +521,6 @@ Solo `PORT`, `VITE_API_URL` y `VITE_USE_MOCKS` existen hoy. Las demás se agrega
 | `STRIPE_WEBHOOK_SECRET` | back | Secreto con que se verifica la firma del webhook (`whsec_...`). En local lo entrega `stripe listen`. Documentada en F-05; todavía no se lee | PA-02 |
 | `BOOKING_SWEEP_ENABLED` | back | `false` apaga la tarea periódica de vencimientos de reservas; si no se define, está encendida. Los e2e siempre la apagan | RE-06 |
 | `BOOKING_SWEEP_INTERVAL_MS` | back | Cada cuántos milisegundos corre esa tarea (de 1000 a 2 147 483 647, el máximo de `setInterval`; por defecto 60 000) | RE-06 |
-| `PLATFORM_FEE_PERCENT` | back | Comisión de la plataforma (depende de P-13) | RE-02 |
 | `AI_API_KEY`, `AI_MODEL` | back | Proveedor de IA (depende de P-15) | IA-01 |
 
 ## Pruebas
