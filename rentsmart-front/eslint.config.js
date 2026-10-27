@@ -6,8 +6,8 @@ import tseslint from 'typescript-eslint'
 import { defineConfig, globalIgnores } from 'eslint/config'
 
 export default defineConfig([
-  // mockServiceWorker.js lo genera `npx msw init public/`; no se edita a mano.
-  globalIgnores(['dist', 'public/mockServiceWorker.js']),
+  // mockServiceWorker.js lo genera `npx msw init public/`; no se edita a mano. Los reportes de Playwright tampoco.
+  globalIgnores(['dist', 'public/mockServiceWorker.js', 'playwright-report', 'test-results', 'blob-report']),
   {
     files: ['**/*.{ts,tsx}'],
     extends: [
