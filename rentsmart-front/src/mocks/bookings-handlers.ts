@@ -84,6 +84,8 @@ const calendarDay = (date: string) => {
   const [year, month, day] = date.split('-').map(Number)
   return new Date(Date.UTC(year, month - 1, day))
 }
+/** Si el día existe: `2026-02-30` tiene el formato, pero no existe (el back responde 400). */
+const dateExists = (date: string) => calendarDay(date).toISOString().slice(0, 10) === date
 const hourOf = (time: string) => Number(time.slice(0, 2))
 
 function rulesOf(spaceId: string): ScheduleRule[] {
@@ -189,6 +191,7 @@ export const bookingHandlers = [
     const from = url.searchParams.get('from') ?? ''
     const to = url.searchParams.get('to') ?? ''
     if (!DATE_PATTERN.test(from) || !DATE_PATTERN.test(to)) return badRequest('from y to deben ser fechas AAAA-MM-DD')
+    if (!dateExists(from) || !dateExists(to)) return badRequest('from y to deben ser fechas que existan')
     const count = (calendarDay(to).getTime() - calendarDay(from).getTime()) / (24 * HOUR) + 1
     if (count < 1) return badRequest('from no puede ser posterior a to')
     if (count > MAX_DAYS) return badRequest(`Se pueden pedir hasta ${MAX_DAYS} días`)

@@ -55,6 +55,14 @@ describe('disponibilidad simulada', () => {
     await expect(availability('2026-10-01', '2026-11-01')).rejects.toMatchObject({ status: 400 })
     await expect(availability('2026-10-12', '2026-10-12', 'no-existe')).rejects.toMatchObject({ status: 404 })
   })
+
+  it('responde 400 con una fecha que tiene el formato pero no existe, igual que el back', async () => {
+    await expect(availability('2026-02-30', '2026-03-02')).rejects.toMatchObject({ status: 400 })
+    await expect(availability('2026-04-01', '2026-04-31')).rejects.toMatchObject({ status: 400 })
+    await expect(availability('2026-02-29', '2026-03-01')).rejects.toMatchObject({ status: 400 })
+    // 2028 es bisiesto.
+    await expect(availability('2028-02-29', '2028-03-01')).resolves.toMatchObject({ spaceId: SPACE })
+  })
 })
 
 describe('horario semanal simulado', () => {

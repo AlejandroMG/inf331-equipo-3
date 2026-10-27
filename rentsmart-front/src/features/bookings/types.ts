@@ -18,7 +18,7 @@ export interface AvailabilitySlot {
 export interface FullDay {
   startAt: string
   endAt: string
-  /** false si alguna hora del día ya está ocupada o ya pasó. */
+  /** false si alguna hora del día ya está ocupada o ya pasó, o si una reserva cae en la pausa del día. */
   available: boolean
 }
 

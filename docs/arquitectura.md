@@ -200,11 +200,11 @@ Hasta que A entregue el login (CU-03), los endpoints protegidos usan `DevAuthGua
 
 ### Disponibilidad, reservas y pagos (F-05)
 
-Módulos `availability`, `bookings` y `payments` (C). Las rutas, los DTOs y la validación de entrada de todos existen y están en Swagger. **Ya está implementado el horario semanal (DI-01);** el resto es todavía solo el contrato y sus servicios responden `501` hasta que entre la historia de cada uno. El front trabaja mientras tanto contra los mocks de MSW (`src/mocks/bookings-handlers.ts`), que tienen las mismas formas y códigos. Los campos de cada DTO están en `/docs`; aquí va lo que Swagger no cuenta.
+Módulos `availability`, `bookings` y `payments` (C). Las rutas, los DTOs y la validación de entrada de todos existen y están en Swagger. **Ya están implementados el horario semanal (DI-01), la disponibilidad (DI-02) y cancelar (RE-05);** el resto es todavía solo el contrato y sus servicios responden `501` hasta que entre la historia de cada uno. El front trabaja mientras tanto contra los mocks de MSW (`src/mocks/bookings-handlers.ts`), que tienen las mismas formas y códigos. Los campos de cada DTO están en `/docs`; aquí va lo que Swagger no cuenta.
 
 | Endpoint | Sesión | Qué hace | Historia |
 |---|---|---|---|
-| `GET /api/spaces/:id/availability?from=&to=` | No | Bloques libres de una hora por cada día pedido: `{ spaceId, timeZone, days: [{ date, slots: [{ startAt, endAt }], fullDay }] }`. 400 si falta una fecha, no es `AAAA-MM-DD`, `from` es posterior a `to` o se piden más de 31 días; 404 si el espacio no existe o no está activo | DI-02 |
+| `GET /api/spaces/:id/availability?from=&to=` | No | Bloques libres de una hora por cada día pedido: `{ spaceId, timeZone, days: [{ date, slots: [{ startAt, endAt }], fullDay }] }`. 400 si falta una fecha, no es `AAAA-MM-DD`, no existe (`2026-02-30`), `from` es posterior a `to` o se piden más de 31 días; 404 si el espacio no existe o no está activo | DI-02 |
 | `GET /api/spaces/:id/schedule` | Sí, el dueño | El horario semanal de un espacio propio, también de un borrador: `{ rules: [{ weekday, startTime, endTime }] }` | DI-01 |
 | `PUT /api/spaces/:id/schedule` | Sí, el dueño | Reemplaza el horario completo con `{ rules }` y lo devuelve ordenado. 400 si un día u hora no vale, el fin no es posterior al inicio o dos rangos del mismo día se traslapan; 409 con `missing: ["schedule"]` si dejaría sin horario a un espacio publicado | DI-01 |
 | `POST /api/bookings` | Sí | `{ spaceId, startAt, endAt, unit }` → `201 { bookingId, checkoutUrl }`. Crea la reserva `PENDING` (retiene el horario 30 min) y la sesión de Stripe Checkout. 400 si las fechas no valen o el espacio no se arrienda en esa unidad; 404 si el espacio no existe o no está activo; 409 si el horario está fuera del horario semanal o ya está ocupado | RE-02, PA-01 |
@@ -220,6 +220,28 @@ Módulos `availability`, `bookings` y `payments` (C). Las rutas, los DTOs y la v
 - **Un bloque está libre** si está dentro del horario semanal, no ha pasado y no lo cubre una reserva `PENDING` no vencida, `PAID` o `CONFIRMED` (P-06).
 - **Horario semanal:** `weekday` de 0 (domingo) a 6, y horas cerradas en hora de Chile: `startTime` de `00:00` a `23:00` y `endTime` de `01:00` a `24:00`. Un día puede tener varios rangos y los días que no aparecen no se arriendan. Es el mismo `schedule` que muestra `GET /api/catalog/:id`. Cambiarlo no toca las reservas que ya existen.
 - **Horario semanal, implementado (DI-01):** `AvailabilityService` guarda una fila de `AvailabilityRule` por rango, con las horas como texto `HH:mm` en hora de Chile (el fin puede ser `24:00`). `PUT` borra y vuelve a crear todas las reglas del espacio en una transacción, y responde las reglas ordenadas por día y hora de inicio. Dos rangos contiguos del mismo día (09:00 a 13:00 y 13:00 a 18:00) valen y se guardan tal como llegan, sin unirse. Un horario vacío vale en un borrador, en un espacio desactivado y en uno bloqueado; en uno `ACTIVE` responde el 409 de `IncompleteSpaceException` (la misma de publicar, de `src/spaces`). Las reglas de validación están en `src/availability/schedule-rules.ts`. Para leer el horario desde otro servicio (DI-02): `prisma.availabilityRule.findMany({ where: { spaceId } })`; como las horas son `HH:00` con dos dígitos, comparar el texto es comparar las horas.
+- **Disponibilidad, implementada (DI-02):** la lógica está sin Nest ni Prisma en `src/availability/availability-slots.ts` y la usan tanto el endpoint como `isAvailable`, así que los dos aplican las mismas reglas. `AvailabilityService.findAvailability` lee el estado del espacio, las reglas y las reservas del rango con una consulta cada una (no una por bloque) y arma cada día en memoria. Detalles:
+  - Los días se miden en Chile: el horario de un día se recorre hora real por hora real desde su medianoche (`santiagoStartOfDay`) hasta la del día siguiente, y cada hora se compara con lo que marca el reloj (`santiagoWallClock`). Así el lunes de 21:00 a 24:00 se lista en el lunes aunque en UTC ya sea martes, y un rango hasta `24:00` termina en el inicio del día siguiente.
+  - **Cambios de hora:** el domingo de septiembre en que la medianoche no existe dura 23 horas y empieza a la 01:00 (no tiene bloque de 00:00 a 01:00); el sábado de abril en que se repiten las 23:00 dura 25 horas y tiene dos bloques de 23:00 a 24:00, y su `fullDay` dura 25 horas.
+  - Un bloque **ya pasó desde que empieza**: a las 10:30 no se ofrece el de 10:00. Los rangos son semiabiertos: una reserva que termina a las 12:00 no choca con otra que empieza a las 12:00.
+  - Una `PENDING` vencida (`expiresAt` pasado) no ocupa para la disponibilidad aunque nadie la haya pasado a `EXPIRED`. **Pero la restricción `booking_no_overlap` sí la cuenta mientras siga en `PENDING`:** RE-02 tiene que pasar a `EXPIRED` las pendientes vencidas del espacio dentro de su transacción, antes de insertar, con `expireStalePending(tx, now, spaceId?)` de RE-06. Si no, `isAvailable` dice que sí y la base rechaza la reserva. Una `PENDING` sin `expiresAt` cuenta como vigente, igual que en `booking_no_overlap` y en RE-05.
+  - `fullDay.available` también es `false` si una reserva cae en la pausa del día: puede quedar una si el horario cambió después de reservar, y la restricción de la base rechazaría el día completo.
+  - Los bloqueos de horario del propietario (DI-03, #37) no existen: el punto donde se sumarían como intervalos ocupados está marcado en `AvailabilityService` (`loadRange`).
+- **`isAvailable` (para RE-02 y RE-04).** `AvailabilityModule` exporta `AvailabilityService`; el módulo que la use importa `AvailabilityModule`.
+  ```ts
+  isAvailable(spaceId: string, startAt: Date, endAt: Date, options?: {
+    tx?: Prisma.TransactionClient; // lee dentro de la transacción de quien llama
+    now?: Date;                    // solo para los tests
+    unit?: 'HOUR' | 'DAY';         // HOUR por defecto
+    excludeBookingId?: string;     // RE-04: ignora la propia reserva
+    allowStarted?: boolean;        // RE-04: acepta un rango que ya empezó y no ha terminado
+  }): Promise<boolean>
+  ```
+  Es verdadero solo si el espacio está `ACTIVE`, el rango son horas cerradas y no ha empezado, cabe en el horario y no lo traslapa una `PENDING` vigente, `PAID` o `CONFIRMED`.
+  - **Por hora** (por defecto), **cada hora** del rango debe estar en el horario semanal: puede cruzar la medianoche si el horario sigue al día siguiente, pero no una pausa.
+  - **Por día** (`unit: 'DAY'`), el rango debe ser exactamente el `fullDay` de ese día de Chile. Las horas de la pausa no tienen que estar en el horario, pero una reserva que caiga en ellas lo impide. Es la misma regla que `fullDay.available`: si el endpoint ofrece el día, `isAvailable` lo acepta.
+  - `excludeBookingId` ignora esa reserva al buscar traslapes: RE-04 valida una `PAID` que ocupa su propio horario. `allowStarted` no rechaza un rango que ya empezó (se reservó a las 09:45 el bloque de 10:00 y se pagó a las 10:02); uno que ya terminó sigue siendo falso.
+  - Nunca lanza: quien llama decide el código (404 o 409). Con `tx` ve lo que esa transacción ya escribió. Un rango de más de 31 días es falso sin revisarlo. No revisa que el espacio tenga precio en esa unidad (el 400 de RE-02) y no reemplaza a `booking_no_overlap`.
 - **Desglose:** `subtotal` es el precio del espacio, `fee` la comisión y `total = subtotal + fee` lo que paga el arrendatario. Todo en CLP enteros, calculado en el servidor: el cliente nunca manda montos (un campo de más da 400).
 - **Detalle de la dirección (P-09):** `space` es `{ id, name, communeName, address, addressDetail, coverUrl }` y `addressDetail` solo viene en una reserva `CONFIRMED`; en cualquier otro estado es `null`.
 - **Después de pagar**, Stripe devuelve al arrendatario al front, que consulta `GET /api/bookings/:id` hasta verla `CONFIRMED` (pasa por `PAID`; ver [Flujo de pago](#flujo-de-pago)).
@@ -306,7 +328,7 @@ Estados de `Booking`: `PENDING`, `PAID`, `CONFIRMED`, `FINISHED`, `CANCELLED`, `
 ### Fechas y dinero
 
 - Las fechas se guardan como `timestamptz` en UTC y se muestran en `America/Santiago`.
-- El horario semanal (`AvailabilityRule`) está en hora local de Santiago; el servicio de disponibilidad lo convierte a UTC para compararlo con las reservas. Hay que probar el cambio de horario de verano.
+- El horario semanal (`AvailabilityRule`) está en hora local de Santiago; el servicio de disponibilidad lo convierte a UTC para compararlo con las reservas, con `src/common/santiago-time.ts`. Los dos cambios de hora están probados en unitarias y e2e (DI-02). Chile cambia la hora a la medianoche de un sábado a domingo, así que en septiembre esa medianoche no existe y el domingo empieza a la 01:00.
 - Los montos son enteros en CLP. Stripe trata el CLP como moneda sin decimales, así que el monto se envía tal cual, sin multiplicar por 100.
 
 ## Ciclo de vida de una reserva
@@ -412,7 +434,7 @@ sequenceDiagram
 
 ### Cómo se evitan reservas cruzadas
 
-1. **En el servicio:** `availability.isAvailable()` revisa el horario semanal y las reservas activas antes de crear la reserva.
+1. **En el servicio:** `AvailabilityService.isAvailable(spaceId, startAt, endAt, { tx, unit })` revisa el estado del espacio, el horario semanal y las reservas activas antes de crear la reserva, dentro de la misma transacción ([detalle](#disponibilidad-reservas-y-pagos-f-05)).
 2. **En la base de datos:** una restricción de exclusión impide que dos reservas activas del mismo espacio se traslapen, aunque lleguen dos solicitudes al mismo tiempo. Prisma no la genera, así que va en SQL dentro de una migración:
 
 ```sql
