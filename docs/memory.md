@@ -2683,96 +2683,156 @@ Abrir un PR (que no sea borrador) hacia `develop` y revisar que el job «Pedir r
 
 ---
 
-### 2026-10-24 · C (gonzzza-lol) · DI-02 servicio de disponibilidad
+### 2026-10-24 · C (gonzzza-lol) · RE-06 vencimientos automáticos
 
-**Issues:** #36 (DI-02)
-**Rama / PR:** `feature/DI-02-servicio-disponibilidad` (desde `develop`) · sin PR todavía
-**Duración aproximada:** 3 h
+**Issues:** #43
+**Rama / PR:** `feature/RE-06-vencimientos` · sin PR todavía
+### 2026-10-24 · C (gonzzza-lol) · F-10 plan de pruebas v1 y smoke test con Playwright
+
+**Issues:** #10 (F-10); se diseña, sin implementar, el E2E de #64 (QA-01)
+**Rama / PR:** `feature/F-10-plan-de-pruebas-playwright` · sin PR todavía
+**Duración aproximada:** 2 h
 **Herramientas:** Claude Code
 
 #### Objetivo
-Saber qué horas de un espacio se pueden reservar: implementar `GET /api/spaces/:id/availability` (el contrato de F-05 no cambió) y `AvailabilityService.isAvailable`, que RE-02 y RE-04 llamarán dentro de su transacción.
+Que las reservas cambien solas de estado cuando vencen: una `CONFIRMED` cuyo `endAt` ya pasó queda `FINISHED`, y una `PENDING` cuyo `expiresAt` ya pasó (porque el webhook `checkout.session.expired` no llegó) queda `EXPIRED`. Además, dejar lista para RE-02 la función que expira las pendientes de un espacio dentro de su transacción.
 
 #### Qué se hizo
-- **`src/availability/availability-slots.ts`** (nuevo, sin Nest ni Prisma): pasa el horario semanal de un día de Chile a bloques UTC de una hora, descuenta los ocupados y los que ya empezaron, y arma el `fullDay`. De ahí salen el endpoint y `isAvailable`, así que los dos aplican las mismas reglas.
-- **`AvailabilityService.findAvailability(spaceId, query, now?)`**: 400 si una fecha no existe, `from` es posterior a `to` o son más de 31 días; 404 si el espacio no existe o no está `ACTIVE`. Lee el espacio, las reglas y las reservas del rango con una consulta cada una.
-- **`AvailabilityService.isAvailable(spaceId, startAt, endAt, options?)`**: verdadero solo si el espacio está `ACTIVE`, el rango son horas cerradas y no ha empezado, cabe en el horario y no lo traslapa una `PENDING` vigente, `PAID` o `CONFIRMED`. Las opciones `{ tx, now, unit, excludeBookingId, allowStarted }` resuelven los casos de RE-02 (reservar un día con pausa) y RE-04 (validar la propia reserva `PAID`, aunque el bloque ya haya empezado). `AvailabilityModule` ya exportaba el servicio.
-- **`src/common/santiago-time.ts`** (de B): arreglé `santiagoStartOfDay` y agregué `santiagoWallClock` y la constante `TIME_ZONE` (ver "Para el resto del equipo").
-- **Front:** `getAvailability(spaceId, from, to, signal?)` en `src/features/bookings/bookings-api.ts`, con su test contra MSW. No hay pantalla: el widget es RE-02. El mock de la disponibilidad (`src/mocks/bookings-handlers.ts`) ahora responde 400 con una fecha que no existe (`2026-02-30`), como el back.
-- **Pruebas:** 58 unitarias de `availability-slots`, 36 del servicio y 4 de `santiago-time`, con todos los casos de borde pedidos (abajo) y cada opción de `isAvailable`. En `test/booking-contract.e2e-spec.ts` la línea de 501 de la disponibilidad pasó a 18 e2e reales contra la base, incluidos 7 de `isAvailable` (el día con pausa reservado entero, `excludeBookingId`, `allowStarted` y uno dentro de una transacción). Front: 4 tests de `getAvailability` y 1 del mock.
-- **Documentación:** `docs/arquitectura.md`: intro, tabla (el 400 por una fecha que no existe) y reglas de la disponibilidad en la sección de F-05, firma de `isAvailable`, "Fechas y dinero" y "Cómo se evitan reservas cruzadas" (una `PENDING` vencida sigue contando para `booking_no_overlap` hasta que `expireStalePending` de RE-06 la pase a `EXPIRED`). La descripción de `FullDayDto.available` (Swagger y `types.ts` del front) dice que una reserva en la pausa también lo deja en falso.
+- `src/bookings/booking-expiry.service.ts`: `BookingExpiryService` con `sweep(now, batchSize?)`, que lee las vencidas por lotes de 100 y cambia cada una en su propia transacción, y `expireStalePending(tx, now, spaceId?)`, que expira las pendientes vencidas dentro de la transacción de quien llama. Todo cambio pasa por `BookingStateService.transition` con `actorId: null` y un motivo que empieza con «Sistema:».
+- `src/bookings/booking-expiry.scheduler.ts`: `BookingExpiryScheduler` registra un intervalo en el `SchedulerRegistry` de `@nestjs/schedule` En `onModuleDestroy` lo quita y espera el barrido en curso, para que Prisma no se desconecte a mitad de uno. Variables nuevas `BOOKING_SWEEP_ENABLED` y `BOOKING_SWEEP_INTERVAL_MS` (de 1000 a 2 147 483 647, el máximo de `setInterval`), validadas en `env.validation.ts`.
+- `@nestjs/schedule@^12.0.2` instalado (aprobado). Funciona con Jest en ES Modules sin cambios, así que no hizo falta un temporizador propio.
+- `ScheduleModule.forRoot()` en `AppModule`. `BookingsModule` provee el servicio y la tarea, y exporta `BookingExpiryService`.
+- `test/utils/setup-env.ts` apaga la tarea en los e2e.
+- Pruebas: 22 unitarias del servicio (reloj fijo, límites, estados que no se tocan, lote con fallas, lotes, idempotencia y `expireStalePending` con un `tx` de mocks propios), 7 de la tarea (fake timers, aislados de `process.env`) y 7 de las variables nuevas. `test/booking-expiry.e2e-spec.ts` con 5 e2e.
+- Docs: tabla de transiciones y sección «Vencimientos automáticos (RE-06)» en `arquitectura.md`, el párrafo de reservas cruzadas, la tabla de variables y `.env.example`.
+- **Arreglo de RE-05 (#42, ya cerrado), aprobado por el usuario para ir en el PR de RE-06:** `BookingsService.cancel` respondía 200 con una `CONFIRMED` cuyo horario ya había terminado mientras el barrido no la pasaba a `FINISHED`, y si cancelaba el propietario, P-14 devolvía el total por una reserva ya usada. Ahora, si `endAt <= now`, responde 409 «La reserva ya terminó; no se puede cancelar» antes de calcular el reembolso, sin cambiar el estado ni dejar evento. Tests: 3 unitarios en `bookings.service.spec.ts` (terminó hace una hora, termina justo ahora y en curso) y 1 e2e en `booking-cancel.e2e-spec.ts`. Se actualizaron el 409 de Swagger en `bookings.controller.ts` y la sección de cancelación de `arquitectura.md`.
+Dejar escrito el plan de pruebas por nivel (unitarias, integración y E2E), configurar Playwright en el front con un smoke test que corra en el CI y cerrar el pendiente de que el CI corra también en los PR hacia `release/**`.
 
-Casos de borde cubiertos, en unitarias y la mayoría también en e2e: reservas contiguas (rangos semiabiertos), una `PENDING` vencida que ya no ocupa, horas pasadas (un bloque ya pasó desde que empieza), un día con dos rangos y una pausa, un horario hasta `24:00` con una reserva que cruza la medianoche, el día de Chile contra el día UTC (el lunes de 21:00 a 24:00 se lista en el lunes), el domingo de 23 horas de septiembre (sin bloque de 00:00) y el sábado de 25 horas de abril (dos bloques de 23:00).
+#### Qué se hizo
+- `docs/plan-de-pruebas.md` (nuevo): principios, qué se prueba y qué no en cada nivel, dónde viven los archivos, cómo se corren, qué corre cada job del CI, conteo de archivos de test, dónde se ve la cobertura, la meta de cobertura pendiente de P-11 y el diseño del E2E del flujo completo para QA-01. Enlazado desde `docs/README.md`, `AGENTS.md`, `README.md` y `docs/flujo-de-trabajo.md`.
+- Playwright 1.64.1 (`@playwright/test`, devDependency) en `rentsmart-front/` con `playwright.config.ts`: solo Chromium; `webServer` levanta Vite en el puerto 5180 con `VITE_USE_MOCKS=true` y `VITE_API_URL=http://localhost:5180`, y reutiliza el servidor fuera del CI.
+- `e2e/smoke.spec.ts`: 3 tests con selectores accesibles. La página de inicio muestra el catálogo de los mocks (14 espacios, «Sala Alameda»); la página 2 muestra «Taller de cerámica»; una tarjeta abre el detalle de «Estudio Luz Norte».
+- Script `test:e2e` (`playwright test`) en `package.json`.
+- Vitest excluye `e2e/**` (si no, toma `smoke.spec.ts` por su nombre); `tsconfig.node.json` incluye `playwright.config.ts` y `e2e/` para que `tsc -b` los revise; ESLint ignora los reportes de Playwright; el `.gitignore` del front ignora `playwright-report/`, `test-results/` y `blob-report/`.
+- `ci.yml`: job nuevo «E2E (Playwright)», que instala Chromium con `--with-deps`, corre `npm run test:e2e` y sube el artefacto `playwright-report` si falla. `pull_request` ahora incluye `'release/**'`.
+- `ci.yml`: el paso de cobertura del back pasa `--coverageReporters=text --coverageReporters=lcov --coverageReporters=json-summary`. Al revisarlo para el plan se vio que Jest, con sus reporteros por defecto (clover, json, lcov, text), no genera `coverage/coverage-summary.json`, así que el paso «Publicar resumen de cobertura» siempre caía en la rama del `else` y nunca mostraba la tabla.
+### 2026-10-23 · C (gonzzza-lol) · Corregir la rotación de revisión en CONTRIBUTING
+
+**Issues:** No aplica (documentación del flujo de trabajo)
+**Rama / PR:** `feature/rotacion-revision-contributing` · sin PR todavía
+**Duración aproximada:** 0,5 h
+**Herramientas:** Claude Code
+
+#### Objetivo
+Que `CONTRIBUTING.md` describa la misma rotación de revisión que la tabla de `docs/flujo-de-trabajo.md` y que `assign-reviewer.yml`.
+
+#### Qué se hizo
+- `CONTRIBUTING.md` decía «A revisa a B, B revisa a C y C revisa a A», que es la rotación al revés. Ahora dice «B revisa a A, C revisa a B y A revisa a C» y enlaza a la tabla de rotación.
 
 #### Decisiones y por qué
 | Decisión | Alternativas consideradas | Por qué se eligió |
 |---|---|---|
-| Recorrer las horas reales de cada día (de su medianoche a la siguiente) y comparar cada una con lo que marca el reloj en Chile | Convertir cada hora local del horario a UTC | Una hora local que no existe o que se repite no tiene una sola conversión. Así el día de 23 horas no tiene las 00:00, el de 25 tiene dos veces las 23:00 y dos rangos contiguos quedan pegados, sin hueco ni traslape |
-| Arreglar `santiagoStartOfDay` en vez de escribir otra función | Una función propia en `availability` | Daba mal el domingo del cambio de septiembre (las 03:00 UTC, que son las 23:00 del sábado). Duplicarla dejaba el error en el panel del propietario |
-| `isAvailable` recibe un objeto de opciones `{ tx, now, unit, excludeBookingId, allowStarted }`, con `tx` adentro | `tx` posicional y las demás en un quinto parámetro | Con cinco opcionales, un solo objeto se lee mejor en cada llamada (`{ tx, unit }`) y no obliga a pasar `undefined`. El usuario aprobó resolver los dos casos en esta historia |
-| Con `unit: 'DAY'` el rango debe ser exactamente el `fullDay`, la pausa no tiene que estar en el horario y una reserva en ella lo impide | Exigir el horario también en la pausa (lo que hacía la primera versión) | Es la regla de `fullDay.available`: lo que el endpoint ofrece como día completo, `isAvailable` lo acepta. Un test lo comprueba con varios casos |
-| `excludeBookingId` y `allowStarted` | Que RE-04 consulte las reservas por su cuenta | Sin ellas, RE-04 siempre cancelaría: la reserva `PAID` ocupa su propio horario, y un pago a las 10:02 por el bloque de 10:00 ya "empezó". Un rango que ya terminó sigue siendo falso |
-| `now` como opción de `isAvailable` y tercer parámetro de `findAvailability` | Un reloj inyectable como provider | Es lo más simple que permite probar con un reloj fijo; los que llaman en producción no lo pasan |
-| Un bloque ya pasó desde que empieza | Ofrecerlo mientras no termine | No se puede vender una hora que ya está corriendo |
-| La consulta trae las reservas en `PENDING`, `PAID` y `CONFIRMED` y la `PENDING` vencida (y la de `excludeBookingId`) se descarta en código | Poner también el vencimiento en el `where` | La regla queda en un solo lugar, probada sin base. Una `PENDING` sin `expiresAt` cuenta como vigente, igual que en `booking_no_overlap` y en RE-05 |
-| `fullDay.available` es falso si una reserva cae en la pausa | Mirar solo las horas del horario | Cambiar el horario no toca las reservas que existen (DI-01): si queda una en lo que hoy es pausa, la base rechazaría el día completo; mejor no ofrecerlo |
-| `isAvailable` nunca lanza, y descarta sin consultar un rango inválido, que ya empezó o de más de 31 días | 404 si el espacio no existe; sin tope | Es una pregunta de sí o no para otros servicios: el código (404 o 409) lo decide quien llama. El tope evita recorrer años de horario con un rango enviado por un cliente |
-| Los e2e van en `booking-contract.e2e-spec.ts`, en un `describe` propio con sus usuarios y espacios | Un archivo nuevo, como `schedule.e2e-spec.ts` | Lo pedía la tarea: reemplazar ahí la línea de 501. Las fechas son de 2030, para que no pasen |
-| `getAvailability` va en `bookings-api.ts` | Un `availability-api.ts` aparte | Es una función; ahí ya está `cancelBooking` |
-
-No se cambió ninguna decisión de `decisiones.md`, ni `schema.prisma`, ni el contrato de F-05.
+| El límite cuenta como vencido (`endAt <= now`, `expiresAt <= now`) | `<` estricto | El rango de una reserva es `[startAt, endAt)`, y RE-05 ya trata `expiresAt <= now` como vencida al cancelar |
+| Cada reserva en su propia transacción, y 409 o 404 cuentan como saltadas | Una transacción por lote | Si el webhook paga una reserva entre la búsqueda y el cambio, `transition` responde 409 y las demás siguen. Con una sola transacción, un error de base deshace el lote completo |
+| Avanzar por id (keyset) entre lotes | Volver a leer desde el principio | Una reserva que falla siempre volvería en cada lote y el barrido no terminaría |
+| `expireStalePending` propaga los errores inesperados | Atraparlos como en `sweep` | Después de un error de la base la transacción de quien llama ya está abortada; seguir solo esconde el problema |
+| Intervalo dinámico con `SchedulerRegistry.addInterval` | `@Interval(60000)` o `@Cron` | El decorador solo acepta una constante y el intervalo tenía que salir de la configuración |
+| Encendida por defecto, apagada solo con `false` | Apagada por defecto | Si en el despliegue se olvida la variable, la tarea igual corre. Los e2e la apagan siempre |
+| Los e2e barren con un reloj del año 2000 | Barrer con la hora real | `sweep` sin espacio toca toda la base; con fechas del 2000 solo alcanza los datos de ese archivo, aunque los demás e2e corran en paralelo |
+| Cancelar una `CONFIRMED` terminada responde 409 sin tocarla | Pasarla a `FINISHED` en ese momento, como RE-05 hace con una `PENDING` vencida | Lo aprobó el usuario así: responder 409 sin evento y dejar el cambio de estado al barrido |
+| Sin margen de gracia después de `expiresAt` | Esperar unos minutos más antes de expirar | P-06 fija la retención en 30 minutos; un margen cambiaría esa decisión (ver pendientes) |
 
 #### Archivos principales
-- `rentsmart-back/src/availability/availability-slots.ts` y `availability-slots.spec.ts` (nuevos): la lógica y sus casos de borde.
-- `rentsmart-back/src/availability/availability.service.ts` y su spec: `findAvailability`, `isAvailable` y la marca de DI-03.
-- `rentsmart-back/src/common/santiago-time.ts` y su spec: el arreglo de `santiagoStartOfDay`, `santiagoWallClock` y `TIME_ZONE`.
-- `rentsmart-back/test/booking-contract.e2e-spec.ts`: los e2e de la disponibilidad en lugar del 501.
-- `rentsmart-back/src/availability/dto/availability.dto.ts`: la descripción de `FullDayDto.available`.
-- `rentsmart-front/src/features/bookings/bookings-api.ts` y `bookings-api.test.ts` (nuevo).
-- `rentsmart-front/src/mocks/bookings-handlers.ts` y su test: 400 con una fecha que no existe. `src/features/bookings/types.ts`: comentario de `FullDay.available`.
-- `docs/arquitectura.md`.
+- `rentsmart-back/src/bookings/booking-expiry.service.ts` y `.spec.ts`: la lógica y sus unitarias.
+- `rentsmart-back/src/bookings/booking-expiry.scheduler.ts` y `.spec.ts`: la ejecución periódica.
+- `rentsmart-back/src/bookings/bookings.module.ts`, `src/app.module.ts`: registro de providers y de `ScheduleModule`.
+- `rentsmart-back/src/config/env.validation.ts` y `.spec.ts`: las dos variables nuevas.
+- `rentsmart-back/test/booking-expiry.e2e-spec.ts`: e2e contra la base de test.
+- `rentsmart-back/test/utils/setup-env.ts`: apaga la tarea en los e2e.
+- `.env.example`, `docs/arquitectura.md`.
+- Arreglo de RE-05: `rentsmart-back/src/bookings/bookings.service.ts`, su `.spec.ts`, `bookings.controller.ts` (Swagger) y `test/booking-cancel.e2e-spec.ts`.
 
 #### Cómo probarlo
-Con Node 24 y la base de test levantada y migrada. En `rentsmart-back`: `npm test -- availability santiago-time` y `npm run test:e2e -- booking-contract`. En `rentsmart-front`: `npx vitest run src/features/bookings/bookings-api.test.ts`. A mano, con el back y el seed: `GET http://localhost:3000/api/spaces/<id de un espacio del seed>/availability?from=<un lunes futuro>&to=<el domingo siguiente>` devuelve 12 bloques por día de lunes a viernes (09:00 a 21:00 de Chile) y ninguno el fin de semana.
+- `npm test -- booking-expiry` y `npm run test:e2e -- booking-expiry` en `rentsmart-back`.
+- A mano: `npm run start:dev` con `BOOKING_SWEEP_INTERVAL_MS=5000`, crear con Prisma Studio una `CONFIRMED` con `endAt` en el pasado y ver que a los 5 segundos queda `FINISHED`, con su `BookingEvent` y el log «Barrido: 1 finalizadas…».
 
 #### Estado de verificación
-- Build: ✅ back y front
-- Lint: ✅ back y front
-- Tests: back 26 suites, 479 unitarias ✅ · e2e 22 suites, 493 tests ✅ (contra una base de test propia, `testdb_di02`) · front 51 archivos, 670 tests ✅
-- No se levantó la API a mano: el endpoint se comprobó con los e2e. "Funciona a 375 px" no aplica: no hay pantalla.
+- Build: ✅
+- Lint: ✅
+- Tests: ✅ 420 unitarias en 27 suites y 482 e2e en 23 suites
 
 #### Pendientes y bloqueos
-- **Bloqueos (DI-03, #37):** el issue pide combinar "horario, bloqueos y reservas activas", pero los bloqueos son un extra y no tienen modelo. No se hicieron. El punto donde se sumarían como intervalos ocupados está comentado en `AvailabilityService.loadRange`, que usan tanto `findAvailability` como `isAvailable`: basta agregar ahí una consulta del rango.
-- **RE-02 depende de `expireStalePending(tx, now, spaceId?)` de RE-06** (otra rama, sin mergear): una `PENDING` vencida no cuenta para `isAvailable` pero sí para `booking_no_overlap`, así que hay que expirarlas en la transacción antes de insertar.
-- El borrador viejo de DI-02 sigue en el stash compartido (`epitaxy: pre-switch from feat/DI-02-disponibilidad`) y en la rama local `feat/DI-02-disponibilidad`. Lo usé solo como referencia; no lo apliqué ni lo borré. Cuando esta rama se fusione, se pueden borrar los dos.
-- Si un espacio solo tiene horario de 00:00 a 01:00 un domingo, el domingo del cambio de septiembre queda sin horario (`fullDay: null`), porque esa hora no existe. Es lo correcto, pero puede sorprender.
-- `npx tsc --noEmit -p tsconfig.json` marca un error de tipos en `src/spaces/spaces.service.spec.ts` (línea 125) que ya estaba en `develop`; no afecta al build ni a los tests.
+- PA-02 (#46): la sesión de Checkout no vence exactamente en `expiresAt`. Stripe exige que su `expires_at` quede al menos 30 minutos después de crearla, y se crea después que la reserva, así que vence un poco más tarde. Además, `checkout.session.completed` puede llegar atrasado. Por eso el barrido puede dejar `EXPIRED` una reserva que sí se pagó, y PA-02 tiene que manejar un `completed` que llega sobre una `EXPIRED` (`EXPIRED → PAID` no es válida). Quedó escrito en `arquitectura.md`. Un margen de gracia antes de expirar cambiaría P-06 y lo decide el usuario; no se agregó.
+- La búsqueda de `CONFIRMED` vencidas filtra por `status` y `endAt`, y no hay un índice `(status, endAt)` (el de `(status, expiresAt)` sí existe). Con pocos datos no importa; si crece, se le pide a A.
+- RE-05 (`BookingsService.cancel`) expira una pendiente vencida con su propio motivo («Venció el plazo de pago»). Se podría pasar a `EXPIRED_REASON` para que el historial diga lo mismo.
 
 #### Para el resto del equipo
-- **RE-02 y RE-04 (yo, o quien las tome).** El módulo que la use importa `AvailabilityModule` e inyecta `AvailabilityService`:
-  ```ts
-  isAvailable(spaceId: string, startAt: Date, endAt: Date, options?: {
-    tx?: Prisma.TransactionClient; // lee dentro de la transacción de quien llama y ve lo que ya escribió
-    now?: Date;                    // solo para los tests
-    unit?: 'HOUR' | 'DAY';         // HOUR por defecto; DAY: el rango debe ser exactamente el fullDay de ese día
-    excludeBookingId?: string;     // ignora esa reserva al buscar traslapes
-    allowStarted?: boolean;        // acepta un rango que ya empezó y no ha terminado
-  }): Promise<boolean>
-  ```
-  ```ts
-  // RE-02, dentro de su transacción:
-  await this.bookings.expireStalePending(tx, now, dto.spaceId); // RE-06
-  if (!(await this.availability.isAvailable(dto.spaceId, startAt, endAt, { tx, unit: dto.unit }))) {
-    throw new ConflictException('Ese horario no está disponible');
-  }
+- **RE-02 (C):** antes de insertar la reserva, dentro de la misma transacción, llama a `bookingExpiry.expireStalePending(tx, now, dto.spaceId)` (inyecta `BookingExpiryService`, que está en el mismo módulo). Una pendiente vencida sigue contando para `booking_no_overlap`; el barrido periódico no basta porque entre una pasada y otra puede quedar alguna. Un error inesperado se propaga y deshace la transacción completa.
+- **A (despliegue, QA-03):** hay dos variables nuevas, las dos opcionales: `BOOKING_SWEEP_ENABLED` (por defecto encendida; `false` la apaga) y `BOOKING_SWEEP_INTERVAL_MS` (por defecto 60 000; de 1000 a 2 147 483 647). Si se levantan varias instancias del back, todas barren; es seguro, porque las transiciones van condicionadas al estado, pero basta con dejarla encendida en una.
+- Para probar algo que dependa de que una reserva venza, llama a `BookingExpiryService.sweep(now)` con la hora que necesites; no esperes al temporizador, que en los e2e está apagado.
+| Job aparte «E2E (Playwright)» | Agregar los pasos al job «Frontend (React)» | Corre en paralelo, su falla se ve por separado y no cambia el check obligatorio «Frontend (React)» del ruleset de `main` |
+| Smoke contra Vite con MSW | Contra el back real; contra `vite preview` | No necesita back ni BD en el CI. Con `vite preview` habría que hacer un build aparte con `VITE_USE_MOCKS=true`; el dev server es como el equipo ya usa los mocks |
+| Puerto fijo 5180 con `--strictPort` | 5173, el de `npm run dev` | Con `reuseExistingServer` en local, usar 5173 podría reutilizar un dev server sin mocks conectado al back real y dar falsos verdes o rojos |
+| `VITE_API_URL` al mismo origen en el `webServer` | Dejar el valor del `.env` (o el `http://localhost:3000` por defecto del CI) | Las variables del proceso ganan al `.env` en Vite; así las llamadas son del mismo origen y MSW las responde igual en local y en el CI |
+| Revisar `e2e/` con `tsconfig.node.json` | Un `tsconfig.e2e.json` aparte | Los tests de Playwright corren en Node, igual que `vite.config.ts`; menos archivos de configuración |
+| No fijar meta de cobertura | Proponer una cifra provisoria | P-11 sigue en espera del profesor; rige la definición de terminado |
+| Corregir los reporteros de cobertura en el CI | Dejarlo como pendiente | C es dueño del CI y el plan dice que el CI publica la tabla: sin el cambio, eso no era cierto |
 
-  // RE-04, al validar una reserva PAID (el pago puede llegar con el bloque ya empezado):
-  const ok = await this.availability.isAvailable(b.spaceId, b.startAt, b.endAt, {
-    tx, unit: b.unit, excludeBookingId: b.id, allowStarted: true,
-  });
-  ```
-  Lo que no hace: (1) no dice por qué es falso, así que el 404 de "el espacio no existe" lo decide quien llama; (2) no revisa que el espacio tenga precio en esa unidad (el 400 del contrato); (3) no reemplaza a `booking_no_overlap`: dos solicitudes a la vez pueden recibir verdadero y la base rechaza a la segunda. Una `PENDING` vencida no cuenta para `isAvailable`, pero **sí** para la restricción: por eso va antes `expireStalePending`.
-- **B (@xReNatS):** (1) **`BookingWidget` ya puede usar datos reales:** `getAvailability(spaceId, from, to, signal?)` en `src/features/bookings/bookings-api.ts` devuelve lo mismo que el mock (`Availability` de `types.ts`). Diferencias con el mock, a propósito del mock: el back no ofrece las horas que ya empezaron, una `PENDING` vence a los 30 minutos y no existe el bloque fijo ocupado de los miércoles. Para reservar se mandan tal cual el `startAt` y el `endAt` de un bloque o del `fullDay`. (2) Toqué `src/common/santiago-time.ts`, que usan tus servicios del panel (`owner-bookings` y `owner-metrics`): `santiagoStartOfDay` da lo mismo que antes todos los días salvo el domingo del cambio de septiembre, en que devolvía las 03:00 UTC (las 23:00 del sábado) y ahora las 04:00 UTC, que es cuando empieza ese día. Tus tests siguen pasando. Además el formateador de `Intl` ahora se crea una sola vez, porque la disponibilidad lo consulta por cada hora de hasta 31 días.
-- **A (@AlejandroMG):** no hay cambios en `schema.prisma`. La consulta de reservas usa el índice `Booking(spaceId, startAt, endAt)` que ya existe.
+#### Archivos principales
+- `docs/plan-de-pruebas.md`: plan de pruebas v1 (nuevo).
+- `rentsmart-front/playwright.config.ts`, `rentsmart-front/e2e/smoke.spec.ts`: configuración de Playwright y smoke test (nuevos).
+- `rentsmart-front/package.json`, `package-lock.json`: `@playwright/test` y el script `test:e2e`.
+- `rentsmart-front/vite.config.ts`: `test.exclude` con `e2e/**`.
+- `rentsmart-front/tsconfig.node.json`, `rentsmart-front/eslint.config.js`, `rentsmart-front/.gitignore`: incluir y excluir los archivos de Playwright.
+- `.github/workflows/ci.yml`: job E2E, `release/**` en los PR y reporteros de cobertura.
+- `README.md`, `AGENTS.md`, `docs/README.md`, `docs/flujo-de-trabajo.md`: comando `npm run test:e2e` y enlaces al plan.
+
+#### Cómo probarlo
+```bash
+cd rentsmart-front
+npm ci
+npx playwright install chromium   # solo la primera vez
+npm run test:e2e                  # 3 tests en Chromium, sin back
+npx playwright show-report
+```
+En GitHub, el PR debería mostrar el check «E2E (Playwright)» además de los dos de siempre, y el resumen del job Backend debería traer la tabla «Cobertura del Backend».
+
+#### Estado de verificación
+- Build: ✅ (`npm run build` del front)
+- Lint: ✅ (`npm run lint` del front)
+- Tests: ✅ front: 665 tests en 50 archivos con Vitest; 3 tests de Playwright en Chromium (también con `CI=true`). `ci.yml` se validó con js-yaml. No se corrieron los e2e del back. Las unitarias del back se corrieron solo para revisar los archivos de cobertura, sin base de datos: 380 de 381 pasan; la que falla es `src/prisma/prisma.service.spec.ts`, que necesita PostgreSQL. Esa medición local dio 47,05 % de líneas, pero no es la cifra oficial, que es la del CI.
+
+#### Pendientes y bloqueos
+- Meta de cobertura: espera la respuesta del profesor (P-11, #78).
+- Cuando «E2E (Playwright)» lleve un tiempo estable, agregarlo a los checks obligatorios del ruleset de `main` (lo configura quien administra el repo).
+- QA-01 (#64): implementar el E2E del flujo completo según la sección del plan. Depende de PA-02 (#46).
+- Comprobar en el primer CI de este PR que la tabla de cobertura aparece en el resumen del job Backend.
+- La entrada de P-11 en `docs/decisiones.md` todavía dice que F-10 quedó para después del 9 de octubre; se puede actualizar cuando se resuelva P-11.
+
+#### Para el resto del equipo
+- B (@xReNatS): esta historia tocó archivos de la base del front: `vite.config.ts` (`test.exclude` con `e2e/**`), `package.json` (devDependency `@playwright/test` y script `test:e2e`), `.gitignore` (reportes de Playwright), además de `tsconfig.node.json` y `eslint.config.js`. No cambia nada de la app ni de los tests de Vitest.
+- El smoke depende de los textos del catálogo y de `src/mocks/catalog-data.ts` (nombres de espacios, 14 en total, 12 por página). Si cambian, hay que ajustar `e2e/smoke.spec.ts`.
+- Para correr Playwright en local hay que instalar Chromium una vez con `npx playwright install chromium`. Si el puerto 5180 está ocupado, la prueba no arranca (`--strictPort`).
+| Corregir CONTRIBUTING y no la tabla ni el workflow | Cambiar la tabla y el workflow para que calcen con CONTRIBUTING | La tabla, el workflow y los PR revisados hasta ahora (#112, #114, #121, #123, #124) siguen todos la misma rotación; solo la frase estaba al revés |
+| Rama `feature/…` para un cambio de documentación | `docs/…` o `fix/…` | GitFlow puro: todo lo que va a `develop` sale de `feature/`; el tipo del commit (`docs:`) dice qué es |
+
+#### Archivos principales
+- `CONTRIBUTING.md`: frase de la rotación de revisión.
+
+#### Cómo probarlo
+Comparar la frase con la tabla «Rotación de revisión» de `docs/flujo-de-trabajo.md` y con `ROTATION` en `.github/workflows/assign-reviewer.yml`.
+
+#### Estado de verificación
+- Build: no aplica
+- Lint: no aplica
+- Tests: no aplica
+
+#### Pendientes y bloqueos
+- El issue #42 (RE-05) sigue abierto aunque el #127 ya se mergeó a `develop`; hay que cerrarlo a mano (T-05).
+- Las ramas `fix/assign-reviewer-develop` y `sync/main-en-develop-entrega1` siguen en el remoto después del merge.
+- Sigue pendiente acordar la convención de ramas (solo `feature/`, `release/` y `hotfix/`) y proteger `develop` con el ruleset de `main`.
+
+#### Para el resto del equipo
+- La rotación vigente es: los PR de A los revisa B, los de B los revisa C y los de C los revisa A. `assign-reviewer.yml` ya la aplica en los PR hacia `develop`.
 
 ---

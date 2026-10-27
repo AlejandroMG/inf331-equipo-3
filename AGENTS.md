@@ -53,6 +53,7 @@ inf331-equipo-3/
 | `rentsmart-back` | `npm run lint` · `npm run build` | oxlint · compilación |
 | `rentsmart-front` | `npm run dev` | App en http://localhost:5173 |
 | `rentsmart-front` | `npm run build` · `npm run lint` | Build de producción · ESLint |
+| `rentsmart-front` | `npm test` · `npm run test:e2e` | Tests con Vitest · smoke E2E con Playwright y MSW (la primera vez: `npx playwright install chromium`) |
 
 Antes de proponer un commit, corre build, lint y tests de la app que tocaste.
 
@@ -96,4 +97,5 @@ El detalle está en [`docs/producto.md`](docs/producto.md) y [`docs/decisiones.m
 | [`docs/decisiones.md`](docs/decisiones.md) | Registro de decisiones y las que siguen abiertas |
 | [`docs/plan.md`](docs/plan.md) | Sprints, responsables y entregas entre integrantes |
 | [`docs/flujo-de-trabajo.md`](docs/flujo-de-trabajo.md) | Ramas, commits, PRs, revisiones y definición de terminado |
+| [`docs/plan-de-pruebas.md`](docs/plan-de-pruebas.md) | Niveles de prueba, herramientas, qué corre el CI y meta de cobertura |
 | [`docs/memory.md`](docs/memory.md) | Bitácora de sesiones de trabajo (obligatoria) |

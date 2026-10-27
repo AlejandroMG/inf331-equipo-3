@@ -31,7 +31,7 @@ Para una entrega: se crea `release/vX.0-entregaN` desde `develop`, se actualiza 
 
 - Una historia por PR, idealmente de menos de 400 líneas, con `Closes #N`.
 - Completa la [plantilla de PR](.github/pull_request_template.md): qué cambia, cómo probarlo y la definición de terminado.
-- Necesita el CI verde y la aprobación de un compañero según la rotación: A revisa a B, B revisa a C y C revisa a A. Si tocas el módulo de otro integrante, esa persona también revisa.
+- Necesita el CI verde y la aprobación de un compañero según la rotación: B revisa a A, C revisa a B y A revisa a C (ver la [tabla de rotación](docs/flujo-de-trabajo.md#rotación-de-revisión)). Si tocas el módulo de otro integrante, esa persona también revisa.
 - Se mergea con *squash*.
 
 ## Definición de terminado

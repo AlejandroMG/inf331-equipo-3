@@ -210,7 +210,7 @@ Módulos `availability`, `bookings` y `payments` (C). Las rutas, los DTOs y la v
 | `POST /api/bookings` | Sí | `{ spaceId, startAt, endAt, unit }` → `201 { bookingId, checkoutUrl }`. Crea la reserva `PENDING` (retiene el horario 30 min) y la sesión de Stripe Checkout. 400 si las fechas no valen o el espacio no se arrienda en esa unidad; 404 si el espacio no existe o no está activo; 409 si el horario está fuera del horario semanal o ya está ocupado | RE-02, PA-01 |
 | `GET /api/bookings/me?page=&pageSize=` | Sí | Mis reservas como arrendatario, de cualquier estado, las más recientes primero: `{ items, total, page, pageSize }`. `page` ≥ 1, `pageSize` de 1 a 50 (20 por defecto) | RE-02 |
 | `GET /api/bookings/:id` | Sí, el arrendatario | Una reserva: `{ id, status, unit, startAt, endAt, subtotal, fee, total, expiresAt, createdAt, space }`. 403 si es de otro usuario | RE-02 |
-| `POST /api/bookings/:id/cancel` | Sí, el arrendatario o el dueño del espacio | `{ reason }` (de 5 a 500 caracteres) → la reserva ya cancelada. Se cancela desde `PENDING` o `CONFIRMED`. 400 si falta el motivo o su largo no vale, 403 si la reserva no es tuya ni de un espacio tuyo, 404 si no existe, 409 desde cualquier otro estado o si la `PENDING` ya venció (queda `EXPIRED`) | RE-05 |
+| `POST /api/bookings/:id/cancel` | Sí, el arrendatario o el dueño del espacio | `{ reason }` (de 5 a 500 caracteres) → la reserva ya cancelada. Se cancela desde `PENDING` o `CONFIRMED`. 400 si falta el motivo o su largo no vale, 403 si la reserva no es tuya ni de un espacio tuyo, 404 si no existe, 409 desde cualquier otro estado, si la `PENDING` ya venció (queda `EXPIRED`) o si el horario de la `CONFIRMED` ya terminó (`endAt` pasado) | RE-05 |
 | `POST /api/payments/webhook` | No (firma de Stripe) | Recibe los eventos de Stripe y responde `200 { received: true }`. 400 si falta el encabezado `stripe-signature` o la firma no corresponde al cuerpo | PA-02 |
 | `GET /api/payments/me?page=&pageSize=` | Sí | Mis pagos como arrendatario: `{ items: [{ id, bookingId, spaceName, amount, fee, refundedAmount, status, createdAt }], total, page, pageSize }` | PA-01 |
 
@@ -247,7 +247,7 @@ Módulos `availability`, `bookings` y `payments` (C). Las rutas, los DTOs y la v
 - **Después de pagar**, Stripe devuelve al arrendatario al front, que consulta `GET /api/bookings/:id` hasta verla `CONFIRMED` (pasa por `PAID`; ver [Flujo de pago](#flujo-de-pago)).
 - **Webhook:** no usa sesión; lo que lo autentica es la firma. Es idempotente: un evento repetido, o de un tipo que no interesa, responde 200 sin hacer nada. Necesita el cuerpo sin interpretar (`rawBody: true`, también en la app de los e2e: `test/utils/create-test-app.ts`).
 - **Quién ve qué:** estos endpoints son la vista del arrendatario. El propietario ve las reservas de sus espacios en `GET /api/owner/bookings` ([Panel del propietario](#panel-del-propietario-pn-02-pn-04), de B).
-- **Cancelar, implementado (RE-05):** `BookingsService.cancel` cambia el estado solo con `BookingStateService.transition`, con el id de quien cancela y el motivo, así queda el `BookingEvent`. Cuánto se reembolsa lo decide la función pura `cancellationRefund(booking, cancelledBy, now)` de `src/bookings/cancellation-policy.ts` ([P-14](decisiones.md#p-14--cancelación-gratis-hasta-24-horas-antes)): el total si cancela el propietario, o el arrendatario hasta 24 horas antes del inicio; nada después ni desde `PENDING`. **El reembolso en Stripe todavía no existe (PA-03):** el servicio calcula el monto y lo deja en el registro, y `Payment` no cambia. `booking-view.ts` (`BOOKING_VIEW` y `toBookingDto`) arma el `BookingDto` con `addressDetail` solo en `CONFIRMED`; RE-02 lo puede reutilizar.
+- **Cancelar, implementado (RE-05):** `BookingsService.cancel` cambia el estado solo con `BookingStateService.transition`, con el id de quien cancela y el motivo, así queda el `BookingEvent`. Cuánto se reembolsa lo decide la función pura `cancellationRefund(booking, cancelledBy, now)` de `src/bookings/cancellation-policy.ts` ([P-14](decisiones.md#p-14--cancelación-gratis-hasta-24-horas-antes)): el total si cancela el propietario, o el arrendatario hasta 24 horas antes del inicio; nada después ni desde `PENDING`. Una `CONFIRMED` cuyo `endAt` ya pasó (incluido `endAt = now`) responde 409 «La reserva ya terminó; no se puede cancelar» antes de calcular el reembolso, sin cambiar el estado ni dejar evento: ya se usó y el barrido de RE-06 la pasará a `FINISHED`; sin esto, si cancelaba el propietario se devolvía el total por una reserva usada. **El reembolso en Stripe todavía no existe (PA-03):** el servicio calcula el monto y lo deja en el registro, y `Payment` no cambia. `booking-view.ts` (`BOOKING_VIEW` y `toBookingDto`) arma el `BookingDto` con `addressDetail` solo en `CONFIRMED`; RE-02 lo puede reutilizar.
 
 **Supuestos mientras las decisiones sigan abiertas** (si el equipo las cierra distinto, se registra en `decisiones.md` y se ajusta el contrato):
 
@@ -352,10 +352,10 @@ stateDiagram-v2
 |---|---|---|
 | → Pendiente | Arrendatario al confirmar la reserva | RE-02 |
 | Pendiente → Pagada | Webhook `checkout.session.completed` | PA-02 |
-| Pendiente → Expirada | Webhook `checkout.session.expired`, o limpieza antes de crear una reserva | PA-02, RE-02 |
+| Pendiente → Expirada | Webhook `checkout.session.expired`; si no llega, la tarea periódica de vencimientos (implementada); la limpieza antes de crear una reserva (`expireStalePending`); o el intento de cancelar una vencida | PA-02, RE-06, RE-02, RE-05 |
 | Pagada → Confirmada | Validación automática: espacio activo y horario libre | RE-04 |
 | Pagada → Cancelada | Validación fallida; reembolso total automático | RE-04 |
-| Confirmada → Finalizada | Tarea programada al terminar el horario | RE-06 |
+| Confirmada → Finalizada | Tarea periódica de vencimientos, cuando `endAt` ya pasó (implementada) | RE-06 |
 | Pendiente → Cancelada | Arrendatario o propietario, con motivo; no hay pago que reembolsar | RE-05 |
 | Confirmada → Cancelada | Arrendatario o propietario, con motivo; reembolso según [P-14](decisiones.md#p-14--cancelación-gratis-hasta-24-horas-antes) | RE-05 |
 
@@ -387,6 +387,27 @@ await this.prisma.$transaction(async (tx) => {
 ```
 
 El 409 es una `ConflictException` lanzada antes de escribir, no un error de la base: quien llama puede atraparla y seguir usando la misma transacción (por ejemplo, un webhook repetido que encuentra la reserva ya `PAID`).
+
+#### Vencimientos automáticos (RE-06)
+
+`BookingExpiryService` (`src/bookings/booking-expiry.service.ts`) hace las dos transiciones que no dispara una persona:
+
+- `CONFIRMED` cuyo `endAt` ya pasó → `FINISHED`.
+- `PENDING` cuyo `expiresAt` ya pasó → `EXPIRED`. Cubre el caso en que el webhook `checkout.session.expired` no llegó. Una `PENDING` sin `expiresAt` no se toca.
+
+```ts
+sweep(now: Date, batchSize?: number): Promise<{ finished: SweepCount; expired: SweepCount }>
+expireStalePending(tx: Prisma.TransactionClient, now: Date, spaceId?: string): Promise<SweepCount>
+// SweepCount = { changed, skipped, failed }
+```
+
+- **El límite cuenta como vencido:** con `endAt = now` la reserva ya terminó y con `expiresAt = now` ya venció (`<=`).
+- Cada cambio pasa por `BookingStateService.transition` con `actorId: null` y un motivo que empieza con «Sistema:» (`FINISHED_REASON`, `EXPIRED_REASON`), así queda el `BookingEvent`.
+- **`sweep`** lee las vencidas por lotes de 100, avanzando por id, y cambia cada una en su propia transacción. Si otro cambio ganó entre la búsqueda y el cambio (el webhook pagó la reserva, alguien la canceló, otro barrido la cambió), `transition` responde 409 y esa reserva cuenta como `skipped`; también cuenta como `skipped` un 404 (la reserva ya no existe). Un error inesperado cuenta como `failed` y se registra. En ningún caso se corta el lote. Correrlo dos veces no cambia nada más.
+- **`expireStalePending`** trabaja dentro de la transacción de quien llama. Es la que usa RE-02 antes de insertar (ver [Cómo se evitan reservas cruzadas](#cómo-se-evitan-reservas-cruzadas)). Un 409 o un 404 se saltan igual que en `sweep`, pero un error inesperado se propaga, porque esa transacción ya no sirve.
+- **Ejecución periódica:** `BookingExpiryScheduler` registra un intervalo en el `SchedulerRegistry` de `@nestjs/schedule` (`ScheduleModule.forRoot()` en `AppModule`) que llama a `sweep(new Date())` cada `BOOKING_SWEEP_INTERVAL_MS` (60 000 por defecto). `BOOKING_SWEEP_ENABLED=false` la apaga, y los e2e siempre la apagan (`test/utils/setup-env.ts`). Si un barrido sigue corriendo cuando toca el siguiente, el siguiente se salta. Al cerrar la app, `onModuleDestroy` quita el intervalo y espera el barrido en curso, así Prisma no se desconecta a mitad de uno.
+- No llama a Stripe. La sesión de Checkout expira sola, pero **no exactamente en `expiresAt`**: Stripe exige que su `expires_at` quede al menos 30 minutos después de crear la sesión, y la sesión se crea después que la reserva, así que vence un poco más tarde.
+- **Riesgo para PA-02 ([#46](https://github.com/AlejandroMG/inf331-equipo-3/issues/46)):** por esa diferencia, y porque el webhook `checkout.session.completed` puede llegar atrasado, el barrido puede dejar `EXPIRED` una reserva que sí se pagó. PA-02 tiene que manejar un `completed` que llega sobre una `EXPIRED` (`EXPIRED → PAID` no es una transición válida). Si conviene un margen de gracia antes de expirar, es un cambio a [P-06](decisiones.md#p-06--pendiente--pagada--confirmada) y está pendiente de decidir; hoy no hay margen.
 
 ### Flujo de pago
 
@@ -426,7 +447,7 @@ ALTER TABLE "Booking" ADD CONSTRAINT booking_no_overlap
   ) WHERE (status IN ('PENDING', 'PAID', 'CONFIRMED'));
 ```
 
-Como una `PENDING` vencida sigue contando para la restricción (aunque `isAvailable` ya no la cuente), antes de insertar se pasan a `EXPIRED`, en la misma transacción, las pendientes del espacio cuyo `expiresAt` ya pasó: `expireStalePending(tx, now, spaceId?)` de RE-06.
+Como una `PENDING` vencida sigue contando para la restricción, antes de insertar se pasan a `EXPIRED`, en la misma transacción, las pendientes del espacio cuyo `expiresAt` ya pasó. Para eso está `BookingExpiryService.expireStalePending(tx, now, spaceId)` (RE-06); el barrido periódico también las expira, pero entre una pasada y otra puede quedar alguna.
 
 ## Integraciones
 
@@ -485,6 +506,8 @@ Solo `PORT`, `VITE_API_URL` y `VITE_USE_MOCKS` existen hoy. Las demás se agrega
 | `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_BUCKET` | back | Subida de fotos; obligatorias con `STORAGE_DRIVER=supabase` | ES-03 |
 | `STRIPE_SECRET_KEY` | back | Clave secreta de Stripe en modo test (`sk_test_...`), para crear la sesión de Checkout y los reembolsos. Documentada en F-05; todavía no se lee | PA-01 |
 | `STRIPE_WEBHOOK_SECRET` | back | Secreto con que se verifica la firma del webhook (`whsec_...`). En local lo entrega `stripe listen`. Documentada en F-05; todavía no se lee | PA-02 |
+| `BOOKING_SWEEP_ENABLED` | back | `false` apaga la tarea periódica de vencimientos de reservas; si no se define, está encendida. Los e2e siempre la apagan | RE-06 |
+| `BOOKING_SWEEP_INTERVAL_MS` | back | Cada cuántos milisegundos corre esa tarea (de 1000 a 2 147 483 647, el máximo de `setInterval`; por defecto 60 000) | RE-06 |
 | `PLATFORM_FEE_PERCENT` | back | Comisión de la plataforma (depende de P-13) | RE-02 |
 | `AI_API_KEY`, `AI_MODEL` | back | Proveedor de IA (depende de P-15) | IA-01 |
 

@@ -251,6 +251,18 @@ describe('Cancelar una reserva (e2e)', () => {
       ]);
     });
 
+    it('una confirmada cuyo horario ya terminó responde 409 y no deja evento', async () => {
+      // Terminó hace una hora y el barrido de RE-06 todavía no la pasó a FINISHED.
+      const id = await booking('CONFIRMED', { startsInHours: -3 });
+
+      const { body } = await cancel(id, ownerId).expect(409);
+      await cancel(id, renterId).expect(409);
+
+      expect(body).toMatchObject({ statusCode: 409, message: 'La reserva ya terminó; no se puede cancelar' });
+      expect(await statusOf(id)).toBe('CONFIRMED');
+      expect(await events(id)).toEqual([]);
+    });
+
     it('dos cancelaciones a la vez: una gana y la otra responde 409', async () => {
       const id = await booking('CONFIRMED');
 

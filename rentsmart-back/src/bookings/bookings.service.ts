@@ -63,6 +63,10 @@ export class BookingsService {
     if (!CANCELLABLE.includes(booking.status)) {
       throw new ConflictException(`Una reserva en estado ${booking.status} no se puede cancelar`);
     }
+    if (booking.status === BookingStatus.CONFIRMED && booking.endAt <= now) {
+      // Ya se usó; el barrido de RE-06 la pasará a FINISHED. Cancelarla reembolsaría una reserva usada (P-14).
+      throw new ConflictException('La reserva ya terminó; no se puede cancelar');
+    }
 
     const refund = cancellationRefund(booking, cancelledBy, now);
     await this.prisma.$transaction(async (tx) => {
