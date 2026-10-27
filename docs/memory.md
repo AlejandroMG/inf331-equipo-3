@@ -2701,6 +2701,18 @@ Dejar escrito el plan de pruebas por nivel (unitarias, integración y E2E), conf
 - Vitest excluye `e2e/**` (si no, toma `smoke.spec.ts` por su nombre); `tsconfig.node.json` incluye `playwright.config.ts` y `e2e/` para que `tsc -b` los revise; ESLint ignora los reportes de Playwright; el `.gitignore` del front ignora `playwright-report/`, `test-results/` y `blob-report/`.
 - `ci.yml`: job nuevo «E2E (Playwright)», que instala Chromium con `--with-deps`, corre `npm run test:e2e` y sube el artefacto `playwright-report` si falla. `pull_request` ahora incluye `'release/**'`.
 - `ci.yml`: el paso de cobertura del back pasa `--coverageReporters=text --coverageReporters=lcov --coverageReporters=json-summary`. Al revisarlo para el plan se vio que Jest, con sus reporteros por defecto (clover, json, lcov, text), no genera `coverage/coverage-summary.json`, así que el paso «Publicar resumen de cobertura» siempre caía en la rama del `else` y nunca mostraba la tabla.
+### 2026-10-23 · C (gonzzza-lol) · Corregir la rotación de revisión en CONTRIBUTING
+
+**Issues:** No aplica (documentación del flujo de trabajo)
+**Rama / PR:** `feature/rotacion-revision-contributing` · sin PR todavía
+**Duración aproximada:** 0,5 h
+**Herramientas:** Claude Code
+
+#### Objetivo
+Que `CONTRIBUTING.md` describa la misma rotación de revisión que la tabla de `docs/flujo-de-trabajo.md` y que `assign-reviewer.yml`.
+
+#### Qué se hizo
+- `CONTRIBUTING.md` decía «A revisa a B, B revisa a C y C revisa a A», que es la rotación al revés. Ahora dice «B revisa a A, C revisa a B y A revisa a C» y enlaza a la tabla de rotación.
 
 #### Decisiones y por qué
 | Decisión | Alternativas consideradas | Por qué se eligió |
@@ -2748,5 +2760,26 @@ En GitHub, el PR debería mostrar el check «E2E (Playwright)» además de los d
 - B (@xReNatS): esta historia tocó archivos de la base del front: `vite.config.ts` (`test.exclude` con `e2e/**`), `package.json` (devDependency `@playwright/test` y script `test:e2e`), `.gitignore` (reportes de Playwright), además de `tsconfig.node.json` y `eslint.config.js`. No cambia nada de la app ni de los tests de Vitest.
 - El smoke depende de los textos del catálogo y de `src/mocks/catalog-data.ts` (nombres de espacios, 14 en total, 12 por página). Si cambian, hay que ajustar `e2e/smoke.spec.ts`.
 - Para correr Playwright en local hay que instalar Chromium una vez con `npx playwright install chromium`. Si el puerto 5180 está ocupado, la prueba no arranca (`--strictPort`).
+| Corregir CONTRIBUTING y no la tabla ni el workflow | Cambiar la tabla y el workflow para que calcen con CONTRIBUTING | La tabla, el workflow y los PR revisados hasta ahora (#112, #114, #121, #123, #124) siguen todos la misma rotación; solo la frase estaba al revés |
+| Rama `feature/…` para un cambio de documentación | `docs/…` o `fix/…` | GitFlow puro: todo lo que va a `develop` sale de `feature/`; el tipo del commit (`docs:`) dice qué es |
+
+#### Archivos principales
+- `CONTRIBUTING.md`: frase de la rotación de revisión.
+
+#### Cómo probarlo
+Comparar la frase con la tabla «Rotación de revisión» de `docs/flujo-de-trabajo.md` y con `ROTATION` en `.github/workflows/assign-reviewer.yml`.
+
+#### Estado de verificación
+- Build: no aplica
+- Lint: no aplica
+- Tests: no aplica
+
+#### Pendientes y bloqueos
+- El issue #42 (RE-05) sigue abierto aunque el #127 ya se mergeó a `develop`; hay que cerrarlo a mano (T-05).
+- Las ramas `fix/assign-reviewer-develop` y `sync/main-en-develop-entrega1` siguen en el remoto después del merge.
+- Sigue pendiente acordar la convención de ramas (solo `feature/`, `release/` y `hotfix/`) y proteger `develop` con el ruleset de `main`.
+
+#### Para el resto del equipo
+- La rotación vigente es: los PR de A los revisa B, los de B los revisa C y los de C los revisa A. `assign-reviewer.yml` ya la aplica en los PR hacia `develop`.
 
 ---
