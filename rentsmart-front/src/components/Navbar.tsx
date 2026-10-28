@@ -21,6 +21,7 @@ function linksFor(loggedIn: boolean, isAdmin: boolean): NavItem[] {
       ? [
           { to: paths.ownerSpaces, label: 'Mis espacios', end: false },
           { to: paths.favorites, label: 'Favoritos', end: false },
+          { to: paths.profile, label: 'Mi perfil', end: false },
         ]
       : []),
     ...(isAdmin ? [{ to: paths.admin, label: 'Administración', end: false }] : []),

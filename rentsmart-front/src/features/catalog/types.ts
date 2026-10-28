@@ -48,6 +48,11 @@ export interface ApproximateLocation {
 export interface SpaceDetail {
   id: string
   name: string
+  host: {
+    id: string
+    name: string
+    profilePhotoUrl: string | null
+  }
   description: string | null
   typeName: string
   regionName: string

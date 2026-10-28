@@ -20,6 +20,7 @@ const COMMUNE_LOCATIONS: Record<string, SpaceDetail['location']> = {
 function detailOf(item: (typeof catalogData)[number]): SpaceDetail {
   return {
     ...item,
+    host: { id: 'mock-host', name: 'Anfitrión de ejemplo', profilePhotoUrl: null },
     description: 'Espacio de ejemplo para el catálogo simulado.',
     regionName: 'Región Metropolitana',
     address: 'Av. Libertador Bernardo O’Higgins 1234',

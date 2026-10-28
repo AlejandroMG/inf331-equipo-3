@@ -171,6 +171,13 @@ export class CatalogService {
       select: {
         id: true,
         name: true,
+        owner: {
+          select: {
+            id: true,
+            name: true,
+            profilePhotoUrl: true,
+          },
+        },
         description: true,
         address: true,
         latitude: true,
@@ -197,6 +204,7 @@ export class CatalogService {
     return {
       id: space.id,
       name: space.name,
+      host: space.owner,
       description: space.description,
       typeName: space.type?.name ?? '',
       regionName: space.commune?.region.name ?? '',
