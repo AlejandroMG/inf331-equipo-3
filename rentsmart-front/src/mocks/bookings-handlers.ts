@@ -24,7 +24,7 @@ const HOUR_UTC_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:00:00(\.0{1,3})?Z$/
 const START_TIME_PATTERN = /^([01]\d|2[0-3]):00$/
 const END_TIME_PATTERN = /^(0[1-9]|1\d|2[0-4]):00$/
 const MAX_DAYS = 31
-/** Comisión supuesta mientras P-13 siga abierta: 10 % sumado al arrendatario. */
+/** Comisión de la plataforma (P-13): 10 % sumado al arrendatario, igual que `FEE_PERCENT` del back. */
 const FEE_PERCENT = 10
 /** Los estados que ocupan el horario (P-06). */
 const BLOCKING: BookingStatus[] = ['PENDING', 'PAID', 'CONFIRMED']
@@ -218,7 +218,8 @@ export const bookingHandlers = [
     return HttpResponse.json({ rules: sorted } satisfies Schedule)
   }),
 
-  // RE-02 y PA-01: reservar. Queda PENDING y entrega a dónde ir a pagar; aquí, directo a la pantalla de retorno.
+  // RE-02: reservar. Queda PENDING y entrega a dónde ir a pagar. Como el back mientras no exista Stripe (PA-01),
+  // lleva a la página de la reserva en el front.
   http.post('*/api/bookings', async ({ request }) => {
     if (!hasSession(request)) return unauthorized()
     const payload = (await request.json()) as CreateBookingPayload
@@ -239,7 +240,8 @@ export const bookingHandlers = [
     if (payload.unit === 'DAY') {
       // El día completo puede tener pausas (09:00 a 13:00 y 15:00 a 19:00): va del primer inicio al último fin.
       const isFullDay = hours.length > 0 && +hours[0].startAt === +start && +hours[hours.length - 1].endAt === +end
-      if (!isFullDay) return badRequest('Una reserva por día toma el horario completo de ese día')
+      // Como el back: isAvailable con unit DAY es falso si el rango no es exactamente el día completo, y eso es un 409.
+      if (!isFullDay) return conflict('Una reserva por día toma el horario completo de ese día')
     } else if (wanted.length !== (end.getTime() - start.getTime()) / HOUR) {
       return conflict('El horario está fuera del horario del espacio')
     }
@@ -266,7 +268,7 @@ export const bookingHandlers = [
     bookings.push(booking)
     const origin = typeof location === 'undefined' ? '' : location.origin
     return HttpResponse.json(
-      { bookingId: booking.id, checkoutUrl: `${origin}/bookings/${booking.id}/success` } satisfies BookingCheckout,
+      { bookingId: booking.id, checkoutUrl: `${origin}/bookings/${booking.id}` } satisfies BookingCheckout,
       { status: 201 },
     )
   }),

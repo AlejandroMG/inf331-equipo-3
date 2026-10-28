@@ -5,20 +5,25 @@ import { AvailabilityService } from '../src/availability/availability.service';
 import { santiagoWallClock } from '../src/common/santiago-time';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { bearer } from './utils/auth';
+import { bookingWeek } from './utils/booking-dates';
 import { createTestApp } from './utils/create-test-app';
 
 // F-05: el contrato de disponibilidad, reservas y pagos. Comprueba la forma (Swagger, 400 y 401), no la lógica:
-// cada historia (RE-02, PA-01, PA-02) reemplaza su 501 por sus propios tests. El horario semanal (DI-01) ya
+// cada historia (PA-01, PA-02) reemplaza su 501 por sus propios tests. El horario semanal (DI-01) ya
 // está implementado: sus e2e están en schedule.e2e-spec.ts. La disponibilidad (DI-02) también: sus e2e están abajo.
+// Reservar y consultar (RE-02) también: sus e2e están en booking-create.e2e-spec.ts.
 const SUFFIX = `e2e-f05-${Date.now()}`;
 const HOUR = 3_600_000;
 const SPACE = 'un-espacio';
 const BOOKING = 'una-reserva';
 
+// Fechas calculadas desde hoy (el lunes a 4 semanas, en la hora de Chile; ver utils/booking-dates.ts): una fecha fija
+// termina pasando y entonces el servicio responde 400 por «ya pasó» antes de llegar a lo que se quiere probar.
+const at = bookingWeek();
 const VALID_BOOKING = {
   spaceId: SPACE,
-  startAt: '2026-10-12T12:00:00.000Z',
-  endAt: '2026-10-12T14:00:00.000Z',
+  startAt: at(0, 9),
+  endAt: at(0, 11),
   unit: 'HOUR',
 };
 
@@ -60,7 +65,7 @@ describe('Contrato de disponibilidad, reservas y pagos (e2e)', () => {
       ['get', '/api/spaces/{id}/availability', ['200', '400', '404']],
       ['get', '/api/spaces/{id}/schedule', ['200', '401', '403', '404']],
       ['put', '/api/spaces/{id}/schedule', ['200', '400', '401', '403', '404', '409']],
-      ['post', '/api/bookings', ['201', '400', '401', '404', '409']],
+      ['post', '/api/bookings', ['201', '400', '401', '403', '404', '409']],
       ['get', '/api/bookings/me', ['200', '400', '401']],
       ['get', '/api/bookings/{id}', ['200', '401', '403', '404']],
       ['post', '/api/bookings/{id}/cancel', ['200', '400', '401', '403', '404', '409']],
@@ -488,15 +493,32 @@ describe('Contrato de disponibilidad, reservas y pagos (e2e)', () => {
     });
   });
 
+  // RE-02 ya está implementado: los datos válidos pasan la validación y llegan al servicio. La lógica se prueba en
+  // booking-create.e2e-spec.ts; aquí solo se comprueba que la forma del contrato llega bien.
+  describe('reservas (RE-02)', () => {
+    it.each([
+      ['por hora', VALID_BOOKING],
+      // Sin milisegundos también es una hora cerrada en UTC.
+      ['por día', { ...VALID_BOOKING, startAt: at(0, 9).replace('.000Z', 'Z'), endAt: at(0, 21).replace('.000Z', 'Z'), unit: 'DAY' }],
+    ])('POST /api/bookings %s a un espacio que no existe responde 404', (_name, body) => {
+      return request(server()).post('/api/bookings').set(auth()).send(body).expect(404);
+    });
+
+    it.each(['/api/bookings/me', '/api/bookings/me?page=2&pageSize=50'])('GET %s responde 200 con la página', async (path) => {
+      const { body } = await request(server()).get(path).set(auth()).expect(200);
+
+      expect(Object.keys(body as object).sort()).toEqual(['items', 'page', 'pageSize', 'total']);
+    });
+
+    it('GET /api/bookings/:id de una reserva que no existe responde 404', () => {
+      return request(server()).get(`/api/bookings/${BOOKING}`).set(auth()).expect(404);
+    });
+  });
+
   // Los datos válidos del contrato pasan la validación y llegan al servicio, que todavía no existe (501).
   // Cada historia cambia su línea por tests de verdad.
   describe('pendiente de implementar', () => {
     it.each([
-      ['post', '/api/bookings', VALID_BOOKING],
-      ['post', '/api/bookings', { ...VALID_BOOKING, startAt: '2026-10-12T12:00:00Z', unit: 'DAY' }],
-      ['get', '/api/bookings/me', undefined],
-      ['get', '/api/bookings/me?page=2&pageSize=50', undefined],
-      ['get', `/api/bookings/${BOOKING}`, undefined],
       ['get', '/api/payments/me?page=1&pageSize=10', undefined],
     ] as const)('%s %s responde 501 con datos válidos', (method, path, body) => {
       return request(server())[method](path).set(auth()).send(body).expect(501);

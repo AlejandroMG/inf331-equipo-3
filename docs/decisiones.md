@@ -17,6 +17,7 @@ Cada decisión del producto tiene un ID `P-xx` que coincide con su issue en GitH
 | [P-09](#p-09--ubicación-pública-con-detalle-privado) | Ubicación pública con detalle privado | Decidida | 25-09-2026 |
 | [P-10](#p-10--fotos-en-supabase-storage) | Fotos en Supabase Storage | Decidida | 25-09-2026 |
 | [P-11](#p-11--meta-de-pruebas) | Meta de pruebas | En espera del profesor | — |
+| [P-13](#p-13--comisión-del-10--sumada-al-arrendatario) | Comisión del 10 % sumada al arrendatario | Decidida | 27-10-2026 |
 | [P-14](#p-14--cancelación-gratis-hasta-24-horas-antes) | Cancelación gratis hasta 24 horas antes | Decidida | 08-10-2026 |
 | [P-18](#p-18--tipo-y-comuna-también-son-obligatorios-para-publicar) | Tipo y comuna también son obligatorios para publicar | Decidida | 05-10-2026 |
 | [P-19](#p-19--ubicación-en-el-mapa-el-propietario-marca-el-punto-y-el-público-ve-una-zona-aproximada) | Ubicación en el mapa con zona aproximada | Decidida | 06-10-2026 |
@@ -117,6 +118,14 @@ Decisiones abiertas: ver [al final](#decisiones-abiertas).
 - **Contexto:** el ramo puede exigir una cobertura mínima, ciertos tipos de prueba o informes.
 - **Decisión provisoria:** no se fija una meta de cobertura hasta tener la respuesta. Mientras tanto, cada historia exige tests según la [definición de terminado](flujo-de-trabajo.md#definición-de-terminado). F-10 (plan de pruebas y Playwright) quedó para después del 9 de octubre.
 
+## P-13 · Comisión del 10 % sumada al arrendatario
+
+- **Estado:** Decidida, 27-10-2026 (aprobada por C) · Issue [#80](https://github.com/AlejandroMG/inf331-equipo-3/issues/80)
+- **Contexto:** RE-02 (reservar) calcula el desglose de cada reserva (`subtotal`, `fee`, `total`) y necesitaba saber de cuánto es la comisión de la plataforma y quién la paga. Hasta ahora el contrato de F-05 y el mock del front asumían la recomendación del issue.
+- **Decisión:** la comisión es el **10 % del subtotal**, se **suma a lo que paga el arrendatario** (`total = subtotal + fee`) y se muestra en el desglose antes de reservar. Se redondea al peso con `Math.round`. Está en un solo lugar del back: `FEE_PERCENT` en `src/bookings/pricing.ts`.
+- **Alternativas descartadas:** una comisión a cargo del propietario, descontada de lo que recibe (no hay traspaso al propietario mientras no se use Stripe Connect, P-12, así que no habría de dónde descontarla, y el arrendatario no vería el costo real); no cobrar comisión (la plataforma no tendría ingreso y el desglose quedaría sin sentido).
+- **Consecuencias:** un reembolso total devuelve también la comisión ([P-14](#p-14--cancelación-gratis-hasta-24-horas-antes)). El mock del front (`src/mocks/bookings-handlers.ts`) ya usaba el 10 % y el front muestra el mismo cálculo en el widget de reserva (`FEE_PERCENT` en `src/features/bookings/booking-selection.ts`, solo para mostrar: el monto que vale es el del back). Son tres constantes que hay que cambiar juntas: `FEE_PERCENT` del back (`src/bookings/pricing.ts`), la del front (`src/features/bookings/booking-selection.ts`) y la del mock (`src/mocks/bookings-handlers.ts`).
+
 ## P-14 · Cancelación gratis hasta 24 horas antes
 
 - **Estado:** Decidida, 08-10-2026 · Issue [#81](https://github.com/AlejandroMG/inf331-equipo-3/issues/81)
@@ -194,7 +203,6 @@ Decisiones abiertas: ver [al final](#decisiones-abiertas).
 | ID | Pregunta | Recomendación | Necesaria antes de |
 |---|---|---|---|
 | [P-12](https://github.com/AlejandroMG/inf331-equipo-3/issues/79) | ¿Stripe con o sin Connect? | Checkout en modo test, sin Connect; la plataforma cobra el total y registra la comisión | 3 de octubre (PA-01) |
-| [P-13](https://github.com/AlejandroMG/inf331-equipo-3/issues/80) | ¿De cuánto es la comisión y quién la paga? | 10 % sumado al arrendatario, visible en el desglose | 3 de octubre (RE-02) |
 | [P-15](https://github.com/AlejandroMG/inf331-equipo-3/issues/82) | ¿Qué proveedor de IA y quién paga la API? | Un modelo pequeño con visión; preguntar si el ramo da créditos | 3 de octubre (IA-01) |
 | [P-17](https://github.com/AlejandroMG/inf331-equipo-3/issues/84) | ¿Dónde desplegamos? | Vercel (front), Render o Railway (back), Neon o Supabase (BD) | 3 de octubre (QA-03) |
 | [P-16](https://github.com/AlejandroMG/inf331-equipo-3/issues/83) | ¿Reseñas en una o ambas direcciones? | Solo al espacio en el MVP | Después del 9 de octubre |

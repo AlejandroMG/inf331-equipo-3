@@ -2836,3 +2836,79 @@ Comparar la frase con la tabla «Rotación de revisión» de `docs/flujo-de-trab
 - La rotación vigente es: los PR de A los revisa B, los de B los revisa C y los de C los revisa A. `assign-reviewer.yml` ya la aplica en los PR hacia `develop`.
 
 ---
+
+### 2026-10-27 · C (gonzzza-lol) · RE-02: reservar un espacio
+
+**Issues:** #39 (RE-02), #80 (P-13)
+**Rama / PR:** `feature/RE-02-reservar-espacio` · sin PR todavía
+**Duración aproximada:** 4 h
+**Herramientas:** Claude Code
+
+#### Objetivo
+Implementar reservar (`POST /api/bookings`), mis reservas (`GET /api/bookings/me`) y ver una reserva (`GET /api/bookings/:id`) en el back, y el widget de reserva y la página de la reserva en el front, dejando un puerto de checkout para que PA-01 enchufe Stripe.
+
+#### Qué se hizo
+- Back: `BookingsService.create`, `findMine` y `findOne` dejan de responder 501. `create` hace todo en una transacción: valida fechas (400), espacio activo (404), que no sea el dueño (403, nuevo en Swagger), precio en la unidad (400), expira las pendientes vencidas del espacio (`expireStalePending`) antes de `isAvailable` (409), calcula los montos, crea la `PENDING` con `expiresAt = now + 30 min` y su evento inicial, y pide la URL al puerto de checkout. `now` se puede pasar para probar con un reloj fijo.
+- Back: función pura `bookingAmounts` y `FEE_PERCENT = 10` en `src/bookings/pricing.ts`.
+- Back: puerto de checkout `CheckoutGateway` (token `CHECKOUT_GATEWAY`) en `src/payments/`, con `PendingCheckoutGateway`, que no llama a Stripe y devuelve `${FRONTEND_URL}/bookings/<id>`, registrado en un `CheckoutModule` nuevo.
+- Back: unitarias de `pricing`, del gateway y de cada rama de `create`, `findMine` y `findOne`; e2e nuevo `test/booking-create.e2e-spec.ts`; en `booking-contract.e2e-spec.ts` los casos 501 de reservas pasan a probar la forma real (404, 200) y `VALID_BOOKING` usa fechas de 2030 para no caer en «ya pasó».
+- Front: `createBooking` y `getBooking` en `bookings-api.ts`; `BookingWidget` (por hora o por día según los precios, día, bloques seguidos, desglose con comisión, login si no hay sesión, mensajes de 409 y 400 del back); página `/bookings/:bookingId` (`BookingPage`) con estado, horario, desglose y cuenta regresiva de la retención; ruta en `paths.ts` y `routes.tsx` (privada).
+- Front: el mock de `POST /api/bookings` ahora devuelve `checkoutUrl` a `/bookings/<id>`, como el back.
+- Docs: P-13 registrada en `decisiones.md` y sección de RE-02 en `arquitectura.md`.
+- Correcciones después de la revisión:
+  - `create` responde 400 si el rango supera 31 días (reusa `MAX_RANGE_MS` de `availability-slots.ts`) y si el `total` supera el máximo de un `Int` de Postgres (2 147 483 647), antes de insertar; con tests unitarios y e2e.
+  - e2e de rollback: un `CHECKOUT_GATEWAY` que falla (con `jest.spyOn` sobre el provider de la app, sin tocar `create-test-app.ts`) deja la respuesta en 500 y ninguna `Booking` ni `BookingEvent`. El test unitario equivalente se renombró: con el doble de `$transaction` no puede probar el rollback.
+  - Las fechas de `booking-create.e2e-spec.ts` y del `VALID_BOOKING` de `booking-contract.e2e-spec.ts` se calculan desde hoy con `bookingWeek` (`test/utils/booking-dates.ts`): el lunes a 4 semanas, a una hora fija de Chile. `pending-checkout.gateway.spec.ts` usa `Date.now()`.
+  - Mock: una reserva `DAY` que no cubre el día completo responde 409, como el back.
+  - `BookingWidget`: si `checkoutUrl` es del mismo origen o su ruta es `/bookings/<id>`, navega a `paths.booking(bookingId)` dentro de la app (función pura `checkoutDestination`); si no, `window.location.assign`. Así no depende de que `FRONTEND_URL` sea el origen exacto del front.
+  - Docs: en el diagrama de pago el `success_url` es `/bookings/:id` y hay una nota sobre `expires_at` (Stripe exige ≥ creación + 30 min; se decide en PA-01); se quitó la fila de `PLATFORM_FEE_PERCENT`; el `POST /bookings` (tabla y Swagger) aclara «el enlace de pago (Stripe Checkout desde PA-01; mientras tanto, la página de la reserva)»; P-13 dice que son tres constantes. `checkout-gateway.ts` documenta la advertencia de `expires_at` y el caso de una sesión creada con el COMMIT fallido.
+
+#### Decisiones y por qué
+| Decisión | Alternativas consideradas | Por qué se eligió |
+|---|---|---|
+| P-13: comisión del 10 % sumada al arrendatario ([decisiones.md](decisiones.md#p-13--comisión-del-10--sumada-al-arrendatario)) | Comisión a cargo del propietario; sin comisión | Aprobada por C; es lo que ya asumían el contrato y el mock |
+| `CheckoutModule` aparte de `PaymentsModule` | Registrar el gateway en `PaymentsModule` | El webhook de PA-02 va a necesitar `BookingsModule`; si `BookingsModule` importara `PaymentsModule` habría un ciclo |
+| Llamar al checkout dentro de la transacción de `create` (tiempo máximo de 15 s) | Llamarlo después del commit y expirar la reserva si falla | Si Stripe falla no queda una `PENDING` reteniendo el horario sin enlace de pago; el costo es mantener la transacción abierta durante la llamada |
+| 400 si `startAt <= now`, revisado antes de abrir la transacción | 409 (lo que daría `isAvailable`) | El contrato y Swagger ya decían 400 para «un horario que ya pasó»; un bloque ya pasó desde que empieza, como en DI-02 |
+| `findOne` solo para el arrendatario, también 403 al dueño del espacio | Dejar que el dueño la vea | El contrato dice «Sí, el arrendatario»; el dueño tiene `GET /api/owner/bookings` |
+| El widget navega dentro de la app si `checkoutUrl` es del mismo origen y cambia de página si no | Siempre `window.location.assign` | Con el checkout provisorio no recarga la app; con Stripe (otro origen) funciona igual |
+| 400 si el total supera 2 147 483 647 CLP | Otro tope inventado; dejar que falle la base (500) | Es el límite real de las columnas `Int`; el tope de Stripe se confirma en PA-01 |
+| e2e de rollback con `jest.spyOn` sobre el gateway de la app | Agregar un parámetro de *overrides* a `createTestApp` | No cambia la utilidad que usan todas las suites y se restaura en el `finally` |
+| El widget ofrece 14 días desde hoy | Un calendario mensual | Cabe en una sola consulta de disponibilidad (máx. 31 días) y en un `<select>` usable a 375 px |
+
+#### Archivos principales
+- `rentsmart-back/src/bookings/bookings.service.ts`: `create`, `findMine`, `findOne`.
+- `rentsmart-back/src/bookings/pricing.ts`: `FEE_PERCENT` y `bookingAmounts`.
+- `rentsmart-back/src/payments/checkout-gateway.ts`, `pending-checkout.gateway.ts`, `checkout.module.ts`: puerto de checkout.
+- `rentsmart-back/src/bookings/bookings.module.ts`: importa `AvailabilityModule` y `CheckoutModule`.
+- `rentsmart-back/src/bookings/bookings.controller.ts`: 403 en Swagger de `POST /api/bookings`.
+- `rentsmart-back/test/booking-create.e2e-spec.ts` (nuevo) y `test/booking-contract.e2e-spec.ts`.
+- `rentsmart-front/src/features/bookings/BookingWidget.tsx`, `BookingPage.tsx`, `booking-selection.ts`, `bookings-api.ts` y sus tests.
+- `rentsmart-front/src/features/catalog/SpaceDetailPage.tsx` y su test (de B): cambio mínimo, ver abajo.
+- `rentsmart-front/src/mocks/bookings-handlers.ts`, `src/lib/paths.ts`, `src/routes.tsx`, `src/routes.test.tsx`.
+
+#### Cómo probarlo
+- Back: `npm test`; e2e con una base propia: `docker compose exec db-test createdb -U testuser testdb_re02`, luego `DATABASE_TEST_URL=postgresql://testuser:testpassword@localhost:5433/testdb_re02 npx prisma migrate deploy` y `npm run test:e2e` con la misma variable.
+- Front: `npm test`; en `npm run dev` con mocks, abrir el detalle de un espacio, elegir horas y reservar: lleva a `/bookings/<id>`.
+
+#### Estado de verificación
+- Build: ✅ back y front
+- Lint: ✅ back (oxlint) y front (ESLint)
+- Tests: ✅ back 30 suites / 557 unitarias y 24 suites / 516 e2e; front 54 archivos / 711 tests y 3 de Playwright
+
+#### Pendientes y bloqueos
+- RE-03 (#40): traducir a 409 el error de `booking_no_overlap` (hoy, dos solicitudes simultáneas por el mismo horario dejan a la segunda con un 500) y probarlo con dos solicitudes a la vez.
+- PA-01 (#45): reemplazar `PendingCheckoutGateway` por Stripe Checkout en `CheckoutModule` (comentarios `// PA-01 (#45)`), con `success_url` a `/bookings/<id>`, el id de la reserva en los metadatos y el `sessionId` de vuelta. Queda por decidir cómo calzar `expires_at` (Stripe exige ≥ creación + 30 min) con `expiresAt`, y confirmar el monto máximo que acepta Stripe en CLP.
+- PA-02 (#46): el webhook debe tolerar una sesión de Stripe cuya reserva no existe (la sesión se creó pero el COMMIT de `create` falló).
+- El issue #80 (P-13) hay que cerrarlo a mano (T-05).
+- La página `/bookings/:id` no consulta sola hasta ver `CONFIRMED`; tiene el botón «Actualizar el estado». El sondeo automático después de pagar queda para PA-01/PA-02.
+- En `npm run dev` con mocks, la página de la reserva aparece «Pagada» al llegar: el mock avanza de estado en cada consulta y el modo estricto de React hace dos. Solo pasa con los mocks.
+
+#### Para el resto del equipo
+- **B (@xReNatS):** cambié `SpaceDetailPage.tsx` solo para reemplazar `<BookingSlot />` por `<BookingWidget spaceId pricePerHour pricePerDay />` (el widget necesita los precios para ofrecer por hora o por día), y en `SpaceDetailPage.test.tsx` la línea que esperaba «La reserva en línea estará disponible muy pronto.» ahora busca el botón «Reservar». `BookingSlot.tsx` quedó sin uso; no lo borré porque es tuyo.
+- `POST /api/bookings` responde 403 si el dueño reserva su propio espacio (único cambio al contrato de F-05).
+- `BookingsService` ahora depende de `AvailabilityService`, `BookingExpiryService` y `CHECKOUT_GATEWAY`: un test que arme `BookingsService` con `Test.createTestingModule` tiene que proveerlos.
+- La comisión está en tres constantes que hay que cambiar juntas: `FEE_PERCENT` del back (`src/bookings/pricing.ts`), la del front (`src/features/bookings/booking-selection.ts`, solo para mostrar) y la del mock (`src/mocks/bookings-handlers.ts`).
+- Para fechas de e2e de reservas que no queden en el pasado, usar `bookingWeek` de `test/utils/booking-dates.ts`.
+
+---
