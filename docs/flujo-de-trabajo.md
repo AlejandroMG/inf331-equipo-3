@@ -56,6 +56,8 @@ Una historia está terminada cuando:
 - [ ] La sesión está registrada en `docs/memory.md`.
 - [ ] Si cambió una decisión o la arquitectura, `docs/` está actualizado.
 
+Qué se prueba en cada nivel, dónde van los archivos y qué corre el CI está en el [plan de pruebas](plan-de-pruebas.md).
+
 ## Coordinación
 
 - **Daily asíncrona** en el grupo, cada día: qué hice, qué haré, qué me bloquea.

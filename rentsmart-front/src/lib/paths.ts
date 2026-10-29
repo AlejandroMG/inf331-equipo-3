@@ -2,6 +2,8 @@
 export const paths = {
   home: '/',
   space: (id: string) => `/spaces/${id}`,
+  /** Una reserva propia: estado, horario, desglose y retención (RE-02). */
+  booking: (id: string) => `/bookings/${id}`,
   publish: '/publish',
   /** Continuar un borrador: /publish/<id>. */
   publishDraft: (id: string) => `/publish/${id}`,
