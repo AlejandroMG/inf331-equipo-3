@@ -90,6 +90,20 @@ export class BookingsController {
 - `POST /api/auth/host` habilita de forma idempotente `isHost` para la cuenta autenticada. También se habilita automáticamente al publicar el primer espacio.
 - En los e2e, `bearer(app, userId)` de `test/utils/auth.ts` entrega el encabezado `Authorization` con un token válido.
 
+### Perfil de usuario (CU-06)
+
+El módulo `users` guarda nombre, teléfono, biografía y foto de perfil. La foto se almacena con `StorageService` (JPG, PNG o WebP; máximo 5 MB), mientras la ruta interna del archivo nunca se devuelve al cliente.
+
+| Endpoint | Acceso y respuesta |
+|---|---|
+| `GET /api/users/me` | Con sesión; perfil privado, incluido el correo |
+| `PATCH /api/users/me` | Con sesión; actualiza nombre, teléfono y biografía |
+| `POST /api/users/me/photo` | Con sesión; sube o reemplaza la foto (`multipart/form-data`, campo `file`) |
+| `DELETE /api/users/me/photo` | Con sesión; quita la foto |
+| `GET /api/users/:id/profile` | Público; solo anfitriones activos. Devuelve antigüedad, promedio y cantidad de reseñas recibidas en sus espacios, además de las 20 reseñas más recientes. No devuelve correo ni teléfono |
+
+El detalle público de un espacio incluye una ficha mínima de anfitrión (`id`, nombre y foto) para abrir su perfil. Los datos privados del espacio, como `addressDetail` y coordenadas exactas, siguen excluidos.
+
 ### Datos de referencia (ES-01)
 
 Listas públicas y de solo lectura que alimentan los formularios y filtros. Módulo `space-types`; devuelven `[{ id, name }]`.
@@ -108,7 +122,7 @@ Módulo `catalog`, sin sesión. Solo muestra espacios `ACTIVE`: borradores, inac
 | Endpoint | Devuelve |
 |---|---|
 | `GET /api/catalog?page=&pageSize=` y los filtros de abajo | `{ items, total, page, pageSize }`, los más recientes primero. `page` ≥ 1 (1 por defecto), `pageSize` de 1 a 50 (12 por defecto). Cualquier otro parámetro o valor inválido da 400 |
-| `GET /api/catalog/:id` | Detalle público: datos del espacio, `regionName`, `address`, `location` (zona aproximada en el mapa), `amenities` (nombres), `photos` por posición y `schedule` semanal. 404 si no existe o no está activo |
+| `GET /api/catalog/:id` | Detalle público: datos del espacio, ficha mínima del `host`, `regionName`, `address`, `location` (zona aproximada en el mapa), `amenities` (nombres), `photos` por posición y `schedule` semanal. 404 si no existe o no está activo |
 
 - Cada item de la lista es `{ id, name, typeName, communeName, capacity, pricePerHour, pricePerDay, coverUrl }` (`null` donde no aplique).
 - **Nunca** se devuelve `addressDetail` (P-09), `ownerId` ni `status`: el `select` de `CatalogService` es una lista blanca y hay tests e2e que lo comprueban. El detalle de la dirección se entregará con la reserva confirmada.
@@ -279,6 +293,7 @@ rentsmart-front/src/
 │   ├── renter/     ← A: panel del arrendatario
 │   ├── spaces/     ← B: publicar y editar
 │   ├── catalog/    ← B: catálogo y detalle
+├── users/      ← A: edición y perfil público
 │   ├── map/        ← B: mapas con Leaflet (detalle y formulario de publicar)
 │   ├── owner/      ← B: panel del propietario
 │   └── bookings/   ← C: horario semanal, widget de reserva, pago
@@ -298,6 +313,7 @@ rentsmart-front/src/
 - Panel del propietario (PN-01, PN-02, PN-04): tres pantallas privadas con una navegación común (`OwnerNav`): "Mis espacios" (`/owner/spaces`, con las 3 próximas reservas confirmadas), "Reservas" (`/owner/bookings`) y "Métricas" (`/owner/metrics`). Los filtros de las reservas (estado, desde, hasta, orden y página) y el mes de las métricas viven en la URL. Las fechas de la API llegan en UTC y se muestran siempre en la hora de Chile (`booking-format.ts`, con `America/Santiago`); "hoy" y "el mes actual" también se miden en Chile. El contacto del arrendatario solo existe en las reservas confirmadas.
 - Perfil y modo propietario (CU-04): `/profile` muestra los datos públicos de la cuenta y permite habilitar `isHost`; publicar el primer espacio también lo habilita.
 - Favoritos (BU-08): `FavoritesProvider` (en `App.tsx`) guarda en un contexto los ids de los favoritos de la sesión (`GET /api/favorites/ids`, solo con sesión) y se olvida de ellos al cerrarla; `FavoriteButton` es el corazón de las tarjetas y el botón "Guardar en favoritos" del detalle. Marcar o desmarcar se ve al instante y se deshace, con un aviso, si el servidor lo rechaza. Sin sesión, el corazón lleva a iniciarla y regresa a la pantalla. "Mis favoritos" (`/favorites`, privada) lista las tarjetas con `GET /api/favorites`. El corazón no puede ir dentro del enlace de la tarjeta (un botón dentro de un enlace no es HTML válido): es su hermano, encima de la foto. Sin `FavoritesProvider` (por ejemplo, en la prueba de una tarjeta suelta) nada aparece guardado.
+- Perfil (CU-06): `/profile` permite editar nombre, teléfono, biografía y foto; `/users/:id` muestra antigüedad y reseñas del anfitrión. La foto se sube como multipart y el anfitrión es accesible desde el detalle público de cada espacio.
 - Búsquedas recientes (BU-07): el catálogo guarda en este navegador (`localStorage`, clave `rentsmart_recent_searches`) las últimas 6 búsquedas con filtros que dieron resultados y se quedaron 3 segundos en pantalla, para repetirlas desde "Búsquedas recientes" bajo el buscador. Cada una es la URL de sus filtros, sin el orden ni la página, y no se repite. No viaja al servidor ni cruza dispositivos, y se lee validada: lo que no se entiende se descarta. La lógica está en `src/features/catalog/search-history.ts`.
 - Mapas (ES-07): Leaflet con react-leaflet y las teselas de OpenStreetMap (`src/features/map/`). `LazyMaps.tsx` los carga bajo demanda (Leaflet pesa ~45 kB comprimido y queda fuera del resto de la aplicación) y los envuelve en un `ErrorBoundary`: si no cargan, el resto de la pantalla sigue. `LocationMap` dibuja el círculo del detalle público y `LocationPicker`, el mapa donde el propietario marca el punto; este último es solo una ayuda, porque las mismas coordenadas se escriben en los campos de latitud y longitud (la forma de hacerlo con teclado). Las teselas públicas de OSM tienen una [política de uso razonable](https://operations.osmfoundation.org/policies/tiles/): sirven para el MVP, y con tráfico real hay que cambiar `TILE_URL` (`map-config.ts`) por un proveedor propio. El contrato de `location` y de `latitude` y `longitude` está en [Catálogo público](#catálogo-público-bu-01-bu-02-bu-03) y [Espacios del propietario](#espacios-del-propietario-es-02).
 - Horario semanal (DI-01): `<WeeklySchedule spaceId onSaved? />` (`src/features/bookings/`) carga el horario de un espacio propio y lo guarda completo con su botón "Guardar horario"; no depende del guardado del borrador. Cada día tiene una casilla y uno o más rangos "Desde" y "Hasta" en horas cerradas; los errores (fin que no es posterior al inicio, rangos traslapados) se ven bajo el día y, al intentar guardar, el foco va al primer campo inválido. `onSaved` recibe el horario guardado. Está puesto en el paso 3 de `SpaceWizard`. La lógica sin interfaz está en `schedule-form.ts` y las llamadas en `schedule-api.ts`.

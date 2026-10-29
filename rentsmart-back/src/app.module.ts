@@ -14,6 +14,7 @@ import { OwnerModule } from './owner/owner.module';
 import { AvailabilityModule } from './availability/availability.module';
 import { BookingsModule } from './bookings/bookings.module';
 import { PaymentsModule } from './payments/payments.module';
+import { UsersModule } from './users/users.module';
 import { ThrottlerModule } from '@nestjs/throttler';
 
 @Module({
@@ -32,6 +33,7 @@ import { ThrottlerModule } from '@nestjs/throttler';
     AvailabilityModule,
     BookingsModule,
     PaymentsModule,
+    UsersModule,
   ],
   controllers: [AppController],
   providers: [AppService],

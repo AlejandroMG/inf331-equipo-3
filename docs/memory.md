@@ -2996,3 +2996,48 @@ Implementar reservar (`POST /api/bookings`), mis reservas (`GET /api/bookings/me
 - Para fechas de e2e de reservas que no queden en el pasado, usar `bookingWeek` de `test/utils/booking-dates.ts`.
 
 ---
+
+### 2026-10-28 · A (AlejandroMG) · CU-06 ver y editar mi perfil
+
+**Issues:** #17 (CU-06)
+**Rama / PR:** `feature/CU-06-editar-mi-perfil` · sin PR todavía
+**Duración aproximada:** 2,5 h
+**Herramientas:** Copilot
+
+#### Objetivo
+Permitir consultar y editar el perfil personal y mostrar la antigüedad y reseñas de un anfitrión.
+
+#### Qué se hizo
+- Se añadieron biografía y foto de perfil al modelo, con migración; la foto admite JPG, PNG y WebP hasta 5 MB y su ruta interna no se expone.
+- La API permite consultar y editar los datos privados, subir o quitar la foto y consultar el perfil público de anfitriones activos con promedio, cantidad y hasta 20 reseñas recientes; no devuelve correo ni teléfono públicamente.
+- El front incorpora `/profile` y `/users/:id`, con acceso al perfil del anfitrión desde el detalle del espacio.
+- Se conservaron las rutas de reservas existentes al integrar los cambios.
+
+#### Decisiones y por qué
+| Decisión | Alternativas consideradas | Por qué se eligió |
+|---|---|---|
+| Mostrar reseñas recibidas en espacios del anfitrión y limitar la vista pública a anfitriones activos | Reseñas escritas por el usuario o publicar todo perfil | El perfil informa sobre la experiencia de arrendar los espacios y no expone cuentas inactivas ni arrendatarios |
+| Guardar URL pública y ruta interna de la foto por separado | Exponer la ruta de almacenamiento | La ruta permite borrar el archivo sin divulgar datos internos |
+
+#### Archivos principales
+- `rentsmart-back/src/users/`, `rentsmart-back/prisma/schema.prisma` y su migración.
+- `rentsmart-front/src/features/users/`, `rentsmart-front/src/routes.tsx` y el detalle del catálogo.
+- `docs/arquitectura.md`.
+
+#### Cómo probarlo
+- Iniciar sesión, editar los datos en `/profile` y subir o quitar una foto.
+- Abrir el detalle de un espacio y visitar el perfil público del anfitrión.
+- Ejecutar build, lint y tests en las carpetas `rentsmart-back` y `rentsmart-front`.
+
+#### Estado de verificación
+- Build: ✅ back y front.
+- Lint: ✅ back y front.
+- Tests de CU-06: ✅ backend unitario (5), backend e2e (4) y frontend (3). La migración está aplicada en las bases configuradas.
+
+#### Pendientes y bloqueos
+- No se hizo commit ni push.
+
+#### Para el resto del equipo
+- El perfil público no expone correo ni teléfono; las reseñas se agregan por propietario de espacio.
+
+---
