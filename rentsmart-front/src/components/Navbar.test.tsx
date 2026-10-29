@@ -73,6 +73,7 @@ describe('Navbar', () => {
     const nav = mainNav()
 
     expect(within(nav).getByRole('link', { name: 'Mis espacios' })).toHaveAttribute('href', '/owner/spaces')
+    expect(within(nav).getByRole('link', { name: 'Mi perfil' })).toHaveAttribute('href', '/profile')
     expect(within(nav).getByRole('link', { name: 'Favoritos' })).toHaveAttribute('href', '/favorites')
     expect(within(nav).getByRole('button', { name: 'Salir' })).toBeInTheDocument()
     expect(within(nav).queryByRole('link', { name: 'Ingresar' })).toBeNull()
