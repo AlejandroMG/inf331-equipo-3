@@ -38,3 +38,8 @@ export function login(input: LoginInput): Promise<LoginResponse> {
 export function me(): Promise<PublicUser> {
   return http.get<PublicUser>('/auth/me')
 }
+
+/** Habilita el modo propietario de la cuenta actual. */
+export function enableHost(): Promise<PublicUser> {
+  return http.post<PublicUser>('/auth/host')
+}

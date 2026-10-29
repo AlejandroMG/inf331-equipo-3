@@ -447,6 +447,16 @@ export const handlers = [
   }),
 
   // CU-03: usuario de la sesión. El token "mock-admin-token" es un ADMIN; cualquier otro token, un USER.
+  http.post('*/api/auth/host', () =>
+    HttpResponse.json({
+      id: 'mock-user',
+      email: 'usuario@rentsmart.test',
+      name: 'Usuario de prueba',
+      role: 'USER',
+      isHost: true,
+      createdAt: '2026-10-01T00:00:00.000Z',
+    }),
+  ),
   http.get('*/api/auth/me', ({ request }) => {
     const authorization = request.headers.get('authorization')
     if (!authorization) {

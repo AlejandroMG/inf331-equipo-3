@@ -68,4 +68,15 @@ export class AuthController {
   me(@CurrentUser() user: AuthUser): Promise<PublicUserDto> {
     return this.authService.me(user.id);
   }
+
+  @Post('host')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Habilita el modo propietario de la cuenta' })
+  @ApiOkResponse({ type: PublicUserDto })
+  @ApiUnauthorizedResponse({ description: 'Sin sesión o token inválido' })
+  enableHost(@CurrentUser() user: AuthUser): Promise<PublicUserDto> {
+    return this.authService.enableHost(user.id);
+  }
 }
