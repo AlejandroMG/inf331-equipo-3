@@ -20,7 +20,9 @@ import { BookingCheckoutDto, BookingDto, BookingsPageDto } from './dto/booking.d
 import { CancelBookingDto } from './dto/cancel-booking.dto';
 import { CreateBookingDto } from './dto/create-booking.dto';
 import { PageQueryDto } from './dto/page-query.dto';
+import { overlapAsConflict } from './overlap-error';
 import { bookingAmounts, priceFor } from './pricing';
+import { lockSpaceForBooking } from './space-booking-lock';
 
 /** Cuánto retiene el horario una reserva `PENDING` mientras se paga (P-06). */
 export const HOLD_MINUTES = 30;
@@ -63,10 +65,13 @@ export class BookingsService {
    * - Los montos los calcula el servidor (`bookingAmounts`); el cliente nunca los manda.
    * - `now` es la hora actual; se recibe para poder probar con un reloj fijo.
    *
-   * **Concurrencia (RE-03, #40):** la revisión de `isAvailable` corre en la transacción, pero con el aislamiento
-   * por defecto (read committed) dos solicitudes simultáneas por el mismo horario pueden pasarla las dos. La
-   * restricción `booking_no_overlap` impide que se inserten ambas, pero hoy la segunda recibe el error de la base
-   * (un 500), no un 409. Traducir ese error a 409 y probar dos solicitudes simultáneas queda para RE-03.
+   * **Reservas simultáneas (RE-03):** tres capas. Después de validar el espacio, `lockSpaceForBooking` pone en fila
+   * las reservas del mismo espacio hasta el COMMIT, así la segunda revisa `isAvailable` cuando la primera ya está
+   * guardada y recibe el 409 de arriba (sin el lock, con read committed pasaban las dos y la base podía abortar una
+   * con un deadlock). Si aun así llega a la base una reserva traslapada, `booking_no_overlap` la rechaza y
+   * `overlapAsConflict` lo traduce a 409 («Alguien acaba de reservar ese horario»); se atrapa afuera de la
+   * transacción completa, que ya quedó abortada. El lock dura hasta el COMMIT, que incluye la llamada al checkout:
+   * la segunda espera a que termine (como máximo `CREATE_TX_TIMEOUT_MS`).
    */
   async create(userId: string, dto: CreateBookingDto, now: Date = new Date()): Promise<BookingCheckoutDto> {
     const startAt = new Date(dto.startAt);
@@ -93,6 +98,8 @@ export class BookingsService {
           );
         }
 
+        // RE-03: pone en fila las reservas de este espacio hasta el COMMIT (ver lockSpaceForBooking).
+        await lockSpaceForBooking(tx, space.id);
         await this.expiry.expireStalePending(tx, now, space.id);
         const free = await this.availability.isAvailable(space.id, startAt, endAt, { tx, now, unit: dto.unit });
         if (!free) {
@@ -124,7 +131,7 @@ export class BookingsService {
         return { bookingId: booking.id, checkoutUrl: session.url };
       },
       { timeout: CREATE_TX_TIMEOUT_MS },
-    );
+    ).catch(overlapAsConflict);
   }
 
   /** Mis reservas como arrendatario, de cualquier estado, las creadas más recientemente primero. */
