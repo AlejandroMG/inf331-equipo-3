@@ -9,6 +9,8 @@ import { BookingStateService } from './booking-state.service';
 import { BOOKING_VIEW } from './booking-view';
 import { BookingsService } from './bookings.service';
 import { CreateBookingDto } from './dto/create-booking.dto';
+import { OVERLAP_MESSAGE } from './overlap-error';
+import { overlapViolation } from './overlap-error.fixture';
 
 const NOW = new Date('2026-10-10T12:00:00.000Z');
 const HOUR = 3_600_000;
@@ -242,6 +244,7 @@ describe('BookingsService (RE-02)', () => {
   let service: BookingsService;
   // `tx` es el cliente de la transacción; `prisma` el de afuera. Se distinguen para comprobar que todo pasa en `tx`.
   const tx = {
+    $executeRaw: jest.fn(),
     space: { findUnique: jest.fn() },
     booking: { create: jest.fn(), update: jest.fn() },
   };
@@ -427,6 +430,66 @@ describe('BookingsService (RE-02)', () => {
       await expect(service.create('renter', HOURLY, CLOCK)).rejects.toThrow(ConflictException);
       expect(tx.booking.create).not.toHaveBeenCalled();
       expect(checkout.createSession).not.toHaveBeenCalled();
+    });
+
+    describe('reservas simultáneas (RE-03)', () => {
+      it('toma el lock del espacio en la transacción, con el id como parámetro, antes de expirar y revisar', async () => {
+        const calls: string[] = [];
+        tx.$executeRaw.mockImplementation(() => {
+          calls.push('lock');
+          return Promise.resolve(1);
+        });
+        expiry.expireStalePending.mockImplementation(() => {
+          calls.push('expire');
+          return Promise.resolve({ changed: 0, skipped: 0, failed: 0 });
+        });
+        availability.isAvailable.mockImplementation(() => {
+          calls.push('isAvailable');
+          return Promise.resolve(true);
+        });
+
+        await service.create('renter', HOURLY, CLOCK);
+
+        expect(calls).toEqual(['lock', 'expire', 'isAvailable']);
+        expect(tx.$executeRaw).toHaveBeenCalledTimes(1);
+        const [sql, ...values] = tx.$executeRaw.mock.calls[0] as [TemplateStringsArray, ...unknown[]];
+        expect(sql.join('$')).toBe('SELECT pg_advisory_xact_lock(hashtextextended($, 0))');
+        // El id va como parámetro de la consulta, nunca dentro del texto SQL.
+        expect(values).toEqual(['s1']);
+      });
+
+      it('no toma el lock si el espacio no existe, es del que reserva o no tiene precio en esa unidad', async () => {
+        tx.space.findUnique.mockResolvedValueOnce(null);
+        await expect(service.create('renter', HOURLY, CLOCK)).rejects.toThrow(NotFoundException);
+        await expect(service.create('owner', HOURLY, CLOCK)).rejects.toThrow(ForbiddenException);
+        tx.space.findUnique.mockResolvedValueOnce({ ...SPACE, pricePerHour: null });
+        await expect(service.create('renter', HOURLY, CLOCK)).rejects.toThrow(BadRequestException);
+
+        expect(tx.$executeRaw).not.toHaveBeenCalled();
+      });
+
+      it('si booking_no_overlap rechaza el INSERT (otra solicitud ganó la carrera), responde 409 sin pedir el checkout', async () => {
+        tx.booking.create.mockRejectedValue(overlapViolation());
+
+        const error = await service.create('renter', HOURLY, CLOCK).catch((e: unknown) => e);
+
+        expect(error).toBeInstanceOf(ConflictException);
+        expect((error as Error).message).toBe(OVERLAP_MESSAGE);
+        expect(checkout.createSession).not.toHaveBeenCalled();
+      });
+
+      it('traduce la violación aunque salga de la transacción completa y no del callback', async () => {
+        prisma.$transaction.mockRejectedValue(overlapViolation());
+
+        await expect(service.create('renter', HOURLY, CLOCK)).rejects.toThrow(ConflictException);
+      });
+
+      it('deja pasar tal cual cualquier otro error de la base', async () => {
+        const other = overlapViolation({ message: 'violates exclusion constraint "otra_restriccion"' });
+        tx.booking.create.mockRejectedValue(other);
+
+        await expect(service.create('renter', HOURLY, CLOCK)).rejects.toBe(other);
+      });
     });
 
     it('si el checkout falla, el error sale desde dentro del callback de la transacción', async () => {

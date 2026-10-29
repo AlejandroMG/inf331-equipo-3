@@ -202,14 +202,14 @@ Hasta que A entregue el login (CU-03), los endpoints protegidos usan `DevAuthGua
 
 ### Disponibilidad, reservas y pagos (F-05)
 
-Módulos `availability`, `bookings` y `payments` (C). Las rutas, los DTOs y la validación de entrada de todos existen y están en Swagger. **Ya están implementados el horario semanal (DI-01), la disponibilidad (DI-02), reservar y consultar reservas (RE-02) y cancelar (RE-05);** el resto es todavía solo el contrato y sus servicios responden `501` hasta que entre la historia de cada uno. El front trabaja mientras tanto contra los mocks de MSW (`src/mocks/bookings-handlers.ts`), que tienen las mismas formas y códigos. Los campos de cada DTO están en `/docs`; aquí va lo que Swagger no cuenta.
+Módulos `availability`, `bookings` y `payments` (C). Las rutas, los DTOs y la validación de entrada de todos existen y están en Swagger. **Ya están implementados el horario semanal (DI-01), la disponibilidad (DI-02), reservar y consultar reservas (RE-02), evitar reservas cruzadas (RE-03) y cancelar (RE-05);** el resto es todavía solo el contrato y sus servicios responden `501` hasta que entre la historia de cada uno. El front trabaja mientras tanto contra los mocks de MSW (`src/mocks/bookings-handlers.ts`), que tienen las mismas formas y códigos. Los campos de cada DTO están en `/docs`; aquí va lo que Swagger no cuenta.
 
 | Endpoint | Sesión | Qué hace | Historia |
 |---|---|---|---|
 | `GET /api/spaces/:id/availability?from=&to=` | No | Bloques libres de una hora por cada día pedido: `{ spaceId, timeZone, days: [{ date, slots: [{ startAt, endAt }], fullDay }] }`. 400 si falta una fecha, no es `AAAA-MM-DD`, no existe (`2026-02-30`), `from` es posterior a `to` o se piden más de 31 días; 404 si el espacio no existe o no está activo | DI-02 |
 | `GET /api/spaces/:id/schedule` | Sí, el dueño | El horario semanal de un espacio propio, también de un borrador: `{ rules: [{ weekday, startTime, endTime }] }` | DI-01 |
 | `PUT /api/spaces/:id/schedule` | Sí, el dueño | Reemplaza el horario completo con `{ rules }` y lo devuelve ordenado. 400 si un día u hora no vale, el fin no es posterior al inicio o dos rangos del mismo día se traslapan; 409 con `missing: ["schedule"]` si dejaría sin horario a un espacio publicado | DI-01 |
-| `POST /api/bookings` | Sí | `{ spaceId, startAt, endAt, unit }` → `201 { bookingId, checkoutUrl }`. Crea la reserva `PENDING` (retiene el horario 30 min) y entrega el enlace de pago (Stripe Checkout desde PA-01; mientras tanto, la página de la reserva). 400 si las fechas no valen, el inicio ya pasó, el rango supera 31 días, el total supera el máximo que cabe en la base (2 147 483 647 CLP) o el espacio no se arrienda en esa unidad; 403 si el espacio es de quien reserva; 404 si el espacio no existe o no está activo; 409 si el horario está fuera del horario semanal o ya está ocupado | RE-02, PA-01 |
+| `POST /api/bookings` | Sí | `{ spaceId, startAt, endAt, unit }` → `201 { bookingId, checkoutUrl }`. Crea la reserva `PENDING` (retiene el horario 30 min) y entrega el enlace de pago (Stripe Checkout desde PA-01; mientras tanto, la página de la reserva). 400 si las fechas no valen, el inicio ya pasó, el rango supera 31 días, el total supera el máximo que cabe en la base (2 147 483 647 CLP) o el espacio no se arrienda en esa unidad; 403 si el espacio es de quien reserva; 404 si el espacio no existe o no está activo; 409 si el horario está fuera del horario semanal o ya está ocupado, también si otra solicitud lo tomó al mismo tiempo (RE-03) | RE-02, RE-03, PA-01 |
 | `GET /api/bookings/me?page=&pageSize=` | Sí | Mis reservas como arrendatario, de cualquier estado, las más recientes primero: `{ items, total, page, pageSize }`. `page` ≥ 1, `pageSize` de 1 a 50 (20 por defecto) | RE-02 |
 | `GET /api/bookings/:id` | Sí, el arrendatario | Una reserva: `{ id, status, unit, startAt, endAt, subtotal, fee, total, expiresAt, createdAt, space }`. 403 si es de otro usuario | RE-02 |
 | `POST /api/bookings/:id/cancel` | Sí, el arrendatario o el dueño del espacio | `{ reason }` (de 5 a 500 caracteres) → la reserva ya cancelada. Se cancela desde `PENDING` o `CONFIRMED`. 400 si falta el motivo o su largo no vale, 403 si la reserva no es tuya ni de un espacio tuyo, 404 si no existe, 409 desde cualquier otro estado, si la `PENDING` ya venció (queda `EXPIRED`) o si el horario de la `CONFIRMED` ya terminó (`endAt` pasado) | RE-05 |
@@ -254,13 +254,13 @@ Módulos `availability`, `bookings` y `payments` (C). Las rutas, los DTOs y la v
 - **Reservar, implementado (RE-02):** `BookingsService.create(userId, dto, now?)` hace todo en una sola `prisma.$transaction` (con un tiempo máximo de 15 s, para que quepa la llamada a Stripe de PA-01):
   1. 400 si `endAt` no es posterior a `startAt`, si el rango supera 31 días (`MAX_RANGE_MS`, el mismo tope de la disponibilidad) o si el inicio ya pasó (`startAt <= now`: un bloque ya pasó desde que empieza, como en DI-02). Esto se revisa antes de abrir la transacción.
   2. Lee el espacio: 404 si no existe o no está `ACTIVE`; 403 si es de quien reserva; 400 «Este espacio no se arrienda por hora/día» si no tiene precio en esa unidad.
-  3. `expireStalePending(tx, now, spaceId)` y luego `isAvailable(..., { tx, now, unit })`; si es falso, 409.
+  3. Toma el lock del espacio (`lockSpaceForBooking`, RE-03), luego `expireStalePending(tx, now, spaceId)` y `isAvailable(..., { tx, now, unit })`; si es falso, 409.
   4. Calcula los montos con la función pura `bookingAmounts` (`src/bookings/pricing.ts`, [P-13](decisiones.md#p-13--comisión-del-10--sumada-al-arrendatario)): `HOUR` cobra `pricePerHour × horas`, `DAY` cobra `pricePerDay`, `fee = Math.round(subtotal × 10 / 100)`.
   5. 400 si el `total` supera el máximo de un `Int` de Postgres (2 147 483 647), antes de insertar. Stripe probablemente tiene un tope menor; se confirma en PA-01.
   6. Crea la reserva `PENDING` con `expiresAt = now + 30 min` y su evento inicial (`BookingStateService.recordCreation`).
   7. Pide a dónde ir a pagar al **puerto de checkout** y, si devuelve un `sessionId`, lo guarda en `stripeCheckoutSessionId`.
   - **Puerto de checkout:** la interfaz `CheckoutGateway` (`src/payments/checkout-gateway.ts`, token `CHECKOUT_GATEWAY`) con `createSession(booking): Promise<{ url, sessionId? }>`. La registra `CheckoutModule` (aparte de `PaymentsModule`, para que el webhook de PA-02 pueda importar `BookingsModule` sin un ciclo). La implementación de RE-02, `PendingCheckoutGateway`, **no llama a Stripe**: devuelve `${FRONTEND_URL}/bookings/<id>`, la página de la reserva en el front. PA-01 (#45) la reemplaza por Stripe Checkout en `CheckoutModule` sin tocar `BookingsService`. Se llama dentro de la transacción: si falla, no queda una reserva reteniendo el horario sin forma de pagarla (lo prueba un e2e con un gateway que falla). El caso inverso, una sesión de Stripe creada cuyo COMMIT después falla, deja una sesión sin reserva: el webhook de PA-02 debe tolerar un evento de una reserva que no existe.
-  - **Concurrencia, pendiente de RE-03 (#40):** con read committed, dos solicitudes simultáneas por el mismo horario pueden pasar las dos `isAvailable`. `booking_no_overlap` impide que se inserten ambas, pero hoy la segunda recibe un 500 en vez de un 409. Traducir ese error y probarlo con dos solicitudes simultáneas es RE-03.
+  - **Reservas simultáneas (RE-03):** el lock del espacio pone en fila dos solicitudes simultáneas por el mismo espacio, así la segunda ve la reserva de la primera en `isAvailable` y recibe el 409. Si aun así `booking_no_overlap` rechaza un `INSERT`, la API responde 409 «Alguien acaba de reservar ese horario; elige otro». El lock dura hasta el COMMIT, que incluye la llamada al checkout: con Stripe (PA-01), la segunda espera esa llamada, con un máximo de 15 s. Ver [Cómo se evitan reservas cruzadas](#cómo-se-evitan-reservas-cruzadas).
   - `findMine` ordena por `createdAt` y luego por `id` (descendentes), así las páginas no se cruzan. `findOne` responde 404 si no existe y 403 si no es del arrendatario (tampoco la ve el dueño del espacio: él usa `GET /api/owner/bookings`).
   - **Front:** `BookingWidget` (`src/features/bookings/`) va en la caja «Reservar» del detalle del espacio. Pide la disponibilidad de los próximos 14 días, deja elegir por hora o por día según los precios, el día y bloques seguidos, muestra el desglose y, al reservar, va a `checkoutUrl`: si es del mismo origen o su ruta es `/bookings/<id>`, navega dentro de la app a `paths.booking(bookingId)` (así no depende de que `FRONTEND_URL` sea exactamente el origen del front); si no, cambia de página (Stripe). Sin sesión lleva al login. La página `/bookings/:id` (`BookingPage`) muestra el estado, el horario, el desglose y cuánto queda de la retención.
 
@@ -435,7 +435,7 @@ sequenceDiagram
     participant S as Stripe
     Arr->>F: Elige espacio y horario
     F->>A: POST /api/bookings
-    A->>DB: Transacción: expira pendientes vencidas, valida horario, crea Booking PENDING (expiresAt = ahora + 30 min)
+    A->>DB: Transacción: bloquea el espacio (lock), expira pendientes vencidas, valida horario, crea Booking PENDING (expiresAt = ahora + 30 min)
     A->>S: Crea Checkout Session (CLP, success_url = /bookings/:id)
     Note over A,S: PA-01 (#45): Stripe exige expires_at ≥ creación + 30 min, así que no puede ser igual a expiresAt#59; se decide en PA-01
     A-->>F: { bookingId, checkoutUrl }
@@ -450,8 +450,15 @@ sequenceDiagram
 
 ### Cómo se evitan reservas cruzadas
 
-1. **En el servicio:** `AvailabilityService.isAvailable(spaceId, startAt, endAt, { tx, unit })` revisa el estado del espacio, el horario semanal y las reservas activas antes de crear la reserva, dentro de la misma transacción ([detalle](#disponibilidad-reservas-y-pagos-f-05)).
-2. **En la base de datos:** una restricción de exclusión impide que dos reservas activas del mismo espacio se traslapen, aunque lleguen dos solicitudes al mismo tiempo. Prisma no la genera, así que va en SQL dentro de una migración:
+Hay tres capas, todas dentro de la transacción de `BookingsService.create` (RE-02, RE-03):
+
+1. **Un lock por espacio (RE-03).** Después de validar el espacio (404, 403 y 400) y antes de `expireStalePending`, `lockSpaceForBooking(tx, spaceId)` (`src/bookings/space-booking-lock.ts`) toma un advisory lock de transacción: `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, con el id como parámetro. Dos reservas del mismo espacio quedan en fila hasta el COMMIT o el ROLLBACK de la primera; las de espacios distintos no se esperan.
+   - **Evita la carrera.** Con read committed, dos transacciones simultáneas no ven la reserva que la otra todavía no confirma, así que sin el lock las dos pasaban `isAvailable`. Con el lock, la segunda revisa cuando la primera ya está guardada y recibe el 409 de la disponibilidad.
+   - **Evita el deadlock de la restricción de exclusión.** Dos `INSERT` simultáneos contra `booking_no_overlap` no siempre terminan en una violación (23P01): Postgres puede abortar uno con un deadlock (40P01, ver «Exclusion Constraints» en `execIndexing.c`). El adapter lo traduce a `P2034` (`TransactionWriteConflict`) y sería un 500. Con el lock nunca hay dos `INSERT` del mismo espacio a la vez.
+   - **Advisory lock y no `SELECT … FOR UPDATE` sobre `Space`:** no bloquea la fila del espacio, que editan otros módulos (B, por ejemplo `PhotosService`), y solo compite con otras reservas del mismo espacio.
+   - **Para PA-01 ([#45](https://github.com/AlejandroMG/inf331-equipo-3/issues/45)):** el lock y el `INSERT` se mantienen hasta el COMMIT, y el COMMIT llega después de la llamada a Stripe para crear la sesión de Checkout. Mientras esa llamada dura, otra reserva del mismo espacio espera, con un máximo de 15 s (`CREATE_TX_TIMEOUT_MS`). Si Stripe se demora, el perdedor tarda en recibir su 409.
+2. **En el servicio:** `AvailabilityService.isAvailable(spaceId, startAt, endAt, { tx, unit })` revisa el estado del espacio, el horario semanal y las reservas activas antes de crear la reserva, dentro de la misma transacción ([detalle](#disponibilidad-reservas-y-pagos-f-05)). Antes se pasan a `EXPIRED` las pendientes vencidas del espacio (ver abajo).
+3. **En la base de datos, traducida a 409:** una restricción de exclusión impide que dos reservas activas del mismo espacio se traslapen. Es la red de seguridad si las otras capas fallan, por ejemplo por un error en `isAvailable` o por otro código que inserte reservas sin el lock. Prisma no la genera, así que va en SQL dentro de una migración:
 
 ```sql
 CREATE EXTENSION IF NOT EXISTS btree_gist;
@@ -464,6 +471,17 @@ ALTER TABLE "Booking" ADD CONSTRAINT booking_no_overlap
 ```
 
 Como una `PENDING` vencida sigue contando para la restricción, antes de insertar se pasan a `EXPIRED`, en la misma transacción, las pendientes del espacio cuyo `expiresAt` ya pasó. Para eso está `BookingExpiryService.expireStalePending(tx, now, spaceId)` (RE-06); el barrido periódico también las expira, pero entre una pasada y otra puede quedar alguna.
+
+Si la restricción rechaza el `INSERT` (SQLSTATE `23P01`), `BookingsService.create` atrapa el error afuera de la transacción completa, que ya quedó abortada y se deshace entera, sin reserva ni evento. Lo hace con `overlapAsConflict` de `src/bookings/overlap-error.ts` y responde 409 «Alguien acaba de reservar ese horario; elige otro». Cualquier otro error sigue su curso (un 500).
+   - **Cómo llega el error** con Prisma 7 y `@prisma/adapter-pg`: es un `PrismaClientKnownRequestError` con el código genérico `P2039`. El error del driver va en `meta.driverAdapterError.cause`, con `kind: "postgres"`, `originalCode: "23P01"` y el mensaje `conflicting key value violates exclusion constraint "booking_no_overlap"`. El adapter no trae un campo con el nombre de la restricción, así que `isOverlapViolation(error)` lo reconoce por el SQLSTATE y por el nombre dentro del mensaje (que aparece aunque Postgres esté en otro idioma), no por el código de Prisma.
+
+**Pruebas** (`test/booking-overlap.e2e-spec.ts`):
+- Dos `POST /api/bookings` simultáneos de dos arrendatarios, en cinco horarios distintos y en un traslape parcial (10–12 contra 11–13): siempre pasa uno (201) y el otro recibe 409. Por el lock, ese 409 siempre lo da la revisión de la disponibilidad, no la restricción.
+- Dos casos simulan que `isAvailable` deja pasar, uno en secuencia y otro con dos solicitudes simultáneas, para probar siempre la tercera capa: la segunda espera el lock, llega al `INSERT` y recibe el 409 traducido, nunca un 500.
+- Otros insertan directo en la base para comprobar la restricción:
+  - bloquean `PENDING`, `PAID` y `CONFIRMED`;
+  - no bloquean `CANCELLED`, `EXPIRED` ni `FINISHED`;
+  - un rango contiguo no choca.
 
 ## Integraciones
 

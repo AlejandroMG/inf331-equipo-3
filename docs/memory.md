@@ -2996,3 +2996,98 @@ Implementar reservar (`POST /api/bookings`), mis reservas (`GET /api/bookings/me
 - Para fechas de e2e de reservas que no queden en el pasado, usar `bookingWeek` de `test/utils/booking-dates.ts`.
 
 ---
+
+### 2026-10-29 · C (gonzzza-lol) · RE-03: evitar reservas cruzadas
+
+**Issues:** #40 (RE-03)
+**Rama / PR:** `feature/RE-03-reservas-cruzadas` · sin PR todavía
+**Duración aproximada:** 3 h
+**Herramientas:** Claude Code
+
+#### Objetivo
+Que dos solicitudes simultáneas por el mismo horario terminen en un 201 y un 409, nunca en un 500. Para eso:
+- poner en fila las reservas de un mismo espacio;
+- traducir a 409 la violación de `booking_no_overlap`;
+- probar la carrera de verdad.
+
+#### Qué se hizo
+- **Back: lock por espacio.** Está en `lockSpaceForBooking(tx, spaceId)`, en `src/bookings/space-booking-lock.ts`. Es un advisory lock de transacción, `SELECT pg_advisory_xact_lock(hashtextextended(${spaceId}, 0))` con `$executeRaw` y el id como parámetro. `create` lo toma después de validar el espacio (404, 403 y 400) y antes de `expireStalePending`, así que la segunda solicitud espera el COMMIT de la primera y su `isAvailable` ya ve el horario tomado.
+- **Back: traducción del error.** `isOverlapViolation(error)` y `overlapAsConflict(error)` están en `src/bookings/overlap-error.ts`:
+  - `isOverlapViolation` reconoce solo la violación de `booking_no_overlap`;
+  - `overlapAsConflict` la convierte en `ConflictException` («Alguien acaba de reservar ese horario; elige otro», `OVERLAP_MESSAGE`) y relanza cualquier otro error.
+
+  `BookingsService.create` termina en `$transaction(...).catch(overlapAsConflict)`, o sea, atrapa el error afuera de la transacción completa. Es la red de seguridad si la base igual rechaza un `INSERT`.
+- **Back: cambios en `bookings.service.ts`.** Son pocos para que el merge con PA-01 quede limpio: dos imports, la llamada al lock, el `.catch` y el JSDoc.
+- **Back: fixture.** Se capturó la forma real del error en un e2e y se copió a `src/bookings/overlap-error.fixture.ts`. Ese archivo queda fuera del build (`"**/*.fixture.ts"` en el `exclude` de `tsconfig.build.json`; se comprobó que `dist/` ya no lo trae) y de la cobertura (`!**/*.fixture.ts` en `collectCoverageFrom` de `jest.config.ts`).
+- **Back: unitarios.** `overlap-error.spec.ts` tiene 15 casos. En `bookings.service.spec.ts` hay 5 casos nuevos:
+  - el lock se toma con el id como parámetro, antes de `expireStalePending` y de `isAvailable`;
+  - no se toma si el espacio da 404, 403 o 400;
+  - el error del `INSERT` da 409 sin pedir el checkout;
+  - el error que sale de la transacción completa también da 409;
+  - cualquier otro error pasa tal cual.
+- **Back: e2e nuevo.** `test/booking-overlap.e2e-spec.ts` tiene 12 casos:
+  - **Restricción, directo en la base:** dos `CONFIRMED` traslapadas fallan y `isOverlapViolation` reconoce el error real; `PENDING`, `PAID` y `CONFIRMED` bloquean; `CANCELLED`, `EXPIRED` y `FINISHED` no bloquean en ningún sentido; un rango contiguo o el mismo horario en otro espacio no chocan.
+  - **Con `isAvailable` espiado para que deje pasar:** se prueba en secuencia y con dos solicitudes simultáneas. La segunda espera el lock, llega al `INSERT` y recibe el 409 con `OVERLAP_MESSAGE`, sin reserva ni evento de más.
+  - **Carreras reales:** dos `POST` simultáneos (`Promise.all`) de dos arrendatarios en 5 horarios del mismo espacio, más un traslape parcial de 10–12 contra 11–13. Siempre hay un 201 y un 409, y el 409 es siempre el de la disponibilidad, porque el lock las pone en fila. Queda una sola reserva retenida en el rango.
+- **Swagger:** el texto del 409 de `POST /api/bookings` aclara que también aplica si otra solicitud tomó el horario al mismo tiempo. El contrato no cambia.
+- **Docs:** `arquitectura.md` ya no lista el riesgo como pendiente.
+  - «Cómo se evitan reservas cruzadas» describe las tres capas: el lock por espacio, `isAvailable` y la restricción traducida a 409.
+  - Explica que el lock evita la carrera y el deadlock de la restricción de exclusión.
+  - Incluye la forma del error, las pruebas y la nota para PA-01.
+  - También se actualizaron los pasos de RE-02, la tabla de endpoints, el diagrama de pago y la lista de historias implementadas.
+
+#### Decisiones y por qué
+| Decisión | Alternativas consideradas | Por qué se eligió |
+|---|---|---|
+| Advisory lock de transacción por espacio, en `create` | Solo la restricción traducida a 409; `SELECT … FOR UPDATE` sobre `Space`; aislamiento serializable | Dos `INSERT` simultáneos contra una restricción de exclusión pueden terminar en deadlock (40P01, ver «Exclusion Constraints» en `execIndexing.c`). El adapter lo entrega como `P2034` y sería un 500. `FOR UPDATE` bloquearía la fila del espacio que edita B (por ejemplo `PhotosService`). Serializable obligaría a reintentar. El lock solo compite con otras reservas del mismo espacio |
+| El lock va después de validar el espacio | Tomarlo al inicio de la transacción | Un espacio que no existe, que es del que reserva o que no tiene precio no hace esperar a nadie, y el lock queda justo antes de lo que protege: expirar, revisar e insertar |
+| Reconocer el error por el SQLSTATE `23P01` y el nombre de la restricción dentro del mensaje, como palabra completa | Por el código de Prisma (`P2039`); por un campo `constraint` | Con Prisma 7 y `@prisma/adapter-pg`, el adapter no traduce 23P01: lo deja como `kind: "postgres"`, sin campo de restricción, y `P2039` es genérico para cualquier error de la base. El SQLSTATE no depende del idioma de Postgres y el nombre aparece en el mensaje en cualquier idioma |
+| Mantener la restricción y `overlapAsConflict` aunque exista el lock | Quitar la traducción | Son la red de seguridad: un error en `isAvailable` u otro código que inserte reservas sin el lock no debe dar un 500 ni dejar dos reservas |
+| Un mensaje propio para el 409 de la base, distinto del de `isAvailable` | Reusar el mismo texto | Dice lo que pasó y permite comprobar en los e2e qué capa rechazó |
+| `.catch(overlapAsConflict)` sobre la promesa de `$transaction` | Un `try/catch` dentro del callback; reindentar `create` dentro de un `try` | Al fallar el `INSERT`, la transacción ya está abortada, así que solo sirve atraparlo afuera. Un `.catch` de una línea no reindenta el bloque que también toca PA-01 |
+| El fixture en `src/bookings/overlap-error.fixture.ts`, excluido del build y de la cobertura | Dentro de un `*.spec.ts`; en `test/` | Lo usan dos specs. Importar un spec desde otro correría sus tests dos veces, y `src/` no importa desde `test/` |
+
+#### Archivos principales
+- `rentsmart-back/src/bookings/space-booking-lock.ts` (nuevo): `lockSpaceForBooking`.
+- `rentsmart-back/src/bookings/overlap-error.ts` (nuevo): `OVERLAP_CONSTRAINT`, `OVERLAP_MESSAGE`, `isOverlapViolation` y `overlapAsConflict`.
+- `rentsmart-back/src/bookings/overlap-error.fixture.ts` y `overlap-error.spec.ts` (nuevos).
+- `rentsmart-back/src/bookings/bookings.service.ts`: el lock, el `.catch(overlapAsConflict)` en `create` y su JSDoc.
+- `rentsmart-back/src/bookings/bookings.service.spec.ts`: el bloque «reservas simultáneas (RE-03)» y `$executeRaw` en el doble de `tx`.
+- `rentsmart-back/src/bookings/bookings.controller.ts`: el texto del 409 en Swagger.
+- `rentsmart-back/tsconfig.build.json` y `rentsmart-back/jest.config.ts`: excluyen `*.fixture.ts`.
+- `rentsmart-back/test/booking-overlap.e2e-spec.ts` (nuevo).
+- `docs/arquitectura.md`.
+
+#### Cómo probarlo
+- Back: `npm test`.
+- e2e con una base propia:
+  1. `docker compose exec db-test createdb -U testuser testdb_re03`.
+  2. `DATABASE_URL=postgresql://testuser:testpassword@localhost:5433/testdb_re03 npx prisma migrate deploy`, y luego `npm run seed`.
+  3. `DATABASE_TEST_URL=postgresql://testuser:testpassword@localhost:5433/testdb_re03 npm run test:e2e`, o solo `-- booking-overlap`.
+- Qué detecta cada parte:
+  - Sin el `.catch(overlapAsConflict)`, los casos con `isAvailable` espiado responden 500 en vez de 409. Los casos de carreras reales no lo detectan con certeza, porque con el lock el 409 sale de la disponibilidad.
+  - Sin el lock, fallaron los casos de carreras reales: en la mayoría de las carreras el 409 venía de la restricción, no de la disponibilidad. En estas corridas no se reprodujo el deadlock.
+
+#### Estado de verificación
+- Build: ✅ en el back; `dist/` no incluye el fixture. El front no aplica, porque no se tocó.
+- Lint: ✅ en el back (oxlint, sin advertencias).
+- Tests: ✅ en el back:
+  - unitarias: 31 suites, 577 tests;
+  - e2e: 25 suites, 528 tests;
+  - `booking-overlap`: pasó 6 veces seguidas, 12 de 12 cada vez.
+
+#### Pendientes y bloqueos
+- El issue #40 hay que cerrarlo a mano al mergear a `develop` (T-05).
+- **PA-01 (#45):**
+  - El lock y el `INSERT` se mantienen hasta el COMMIT, y el COMMIT incluye la llamada a Stripe para crear la sesión de Checkout. Mientras esa llamada dura, otra reserva del mismo espacio espera, con un máximo de 15 s (`CREATE_TX_TIMEOUT_MS`). Si Stripe se demora, el perdedor tarda en recibir su 409.
+  - Al mergear hay que conservar en `create` la llamada a `lockSpaceForBooking`, antes de `expireStalePending`, y el `.catch(overlapAsConflict)` después de `{ timeout: ... }`.
+- **Otros flujos:** RE-04 (#41), PA-02 (#46) y cualquier otro código que inserte una reserva o cambie su rango o su estado a uno que bloquea debería tomar el mismo lock con `lockSpaceForBooking` y usar `isOverlapViolation` como respaldo.
+
+#### Para el resto del equipo
+- **B:** el lock es un advisory lock y no bloquea la fila de `Space`. Editar un espacio no espera a las reservas, ni las reservas esperan la edición.
+- Para reconocer en otro módulo el choque de reservas que detecta la base, usa `isOverlapViolation(error)` de `src/bookings/overlap-error.ts`, no `error.code === 'P2039'`: con el adapter de Postgres, ese código es genérico para cualquier error de la base.
+- Con `@prisma/adapter-pg`, los SQLSTATE que el adapter no traduce, como 23P01, llegan en `error.meta.driverAdapterError.cause`, con `originalCode` y `originalMessage`. Un deadlock (40P01) llega como `P2034`.
+- Un test que arme un doble de `tx` para `BookingsService.create` tiene que incluir `$executeRaw`.
+- No se tocaron `schema.prisma` ni las migraciones.
+
+---
