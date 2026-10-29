@@ -15,10 +15,12 @@ import { AvailabilityModule } from './availability/availability.module';
 import { BookingsModule } from './bookings/bookings.module';
 import { PaymentsModule } from './payments/payments.module';
 import { UsersModule } from './users/users.module';
+import { ThrottlerModule } from '@nestjs/throttler';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true, validate }),
+    ThrottlerModule.forRoot([{ ttl: 15 * 60 * 1000, limit: 10 }]),
     // Tareas periódicas: vencimientos automáticos de reservas (RE-06).
     ScheduleModule.forRoot(),
     PrismaModule,

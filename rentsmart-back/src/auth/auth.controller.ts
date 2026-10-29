@@ -7,6 +7,7 @@ import {
   Post,
   UseGuards,
 } from '@nestjs/common';
+import { ThrottlerGuard } from '@nestjs/throttler';
 import {
   ApiBadRequestResponse,
   ApiBearerAuth,
@@ -16,6 +17,7 @@ import {
   ApiOkResponse,
   ApiOperation,
   ApiTags,
+  ApiTooManyRequestsResponse,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
 import type { AuthUser } from '../common/auth/auth-user';
@@ -43,12 +45,16 @@ export class AuthController {
   }
 
   @Post('login')
+  @UseGuards(ThrottlerGuard)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Inicia sesión y devuelve un token JWT' })
   @ApiOkResponse({ type: LoginResponseDto })
   @ApiBadRequestResponse({ description: 'Datos inválidos' })
   @ApiUnauthorizedResponse({ description: 'Email o contraseña incorrectos' })
   @ApiForbiddenResponse({ description: 'La cuenta está suspendida' })
+  @ApiTooManyRequestsResponse({
+    description: 'Se excedió el límite de intentos; espera antes de reintentar',
+  })
   login(@Body() dto: LoginDto): Promise<LoginResponseDto> {
     return this.authService.login(dto);
   }
@@ -61,5 +67,16 @@ export class AuthController {
   @ApiUnauthorizedResponse({ description: 'Sin sesión o token inválido' })
   me(@CurrentUser() user: AuthUser): Promise<PublicUserDto> {
     return this.authService.me(user.id);
+  }
+
+  @Post('host')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Habilita el modo propietario de la cuenta' })
+  @ApiOkResponse({ type: PublicUserDto })
+  @ApiUnauthorizedResponse({ description: 'Sin sesión o token inválido' })
+  enableHost(@CurrentUser() user: AuthUser): Promise<PublicUserDto> {
+    return this.authService.enableHost(user.id);
   }
 }

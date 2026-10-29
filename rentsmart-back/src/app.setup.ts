@@ -1,7 +1,10 @@
 import { INestApplication, ValidationPipe } from '@nestjs/common';
+import type { CorsOptions } from '@nestjs/common/interfaces/external/cors-options.interface';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { ConfigService } from '@nestjs/config';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import type { NextFunction, Request, Response } from 'express';
+import helmet from 'helmet';
 import { UPLOADS_PREFIX, uploadsDir } from './storage/storage.service';
 
 const DEFAULT_FRONTEND_URL = 'http://localhost:5173';
@@ -11,14 +14,22 @@ const DEFAULT_FRONTEND_URL = 'http://localhost:5173';
  * para que probar la API sea probar la misma que corre en producción.
  */
 export function configureApp(app: INestApplication): void {
+  const secureHeaders = helmet();
+  const swaggerHeaders = helmet({ contentSecurityPolicy: false });
+  app.use((request: Request, response: Response, next: NextFunction) => {
+    const isSwagger = request.path === '/docs' || request.path.startsWith('/docs/');
+    (isSwagger ? swaggerHeaders : secureHeaders)(request, response, next);
+  });
   // Todo REST bajo /api; Swagger queda aparte, en /docs.
   app.setGlobalPrefix('api');
   // El front corre en otro origen (otro puerto en local): sin CORS el navegador bloquea las peticiones.
-  app.enableCors({
-    origin:
-      app.get(ConfigService).get<string>('FRONTEND_URL') ??
-      DEFAULT_FRONTEND_URL,
-  });
+  const frontendOrigin =
+    app.get(ConfigService).get<string>('FRONTEND_URL') ?? DEFAULT_FRONTEND_URL;
+  const corsOptions: CorsOptions = {
+    origin: (origin, callback) =>
+      callback(null, origin === frontendOrigin),
+  };
+  app.enableCors(corsOptions);
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,

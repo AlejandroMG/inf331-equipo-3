@@ -19,6 +19,7 @@ function linksFor(loggedIn: boolean, isAdmin: boolean): NavItem[] {
     { to: paths.home, label: 'Explorar', end: true },
     ...(loggedIn
       ? [
+          { to: paths.profile, label: 'Mi perfil', end: false },
           { to: paths.ownerSpaces, label: 'Mis espacios', end: false },
           { to: paths.favorites, label: 'Favoritos', end: false },
           { to: paths.profile, label: 'Mi perfil', end: false },

@@ -2683,6 +2683,34 @@ Abrir un PR (que no sea borrador) hacia `develop` y revisar que el job «Pedir r
 
 ---
 
+### 2026-10-25 · A (@AlejandroMG) · CU-05 seguridad base de la API
+
+**Issues:** #16 (CU-05)
+**Rama / PR:** `feature/CU-05-seguridad-api` · sin PR todavía
+### 2026-10-25 · A (@AlejandroMG) · CU-04 habilitar modo propietario desde el perfil
+
+**Issues:** #15 (CU-04)
+**Rama / PR:** `feature/CU-04-habilitar-propietario` · sin PR todavía
+**Duración aproximada:** 1 h
+**Herramientas:** Copilot
+
+#### Objetivo
+Completar la seguridad base de la API con cabeceras seguras, CORS estricto para el origen del frontend y protección contra intentos repetidos de inicio de sesión.
+
+#### Qué se hizo
+- Se añadió Helmet como middleware global; en `/docs` se conserva el resto de cabeceras pero se omite CSP, necesaria para que Swagger UI ejecute su inicializador inline.
+- Se endureció CORS para que solo emita permiso al origen configurado por `FRONTEND_URL`; los demás orígenes no reciben cabecera `Access-Control-Allow-Origin`.
+- Se configuró un máximo de 10 intentos de login por IP cada 15 minutos; el siguiente recibe HTTP 429.
+- Se conservaron las opciones del `ValidationPipe` global: transforma DTOs, elimina campos no declarados y rechaza campos extra.
+- Se documentaron las medidas y sus límites de escalado en `docs/arquitectura.md`.
+- Se añadieron pruebas e2e para el rate limit, cabeceras Helmet y CORS permitido/rechazado.
+Permitir que una persona habilite el modo propietario desde su perfil, manteniendo también la activación automática al publicar el primer espacio.
+
+#### Qué se hizo
+- Se agregó `POST /api/auth/host`, protegido por JWT, idempotente y con respuesta de usuario público.
+- Se agregó la pantalla autenticada `/profile`, enlazada desde la navegación, con el estado de propietario y la acción de habilitarlo.
+- Se añadió cobertura unitaria y e2e para la API, y pruebas de interfaz, navegación y ruta protegida.
+- Se documentó el contrato y la experiencia en `docs/arquitectura.md`.
 ### 2026-10-24 · C (gonzzza-lol) · RE-06 vencimientos automáticos
 
 **Issues:** #43
@@ -2866,6 +2894,62 @@ Implementar reservar (`POST /api/bookings`), mis reservas (`GET /api/bookings/me
 #### Decisiones y por qué
 | Decisión | Alternativas consideradas | Por qué se eligió |
 |---|---|---|
+| Rate limit de 10 intentos por IP en 15 minutos, solo para login | Límite global de peticiones | Mitiga intentos repetidos de credenciales sin limitar innecesariamente el uso de los demás endpoints |
+| Almacenamiento en memoria del throttler | Almacenamiento compartido externo | Es suficiente para la instancia actual; con varias instancias se debe configurar almacenamiento compartido |
+| CORS con callback que compara el `Origin` exacto | CORS con valor fijo de origen | La comparación evita que una respuesta a un origen ajeno anuncie accidentalmente el origen permitido |
+
+#### Archivos principales
+- `rentsmart-back/src/app.setup.ts`: Helmet, CORS y ValidationPipe.
+- `rentsmart-back/src/app.module.ts`: configuración del throttler.
+- `rentsmart-back/src/auth/auth.controller.ts`: throttling del endpoint de login.
+- `rentsmart-back/test/auth-login-rate-limit.e2e-spec.ts` y `test/auth-register.e2e-spec.ts`: pruebas e2e de seguridad.
+- `docs/arquitectura.md`: descripción de seguridad actualizada.
+- `rentsmart-back/package.json` y `package-lock.json`: dependencias `helmet` y `@nestjs/throttler`.
+
+#### Cómo probarlo
+- Backend: `npm run lint`, `npm run build`, `npm test -- --runInBand`.
+- E2E: con PostgreSQL de test y las variables `DATABASE_URL`, `DATABASE_TEST_URL` y `JWT_SECRET`, ejecutar `npm run test:e2e -- --runInBand`.
+- El e2e verifica 10 intentos permitidos y 429 en el intento 11, validación de datos, cabeceras Helmet y CORS permitido/rechazado.
+
+#### Estado de verificación
+- Build: ✅ backend
+- Lint: ✅ backend
+- Tests: ✅ 381 unitarios y 480 e2e; las pruebas de login, registro, validación, Helmet, CORS, Swagger y rate limit están incluidas.
+
+#### Pendientes y bloqueos
+- Abrir PR hacia `develop` y pedir revisión según la rotación.
+- Si la API pasa a varias instancias, cambiar el almacenamiento en memoria del throttler por uno compartido.
+
+#### Para el resto del equipo
+- `FRONTEND_URL` debe ser el origen exacto del navegador, incluyendo esquema y puerto si corresponde.
+- El límite de login es por IP, solo en memoria y por proceso; no es una defensa distribuida contra ataques a escala.
+| Mantener la habilitación automática al publicar y ofrecer además activación desde el perfil | Reemplazar la activación automática por un paso manual | CU-04 permite ambos caminos y P-02 ya define que publicar el primer espacio habilita al propietario |
+| Endpoint `POST /api/auth/host` repetible | `PATCH /api/auth/me` con un DTO de perfil | La acción solo habilita el modo; no permite modificar arbitrariamente el usuario y puede llamarse de forma segura más de una vez |
+
+#### Archivos principales
+- `rentsmart-back/src/auth/`: endpoint y servicio para habilitar propietario.
+- `rentsmart-back/test/auth-host.e2e-spec.ts`: prueba del endpoint con base de datos.
+- `rentsmart-front/src/features/auth/ProfilePage.tsx`: perfil y acción de habilitación.
+- `rentsmart-front/src/routes.tsx`, `components/Navbar.tsx`, `lib/paths.ts`: ruta y navegación.
+- `docs/arquitectura.md`: contrato actualizado.
+
+#### Cómo probarlo
+- Backend unitario: `npm test -- --runInBand src/auth/auth.service.spec.ts`.
+- Backend e2e: `npm run test:e2e -- --runInBand test/auth-host.e2e-spec.ts`, con PostgreSQL de test levantado y migrado.
+- Frontend: `npm test -- --run src/features/auth/ProfilePage.test.tsx src/routes.test.tsx src/components/Navbar.test.tsx`.
+- Build y lint en ambas aplicaciones.
+
+#### Estado de verificación
+- Build: ✅ backend y frontend
+- Lint: ✅ backend y frontend
+- Tests: ✅ 11 pruebas unitarias de AuthService, 668 del frontend y 41 e2e (`auth-host`, `publication`, `auth-me`) con PostgreSQL de test.
+
+#### Pendientes y bloqueos
+- Abrir PR hacia `develop` y pedir revisión según la rotación.
+
+#### Para el resto del equipo
+- La cuenta mantiene su rol `USER` o `ADMIN`; `isHost` indica el modo propietario y no reemplaza el control de roles.
+- La publicación del primer espacio sigue habilitando `isHost` dentro de la transacción que activa el espacio.
 | P-13: comisión del 10 % sumada al arrendatario ([decisiones.md](decisiones.md#p-13--comisión-del-10--sumada-al-arrendatario)) | Comisión a cargo del propietario; sin comisión | Aprobada por C; es lo que ya asumían el contrato y el mock |
 | `CheckoutModule` aparte de `PaymentsModule` | Registrar el gateway en `PaymentsModule` | El webhook de PA-02 va a necesitar `BookingsModule`; si `BookingsModule` importara `PaymentsModule` habría un ciclo |
 | Llamar al checkout dentro de la transacción de `create` (tiempo máximo de 15 s) | Llamarlo después del commit y expirar la reserva si falla | Si Stripe falla no queda una `PENDING` reteniendo el horario sin enlace de pago; el costo es mantener la transacción abierta durante la llamada |

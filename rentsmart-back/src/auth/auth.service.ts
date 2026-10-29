@@ -109,4 +109,13 @@ export class AuthService {
     if (!user) throw new UnauthorizedException('Inicia sesión para continuar.');
     return user;
   }
+
+  /** Habilita el modo propietario; repetir la solicitud es seguro. */
+  enableHost(userId: string): Promise<PublicUser> {
+    return this.prisma.user.update({
+      where: { id: userId },
+      data: { isHost: true },
+      select: publicUserSelect,
+    });
+  }
 }
