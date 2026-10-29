@@ -7,7 +7,7 @@ import { usePageTitle } from '../../lib/page-title'
 import { paths } from '../../lib/paths'
 import { FavoriteButton } from '../favorites/FavoriteButton'
 import { LazyLocationMap } from '../map/LazyMaps'
-import { BookingSlot } from './BookingSlot'
+import { BookingWidget } from '../bookings/BookingWidget'
 import { Gallery } from './Gallery'
 import { groupSchedule } from './schedule'
 import { useSpace } from './useSpace'
@@ -177,7 +177,7 @@ export function SpaceDetailPage() {
                   </span>
                 )}
               </div>
-              <BookingSlot />
+              <BookingWidget spaceId={space.id} pricePerHour={space.pricePerHour} pricePerDay={space.pricePerDay} />
               <p className="text-sm leading-relaxed text-muted">
                 Reserva inmediata: no necesitas esperar la aprobación del propietario. El horario queda retenido 30 minutos mientras pagas.
               </p>

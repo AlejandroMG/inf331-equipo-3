@@ -8,6 +8,8 @@ import {
   IsString,
   ValidateIf,
   Matches,
+  Max,
+  Min,
   MinLength,
   validateSync,
 } from 'class-validator';
@@ -69,6 +71,20 @@ class EnvironmentVariables {
     message: 'JWT_EXPIRES_IN debe ser un número seguido de s, m, h o d',
   })
   JWT_EXPIRES_IN: string;
+
+  // Vencimientos automáticos de reservas (RE-06). Encendidos salvo que valga "false"; los e2e los apagan.
+  @IsOptional()
+  @IsIn(['true', 'false'])
+  BOOKING_SWEEP_ENABLED: 'true' | 'false';
+
+  // Cada cuántos milisegundos corre el barrido. Si no se define, cada 60 000 (un minuto). El máximo es el de
+  // setInterval: sobre 2 147 483 647 ms Node lo cambia por 1 ms.
+  @IsOptional()
+  @IsInt()
+  @Min(1000, { message: 'BOOKING_SWEEP_INTERVAL_MS debe ser de al menos 1000 ms' })
+  @Max(2_147_483_647, { message: 'BOOKING_SWEEP_INTERVAL_MS debe ser de a lo más 2147483647 ms' })
+  @Type(() => Number)
+  BOOKING_SWEEP_INTERVAL_MS: number;
 }
 
 function validate(config: Record<string, unknown>) {

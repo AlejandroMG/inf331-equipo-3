@@ -2700,6 +2700,185 @@ Completar la seguridad base de la API con cabeceras seguras, CORS estricto para 
 - Se conservaron las opciones del `ValidationPipe` global: transforma DTOs, elimina campos no declarados y rechaza campos extra.
 - Se documentaron las medidas y sus límites de escalado en `docs/arquitectura.md`.
 - Se añadieron pruebas e2e para el rate limit, cabeceras Helmet y CORS permitido/rechazado.
+### 2026-10-24 · C (gonzzza-lol) · RE-06 vencimientos automáticos
+
+**Issues:** #43
+**Rama / PR:** `feature/RE-06-vencimientos` · sin PR todavía
+### 2026-10-24 · C (gonzzza-lol) · F-10 plan de pruebas v1 y smoke test con Playwright
+
+**Issues:** #10 (F-10); se diseña, sin implementar, el E2E de #64 (QA-01)
+**Rama / PR:** `feature/F-10-plan-de-pruebas-playwright` · sin PR todavía
+**Duración aproximada:** 2 h
+**Herramientas:** Claude Code
+
+#### Objetivo
+Que las reservas cambien solas de estado cuando vencen: una `CONFIRMED` cuyo `endAt` ya pasó queda `FINISHED`, y una `PENDING` cuyo `expiresAt` ya pasó (porque el webhook `checkout.session.expired` no llegó) queda `EXPIRED`. Además, dejar lista para RE-02 la función que expira las pendientes de un espacio dentro de su transacción.
+
+#### Qué se hizo
+- `src/bookings/booking-expiry.service.ts`: `BookingExpiryService` con `sweep(now, batchSize?)`, que lee las vencidas por lotes de 100 y cambia cada una en su propia transacción, y `expireStalePending(tx, now, spaceId?)`, que expira las pendientes vencidas dentro de la transacción de quien llama. Todo cambio pasa por `BookingStateService.transition` con `actorId: null` y un motivo que empieza con «Sistema:».
+- `src/bookings/booking-expiry.scheduler.ts`: `BookingExpiryScheduler` registra un intervalo en el `SchedulerRegistry` de `@nestjs/schedule` En `onModuleDestroy` lo quita y espera el barrido en curso, para que Prisma no se desconecte a mitad de uno. Variables nuevas `BOOKING_SWEEP_ENABLED` y `BOOKING_SWEEP_INTERVAL_MS` (de 1000 a 2 147 483 647, el máximo de `setInterval`), validadas en `env.validation.ts`.
+- `@nestjs/schedule@^12.0.2` instalado (aprobado). Funciona con Jest en ES Modules sin cambios, así que no hizo falta un temporizador propio.
+- `ScheduleModule.forRoot()` en `AppModule`. `BookingsModule` provee el servicio y la tarea, y exporta `BookingExpiryService`.
+- `test/utils/setup-env.ts` apaga la tarea en los e2e.
+- Pruebas: 22 unitarias del servicio (reloj fijo, límites, estados que no se tocan, lote con fallas, lotes, idempotencia y `expireStalePending` con un `tx` de mocks propios), 7 de la tarea (fake timers, aislados de `process.env`) y 7 de las variables nuevas. `test/booking-expiry.e2e-spec.ts` con 5 e2e.
+- Docs: tabla de transiciones y sección «Vencimientos automáticos (RE-06)» en `arquitectura.md`, el párrafo de reservas cruzadas, la tabla de variables y `.env.example`.
+- **Arreglo de RE-05 (#42, ya cerrado), aprobado por el usuario para ir en el PR de RE-06:** `BookingsService.cancel` respondía 200 con una `CONFIRMED` cuyo horario ya había terminado mientras el barrido no la pasaba a `FINISHED`, y si cancelaba el propietario, P-14 devolvía el total por una reserva ya usada. Ahora, si `endAt <= now`, responde 409 «La reserva ya terminó; no se puede cancelar» antes de calcular el reembolso, sin cambiar el estado ni dejar evento. Tests: 3 unitarios en `bookings.service.spec.ts` (terminó hace una hora, termina justo ahora y en curso) y 1 e2e en `booking-cancel.e2e-spec.ts`. Se actualizaron el 409 de Swagger en `bookings.controller.ts` y la sección de cancelación de `arquitectura.md`.
+Dejar escrito el plan de pruebas por nivel (unitarias, integración y E2E), configurar Playwright en el front con un smoke test que corra en el CI y cerrar el pendiente de que el CI corra también en los PR hacia `release/**`.
+
+#### Qué se hizo
+- `docs/plan-de-pruebas.md` (nuevo): principios, qué se prueba y qué no en cada nivel, dónde viven los archivos, cómo se corren, qué corre cada job del CI, conteo de archivos de test, dónde se ve la cobertura, la meta de cobertura pendiente de P-11 y el diseño del E2E del flujo completo para QA-01. Enlazado desde `docs/README.md`, `AGENTS.md`, `README.md` y `docs/flujo-de-trabajo.md`.
+- Playwright 1.64.1 (`@playwright/test`, devDependency) en `rentsmart-front/` con `playwright.config.ts`: solo Chromium; `webServer` levanta Vite en el puerto 5180 con `VITE_USE_MOCKS=true` y `VITE_API_URL=http://localhost:5180`, y reutiliza el servidor fuera del CI.
+- `e2e/smoke.spec.ts`: 3 tests con selectores accesibles. La página de inicio muestra el catálogo de los mocks (14 espacios, «Sala Alameda»); la página 2 muestra «Taller de cerámica»; una tarjeta abre el detalle de «Estudio Luz Norte».
+- Script `test:e2e` (`playwright test`) en `package.json`.
+- Vitest excluye `e2e/**` (si no, toma `smoke.spec.ts` por su nombre); `tsconfig.node.json` incluye `playwright.config.ts` y `e2e/` para que `tsc -b` los revise; ESLint ignora los reportes de Playwright; el `.gitignore` del front ignora `playwright-report/`, `test-results/` y `blob-report/`.
+- `ci.yml`: job nuevo «E2E (Playwright)», que instala Chromium con `--with-deps`, corre `npm run test:e2e` y sube el artefacto `playwright-report` si falla. `pull_request` ahora incluye `'release/**'`.
+- `ci.yml`: el paso de cobertura del back pasa `--coverageReporters=text --coverageReporters=lcov --coverageReporters=json-summary`. Al revisarlo para el plan se vio que Jest, con sus reporteros por defecto (clover, json, lcov, text), no genera `coverage/coverage-summary.json`, así que el paso «Publicar resumen de cobertura» siempre caía en la rama del `else` y nunca mostraba la tabla.
+### 2026-10-23 · C (gonzzza-lol) · Corregir la rotación de revisión en CONTRIBUTING
+
+**Issues:** No aplica (documentación del flujo de trabajo)
+**Rama / PR:** `feature/rotacion-revision-contributing` · sin PR todavía
+**Duración aproximada:** 0,5 h
+**Herramientas:** Claude Code
+
+#### Objetivo
+Que `CONTRIBUTING.md` describa la misma rotación de revisión que la tabla de `docs/flujo-de-trabajo.md` y que `assign-reviewer.yml`.
+
+#### Qué se hizo
+- `CONTRIBUTING.md` decía «A revisa a B, B revisa a C y C revisa a A», que es la rotación al revés. Ahora dice «B revisa a A, C revisa a B y A revisa a C» y enlaza a la tabla de rotación.
+
+#### Decisiones y por qué
+| Decisión | Alternativas consideradas | Por qué se eligió |
+|---|---|---|
+| El límite cuenta como vencido (`endAt <= now`, `expiresAt <= now`) | `<` estricto | El rango de una reserva es `[startAt, endAt)`, y RE-05 ya trata `expiresAt <= now` como vencida al cancelar |
+| Cada reserva en su propia transacción, y 409 o 404 cuentan como saltadas | Una transacción por lote | Si el webhook paga una reserva entre la búsqueda y el cambio, `transition` responde 409 y las demás siguen. Con una sola transacción, un error de base deshace el lote completo |
+| Avanzar por id (keyset) entre lotes | Volver a leer desde el principio | Una reserva que falla siempre volvería en cada lote y el barrido no terminaría |
+| `expireStalePending` propaga los errores inesperados | Atraparlos como en `sweep` | Después de un error de la base la transacción de quien llama ya está abortada; seguir solo esconde el problema |
+| Intervalo dinámico con `SchedulerRegistry.addInterval` | `@Interval(60000)` o `@Cron` | El decorador solo acepta una constante y el intervalo tenía que salir de la configuración |
+| Encendida por defecto, apagada solo con `false` | Apagada por defecto | Si en el despliegue se olvida la variable, la tarea igual corre. Los e2e la apagan siempre |
+| Los e2e barren con un reloj del año 2000 | Barrer con la hora real | `sweep` sin espacio toca toda la base; con fechas del 2000 solo alcanza los datos de ese archivo, aunque los demás e2e corran en paralelo |
+| Cancelar una `CONFIRMED` terminada responde 409 sin tocarla | Pasarla a `FINISHED` en ese momento, como RE-05 hace con una `PENDING` vencida | Lo aprobó el usuario así: responder 409 sin evento y dejar el cambio de estado al barrido |
+| Sin margen de gracia después de `expiresAt` | Esperar unos minutos más antes de expirar | P-06 fija la retención en 30 minutos; un margen cambiaría esa decisión (ver pendientes) |
+
+#### Archivos principales
+- `rentsmart-back/src/bookings/booking-expiry.service.ts` y `.spec.ts`: la lógica y sus unitarias.
+- `rentsmart-back/src/bookings/booking-expiry.scheduler.ts` y `.spec.ts`: la ejecución periódica.
+- `rentsmart-back/src/bookings/bookings.module.ts`, `src/app.module.ts`: registro de providers y de `ScheduleModule`.
+- `rentsmart-back/src/config/env.validation.ts` y `.spec.ts`: las dos variables nuevas.
+- `rentsmart-back/test/booking-expiry.e2e-spec.ts`: e2e contra la base de test.
+- `rentsmart-back/test/utils/setup-env.ts`: apaga la tarea en los e2e.
+- `.env.example`, `docs/arquitectura.md`.
+- Arreglo de RE-05: `rentsmart-back/src/bookings/bookings.service.ts`, su `.spec.ts`, `bookings.controller.ts` (Swagger) y `test/booking-cancel.e2e-spec.ts`.
+
+#### Cómo probarlo
+- `npm test -- booking-expiry` y `npm run test:e2e -- booking-expiry` en `rentsmart-back`.
+- A mano: `npm run start:dev` con `BOOKING_SWEEP_INTERVAL_MS=5000`, crear con Prisma Studio una `CONFIRMED` con `endAt` en el pasado y ver que a los 5 segundos queda `FINISHED`, con su `BookingEvent` y el log «Barrido: 1 finalizadas…».
+
+#### Estado de verificación
+- Build: ✅
+- Lint: ✅
+- Tests: ✅ 420 unitarias en 27 suites y 482 e2e en 23 suites
+
+#### Pendientes y bloqueos
+- PA-02 (#46): la sesión de Checkout no vence exactamente en `expiresAt`. Stripe exige que su `expires_at` quede al menos 30 minutos después de crearla, y se crea después que la reserva, así que vence un poco más tarde. Además, `checkout.session.completed` puede llegar atrasado. Por eso el barrido puede dejar `EXPIRED` una reserva que sí se pagó, y PA-02 tiene que manejar un `completed` que llega sobre una `EXPIRED` (`EXPIRED → PAID` no es válida). Quedó escrito en `arquitectura.md`. Un margen de gracia antes de expirar cambiaría P-06 y lo decide el usuario; no se agregó.
+- La búsqueda de `CONFIRMED` vencidas filtra por `status` y `endAt`, y no hay un índice `(status, endAt)` (el de `(status, expiresAt)` sí existe). Con pocos datos no importa; si crece, se le pide a A.
+- RE-05 (`BookingsService.cancel`) expira una pendiente vencida con su propio motivo («Venció el plazo de pago»). Se podría pasar a `EXPIRED_REASON` para que el historial diga lo mismo.
+
+#### Para el resto del equipo
+- **RE-02 (C):** antes de insertar la reserva, dentro de la misma transacción, llama a `bookingExpiry.expireStalePending(tx, now, dto.spaceId)` (inyecta `BookingExpiryService`, que está en el mismo módulo). Una pendiente vencida sigue contando para `booking_no_overlap`; el barrido periódico no basta porque entre una pasada y otra puede quedar alguna. Un error inesperado se propaga y deshace la transacción completa.
+- **A (despliegue, QA-03):** hay dos variables nuevas, las dos opcionales: `BOOKING_SWEEP_ENABLED` (por defecto encendida; `false` la apaga) y `BOOKING_SWEEP_INTERVAL_MS` (por defecto 60 000; de 1000 a 2 147 483 647). Si se levantan varias instancias del back, todas barren; es seguro, porque las transiciones van condicionadas al estado, pero basta con dejarla encendida en una.
+- Para probar algo que dependa de que una reserva venza, llama a `BookingExpiryService.sweep(now)` con la hora que necesites; no esperes al temporizador, que en los e2e está apagado.
+| Job aparte «E2E (Playwright)» | Agregar los pasos al job «Frontend (React)» | Corre en paralelo, su falla se ve por separado y no cambia el check obligatorio «Frontend (React)» del ruleset de `main` |
+| Smoke contra Vite con MSW | Contra el back real; contra `vite preview` | No necesita back ni BD en el CI. Con `vite preview` habría que hacer un build aparte con `VITE_USE_MOCKS=true`; el dev server es como el equipo ya usa los mocks |
+| Puerto fijo 5180 con `--strictPort` | 5173, el de `npm run dev` | Con `reuseExistingServer` en local, usar 5173 podría reutilizar un dev server sin mocks conectado al back real y dar falsos verdes o rojos |
+| `VITE_API_URL` al mismo origen en el `webServer` | Dejar el valor del `.env` (o el `http://localhost:3000` por defecto del CI) | Las variables del proceso ganan al `.env` en Vite; así las llamadas son del mismo origen y MSW las responde igual en local y en el CI |
+| Revisar `e2e/` con `tsconfig.node.json` | Un `tsconfig.e2e.json` aparte | Los tests de Playwright corren en Node, igual que `vite.config.ts`; menos archivos de configuración |
+| No fijar meta de cobertura | Proponer una cifra provisoria | P-11 sigue en espera del profesor; rige la definición de terminado |
+| Corregir los reporteros de cobertura en el CI | Dejarlo como pendiente | C es dueño del CI y el plan dice que el CI publica la tabla: sin el cambio, eso no era cierto |
+
+#### Archivos principales
+- `docs/plan-de-pruebas.md`: plan de pruebas v1 (nuevo).
+- `rentsmart-front/playwright.config.ts`, `rentsmart-front/e2e/smoke.spec.ts`: configuración de Playwright y smoke test (nuevos).
+- `rentsmart-front/package.json`, `package-lock.json`: `@playwright/test` y el script `test:e2e`.
+- `rentsmart-front/vite.config.ts`: `test.exclude` con `e2e/**`.
+- `rentsmart-front/tsconfig.node.json`, `rentsmart-front/eslint.config.js`, `rentsmart-front/.gitignore`: incluir y excluir los archivos de Playwright.
+- `.github/workflows/ci.yml`: job E2E, `release/**` en los PR y reporteros de cobertura.
+- `README.md`, `AGENTS.md`, `docs/README.md`, `docs/flujo-de-trabajo.md`: comando `npm run test:e2e` y enlaces al plan.
+
+#### Cómo probarlo
+```bash
+cd rentsmart-front
+npm ci
+npx playwright install chromium   # solo la primera vez
+npm run test:e2e                  # 3 tests en Chromium, sin back
+npx playwright show-report
+```
+En GitHub, el PR debería mostrar el check «E2E (Playwright)» además de los dos de siempre, y el resumen del job Backend debería traer la tabla «Cobertura del Backend».
+
+#### Estado de verificación
+- Build: ✅ (`npm run build` del front)
+- Lint: ✅ (`npm run lint` del front)
+- Tests: ✅ front: 665 tests en 50 archivos con Vitest; 3 tests de Playwright en Chromium (también con `CI=true`). `ci.yml` se validó con js-yaml. No se corrieron los e2e del back. Las unitarias del back se corrieron solo para revisar los archivos de cobertura, sin base de datos: 380 de 381 pasan; la que falla es `src/prisma/prisma.service.spec.ts`, que necesita PostgreSQL. Esa medición local dio 47,05 % de líneas, pero no es la cifra oficial, que es la del CI.
+
+#### Pendientes y bloqueos
+- Meta de cobertura: espera la respuesta del profesor (P-11, #78).
+- Cuando «E2E (Playwright)» lleve un tiempo estable, agregarlo a los checks obligatorios del ruleset de `main` (lo configura quien administra el repo).
+- QA-01 (#64): implementar el E2E del flujo completo según la sección del plan. Depende de PA-02 (#46).
+- Comprobar en el primer CI de este PR que la tabla de cobertura aparece en el resumen del job Backend.
+- La entrada de P-11 en `docs/decisiones.md` todavía dice que F-10 quedó para después del 9 de octubre; se puede actualizar cuando se resuelva P-11.
+
+#### Para el resto del equipo
+- B (@xReNatS): esta historia tocó archivos de la base del front: `vite.config.ts` (`test.exclude` con `e2e/**`), `package.json` (devDependency `@playwright/test` y script `test:e2e`), `.gitignore` (reportes de Playwright), además de `tsconfig.node.json` y `eslint.config.js`. No cambia nada de la app ni de los tests de Vitest.
+- El smoke depende de los textos del catálogo y de `src/mocks/catalog-data.ts` (nombres de espacios, 14 en total, 12 por página). Si cambian, hay que ajustar `e2e/smoke.spec.ts`.
+- Para correr Playwright en local hay que instalar Chromium una vez con `npx playwright install chromium`. Si el puerto 5180 está ocupado, la prueba no arranca (`--strictPort`).
+| Corregir CONTRIBUTING y no la tabla ni el workflow | Cambiar la tabla y el workflow para que calcen con CONTRIBUTING | La tabla, el workflow y los PR revisados hasta ahora (#112, #114, #121, #123, #124) siguen todos la misma rotación; solo la frase estaba al revés |
+| Rama `feature/…` para un cambio de documentación | `docs/…` o `fix/…` | GitFlow puro: todo lo que va a `develop` sale de `feature/`; el tipo del commit (`docs:`) dice qué es |
+
+#### Archivos principales
+- `CONTRIBUTING.md`: frase de la rotación de revisión.
+
+#### Cómo probarlo
+Comparar la frase con la tabla «Rotación de revisión» de `docs/flujo-de-trabajo.md` y con `ROTATION` en `.github/workflows/assign-reviewer.yml`.
+
+#### Estado de verificación
+- Build: no aplica
+- Lint: no aplica
+- Tests: no aplica
+
+#### Pendientes y bloqueos
+- El issue #42 (RE-05) sigue abierto aunque el #127 ya se mergeó a `develop`; hay que cerrarlo a mano (T-05).
+- Las ramas `fix/assign-reviewer-develop` y `sync/main-en-develop-entrega1` siguen en el remoto después del merge.
+- Sigue pendiente acordar la convención de ramas (solo `feature/`, `release/` y `hotfix/`) y proteger `develop` con el ruleset de `main`.
+
+#### Para el resto del equipo
+- La rotación vigente es: los PR de A los revisa B, los de B los revisa C y los de C los revisa A. `assign-reviewer.yml` ya la aplica en los PR hacia `develop`.
+
+---
+
+### 2026-10-27 · C (gonzzza-lol) · RE-02: reservar un espacio
+
+**Issues:** #39 (RE-02), #80 (P-13)
+**Rama / PR:** `feature/RE-02-reservar-espacio` · sin PR todavía
+**Duración aproximada:** 4 h
+**Herramientas:** Claude Code
+
+#### Objetivo
+Implementar reservar (`POST /api/bookings`), mis reservas (`GET /api/bookings/me`) y ver una reserva (`GET /api/bookings/:id`) en el back, y el widget de reserva y la página de la reserva en el front, dejando un puerto de checkout para que PA-01 enchufe Stripe.
+
+#### Qué se hizo
+- Back: `BookingsService.create`, `findMine` y `findOne` dejan de responder 501. `create` hace todo en una transacción: valida fechas (400), espacio activo (404), que no sea el dueño (403, nuevo en Swagger), precio en la unidad (400), expira las pendientes vencidas del espacio (`expireStalePending`) antes de `isAvailable` (409), calcula los montos, crea la `PENDING` con `expiresAt = now + 30 min` y su evento inicial, y pide la URL al puerto de checkout. `now` se puede pasar para probar con un reloj fijo.
+- Back: función pura `bookingAmounts` y `FEE_PERCENT = 10` en `src/bookings/pricing.ts`.
+- Back: puerto de checkout `CheckoutGateway` (token `CHECKOUT_GATEWAY`) en `src/payments/`, con `PendingCheckoutGateway`, que no llama a Stripe y devuelve `${FRONTEND_URL}/bookings/<id>`, registrado en un `CheckoutModule` nuevo.
+- Back: unitarias de `pricing`, del gateway y de cada rama de `create`, `findMine` y `findOne`; e2e nuevo `test/booking-create.e2e-spec.ts`; en `booking-contract.e2e-spec.ts` los casos 501 de reservas pasan a probar la forma real (404, 200) y `VALID_BOOKING` usa fechas de 2030 para no caer en «ya pasó».
+- Front: `createBooking` y `getBooking` en `bookings-api.ts`; `BookingWidget` (por hora o por día según los precios, día, bloques seguidos, desglose con comisión, login si no hay sesión, mensajes de 409 y 400 del back); página `/bookings/:bookingId` (`BookingPage`) con estado, horario, desglose y cuenta regresiva de la retención; ruta en `paths.ts` y `routes.tsx` (privada).
+- Front: el mock de `POST /api/bookings` ahora devuelve `checkoutUrl` a `/bookings/<id>`, como el back.
+- Docs: P-13 registrada en `decisiones.md` y sección de RE-02 en `arquitectura.md`.
+- Correcciones después de la revisión:
+  - `create` responde 400 si el rango supera 31 días (reusa `MAX_RANGE_MS` de `availability-slots.ts`) y si el `total` supera el máximo de un `Int` de Postgres (2 147 483 647), antes de insertar; con tests unitarios y e2e.
+  - e2e de rollback: un `CHECKOUT_GATEWAY` que falla (con `jest.spyOn` sobre el provider de la app, sin tocar `create-test-app.ts`) deja la respuesta en 500 y ninguna `Booking` ni `BookingEvent`. El test unitario equivalente se renombró: con el doble de `$transaction` no puede probar el rollback.
+  - Las fechas de `booking-create.e2e-spec.ts` y del `VALID_BOOKING` de `booking-contract.e2e-spec.ts` se calculan desde hoy con `bookingWeek` (`test/utils/booking-dates.ts`): el lunes a 4 semanas, a una hora fija de Chile. `pending-checkout.gateway.spec.ts` usa `Date.now()`.
+  - Mock: una reserva `DAY` que no cubre el día completo responde 409, como el back.
+  - `BookingWidget`: si `checkoutUrl` es del mismo origen o su ruta es `/bookings/<id>`, navega a `paths.booking(bookingId)` dentro de la app (función pura `checkoutDestination`); si no, `window.location.assign`. Así no depende de que `FRONTEND_URL` sea el origen exacto del front.
+  - Docs: en el diagrama de pago el `success_url` es `/bookings/:id` y hay una nota sobre `expires_at` (Stripe exige ≥ creación + 30 min; se decide en PA-01); se quitó la fila de `PLATFORM_FEE_PERCENT`; el `POST /bookings` (tabla y Swagger) aclara «el enlace de pago (Stripe Checkout desde PA-01; mientras tanto, la página de la reserva)»; P-13 dice que son tres constantes. `checkout-gateway.ts` documenta la advertencia de `expires_at` y el caso de una sesión creada con el COMMIT fallido.
 
 #### Decisiones y por qué
 | Decisión | Alternativas consideradas | Por qué se eligió |
@@ -2733,5 +2912,49 @@ Completar la seguridad base de la API con cabeceras seguras, CORS estricto para 
 #### Para el resto del equipo
 - `FRONTEND_URL` debe ser el origen exacto del navegador, incluyendo esquema y puerto si corresponde.
 - El límite de login es por IP, solo en memoria y por proceso; no es una defensa distribuida contra ataques a escala.
+| P-13: comisión del 10 % sumada al arrendatario ([decisiones.md](decisiones.md#p-13--comisión-del-10--sumada-al-arrendatario)) | Comisión a cargo del propietario; sin comisión | Aprobada por C; es lo que ya asumían el contrato y el mock |
+| `CheckoutModule` aparte de `PaymentsModule` | Registrar el gateway en `PaymentsModule` | El webhook de PA-02 va a necesitar `BookingsModule`; si `BookingsModule` importara `PaymentsModule` habría un ciclo |
+| Llamar al checkout dentro de la transacción de `create` (tiempo máximo de 15 s) | Llamarlo después del commit y expirar la reserva si falla | Si Stripe falla no queda una `PENDING` reteniendo el horario sin enlace de pago; el costo es mantener la transacción abierta durante la llamada |
+| 400 si `startAt <= now`, revisado antes de abrir la transacción | 409 (lo que daría `isAvailable`) | El contrato y Swagger ya decían 400 para «un horario que ya pasó»; un bloque ya pasó desde que empieza, como en DI-02 |
+| `findOne` solo para el arrendatario, también 403 al dueño del espacio | Dejar que el dueño la vea | El contrato dice «Sí, el arrendatario»; el dueño tiene `GET /api/owner/bookings` |
+| El widget navega dentro de la app si `checkoutUrl` es del mismo origen y cambia de página si no | Siempre `window.location.assign` | Con el checkout provisorio no recarga la app; con Stripe (otro origen) funciona igual |
+| 400 si el total supera 2 147 483 647 CLP | Otro tope inventado; dejar que falle la base (500) | Es el límite real de las columnas `Int`; el tope de Stripe se confirma en PA-01 |
+| e2e de rollback con `jest.spyOn` sobre el gateway de la app | Agregar un parámetro de *overrides* a `createTestApp` | No cambia la utilidad que usan todas las suites y se restaura en el `finally` |
+| El widget ofrece 14 días desde hoy | Un calendario mensual | Cabe en una sola consulta de disponibilidad (máx. 31 días) y en un `<select>` usable a 375 px |
+
+#### Archivos principales
+- `rentsmart-back/src/bookings/bookings.service.ts`: `create`, `findMine`, `findOne`.
+- `rentsmart-back/src/bookings/pricing.ts`: `FEE_PERCENT` y `bookingAmounts`.
+- `rentsmart-back/src/payments/checkout-gateway.ts`, `pending-checkout.gateway.ts`, `checkout.module.ts`: puerto de checkout.
+- `rentsmart-back/src/bookings/bookings.module.ts`: importa `AvailabilityModule` y `CheckoutModule`.
+- `rentsmart-back/src/bookings/bookings.controller.ts`: 403 en Swagger de `POST /api/bookings`.
+- `rentsmart-back/test/booking-create.e2e-spec.ts` (nuevo) y `test/booking-contract.e2e-spec.ts`.
+- `rentsmart-front/src/features/bookings/BookingWidget.tsx`, `BookingPage.tsx`, `booking-selection.ts`, `bookings-api.ts` y sus tests.
+- `rentsmart-front/src/features/catalog/SpaceDetailPage.tsx` y su test (de B): cambio mínimo, ver abajo.
+- `rentsmart-front/src/mocks/bookings-handlers.ts`, `src/lib/paths.ts`, `src/routes.tsx`, `src/routes.test.tsx`.
+
+#### Cómo probarlo
+- Back: `npm test`; e2e con una base propia: `docker compose exec db-test createdb -U testuser testdb_re02`, luego `DATABASE_TEST_URL=postgresql://testuser:testpassword@localhost:5433/testdb_re02 npx prisma migrate deploy` y `npm run test:e2e` con la misma variable.
+- Front: `npm test`; en `npm run dev` con mocks, abrir el detalle de un espacio, elegir horas y reservar: lleva a `/bookings/<id>`.
+
+#### Estado de verificación
+- Build: ✅ back y front
+- Lint: ✅ back (oxlint) y front (ESLint)
+- Tests: ✅ back 30 suites / 557 unitarias y 24 suites / 516 e2e; front 54 archivos / 711 tests y 3 de Playwright
+
+#### Pendientes y bloqueos
+- RE-03 (#40): traducir a 409 el error de `booking_no_overlap` (hoy, dos solicitudes simultáneas por el mismo horario dejan a la segunda con un 500) y probarlo con dos solicitudes a la vez.
+- PA-01 (#45): reemplazar `PendingCheckoutGateway` por Stripe Checkout en `CheckoutModule` (comentarios `// PA-01 (#45)`), con `success_url` a `/bookings/<id>`, el id de la reserva en los metadatos y el `sessionId` de vuelta. Queda por decidir cómo calzar `expires_at` (Stripe exige ≥ creación + 30 min) con `expiresAt`, y confirmar el monto máximo que acepta Stripe en CLP.
+- PA-02 (#46): el webhook debe tolerar una sesión de Stripe cuya reserva no existe (la sesión se creó pero el COMMIT de `create` falló).
+- El issue #80 (P-13) hay que cerrarlo a mano (T-05).
+- La página `/bookings/:id` no consulta sola hasta ver `CONFIRMED`; tiene el botón «Actualizar el estado». El sondeo automático después de pagar queda para PA-01/PA-02.
+- En `npm run dev` con mocks, la página de la reserva aparece «Pagada» al llegar: el mock avanza de estado en cada consulta y el modo estricto de React hace dos. Solo pasa con los mocks.
+
+#### Para el resto del equipo
+- **B (@xReNatS):** cambié `SpaceDetailPage.tsx` solo para reemplazar `<BookingSlot />` por `<BookingWidget spaceId pricePerHour pricePerDay />` (el widget necesita los precios para ofrecer por hora o por día), y en `SpaceDetailPage.test.tsx` la línea que esperaba «La reserva en línea estará disponible muy pronto.» ahora busca el botón «Reservar». `BookingSlot.tsx` quedó sin uso; no lo borré porque es tuyo.
+- `POST /api/bookings` responde 403 si el dueño reserva su propio espacio (único cambio al contrato de F-05).
+- `BookingsService` ahora depende de `AvailabilityService`, `BookingExpiryService` y `CHECKOUT_GATEWAY`: un test que arme `BookingsService` con `Test.createTestingModule` tiene que proveerlos.
+- La comisión está en tres constantes que hay que cambiar juntas: `FEE_PERCENT` del back (`src/bookings/pricing.ts`), la del front (`src/features/bookings/booking-selection.ts`, solo para mostrar) y la del mock (`src/mocks/bookings-handlers.ts`).
+- Para fechas de e2e de reservas que no queden en el pasado, usar `bookingWeek` de `test/utils/booking-dates.ts`.
 
 ---

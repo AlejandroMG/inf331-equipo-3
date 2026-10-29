@@ -32,13 +32,14 @@ export class BookingsController {
   @ApiOperation({
     summary: 'Reserva un horario y entrega el enlace de pago',
     description:
-      'Crea la reserva en `PENDING`, que retiene el horario 30 minutos, y una sesión de Stripe Checkout por el total. El front redirige a `checkoutUrl`.',
+      'Crea la reserva en `PENDING`, que retiene el horario 30 minutos, y entrega el enlace de pago (Stripe Checkout desde PA-01; mientras tanto, la página de la reserva). El front redirige a `checkoutUrl`.',
   })
   @ApiCreatedResponse({ type: BookingCheckoutDto })
   @ApiBadRequestResponse({
     description:
-      'Datos inválidos: fechas que no son horas cerradas en UTC, un fin que no es posterior al inicio, un horario que ya pasó, o un espacio que no se arrienda en esa unidad',
+      'Datos inválidos: fechas que no son horas cerradas en UTC, un fin que no es posterior al inicio, un rango de más de 31 días, un horario que ya pasó, un espacio que no se arrienda en esa unidad o un total que supera 2 147 483 647 CLP',
   })
+  @ApiForbiddenResponse({ description: 'El espacio es tuyo: el propietario no puede reservar sus propios espacios' })
   @ApiNotFoundResponse({ description: 'El espacio no existe o no está activo' })
   @ApiConflictResponse({
     description: 'El horario está fuera del horario semanal o ya tiene una reserva pendiente, pagada o confirmada',
@@ -85,7 +86,7 @@ export class BookingsController {
   @ApiNotFoundResponse({ description: 'La reserva no existe' })
   @ApiConflictResponse({
     description:
-      'La reserva no se puede cancelar: está pagada sin confirmar, finalizada, cancelada, expirada o venció su plazo de pago',
+      'La reserva no se puede cancelar: está pagada sin confirmar, finalizada, cancelada, expirada, venció su plazo de pago o su horario ya terminó',
   })
   cancel(
     @CurrentUser() user: AuthUser,

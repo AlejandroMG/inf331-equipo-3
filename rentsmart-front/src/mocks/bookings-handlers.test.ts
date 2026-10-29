@@ -55,6 +55,14 @@ describe('disponibilidad simulada', () => {
     await expect(availability('2026-10-01', '2026-11-01')).rejects.toMatchObject({ status: 400 })
     await expect(availability('2026-10-12', '2026-10-12', 'no-existe')).rejects.toMatchObject({ status: 404 })
   })
+
+  it('responde 400 con una fecha que tiene el formato pero no existe, igual que el back', async () => {
+    await expect(availability('2026-02-30', '2026-03-02')).rejects.toMatchObject({ status: 400 })
+    await expect(availability('2026-04-01', '2026-04-31')).rejects.toMatchObject({ status: 400 })
+    await expect(availability('2026-02-29', '2026-03-01')).rejects.toMatchObject({ status: 400 })
+    // 2028 es bisiesto.
+    await expect(availability('2028-02-29', '2028-03-01')).resolves.toMatchObject({ spaceId: SPACE })
+  })
 })
 
 describe('horario semanal simulado', () => {
@@ -108,7 +116,7 @@ describe('reservas simuladas', () => {
   it('crea la reserva pendiente, con el desglose y a dónde ir a pagar', async () => {
     const { bookingId, checkoutUrl } = await book()
 
-    expect(checkoutUrl).toContain(`/bookings/${bookingId}/success`)
+    expect(checkoutUrl).toMatch(new RegExp(`/bookings/${bookingId}$`))
     expect(await booking(bookingId)).toEqual({
       id: bookingId,
       status: 'PENDING',
@@ -155,7 +163,11 @@ describe('reservas simuladas', () => {
     const { bookingId } = await book({ spaceId: DAY_SPACE, startAt, endAt, unit: 'DAY' })
 
     expect(await booking(bookingId)).toMatchObject({ unit: 'DAY', subtotal: 120000, fee: 12000, total: 132000 })
-    await expect(book({ spaceId: DAY_SPACE, startAt: '2026-10-13T12:00:00.000Z', endAt: '2026-10-13T15:00:00.000Z', unit: 'DAY' })).rejects.toMatchObject({ status: 400 })
+    // Un día que no cubre todo el horario: 409, igual que el back.
+    await expect(book({ spaceId: DAY_SPACE, startAt: '2026-10-13T12:00:00.000Z', endAt: '2026-10-13T15:00:00.000Z', unit: 'DAY' })).rejects.toMatchObject({
+      status: 409,
+      message: 'Una reserva por día toma el horario completo de ese día',
+    })
     // Este espacio solo se arrienda por hora.
     await expect(book({ spaceId: SPACE, startAt: '2026-10-13T12:00:00.000Z', endAt: '2026-10-14T00:00:00.000Z', unit: 'DAY' })).rejects.toMatchObject({ status: 400 })
   })
