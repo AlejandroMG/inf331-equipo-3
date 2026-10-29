@@ -33,6 +33,23 @@ function renderAt(path: string, element: ReactNode) {
 }
 
 describe('ProfilePage', () => {
+  it('conserva la activación del modo propietario de CU-04 junto a la edición', async () => {
+    let isHost = false
+    server.use(
+      mswHttp.get('*/api/users/me', () => HttpResponse.json({ ...profile, isHost })),
+      mswHttp.post('*/api/auth/host', () => {
+        isHost = true
+        return HttpResponse.json({ ...profile, isHost })
+      }),
+    )
+    renderAt('/profile', <ProfilePage />)
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Habilitarme como propietario' }))
+
+    expect(await screen.findByText('Tu cuenta está habilitada para publicar espacios.')).toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent('Ya puedes publicar espacios como propietario.')
+  })
+
   it('edita los campos personales y muestra confirmación al guardar', async () => {
     const user = userEvent.setup()
     server.use(

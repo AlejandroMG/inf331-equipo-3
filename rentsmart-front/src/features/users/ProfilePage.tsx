@@ -4,11 +4,13 @@ import { Input } from '../../components/Input'
 import { Textarea } from '../../components/Textarea'
 import { usePageTitle } from '../../lib/page-title'
 import { useRequest } from '../../lib/useRequest'
+import { enableHost } from '../auth/api'
 import { fetchMyProfile, removeProfilePhoto, updateProfile, uploadProfilePhoto } from './api'
 
 export function ProfilePage() {
   const { data, error: loadError, loading, retry } = useRequest('my-profile', fetchMyProfile)
   const [saving, setSaving] = useState(false)
+  const [activatingHost, setActivatingHost] = useState(false)
   const [photoBusy, setPhotoBusy] = useState(false)
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
@@ -64,6 +66,21 @@ export function ProfilePage() {
       setError(cause instanceof Error ? cause.message : 'No pudimos quitar la foto.')
     } finally {
       setPhotoBusy(false)
+    }
+  }
+
+  async function activateHostMode() {
+    setActivatingHost(true)
+    setMessage('')
+    setError('')
+    try {
+      await enableHost()
+      retry()
+      setMessage('Ya puedes publicar espacios como propietario.')
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'No pudimos habilitar el modo propietario.')
+    } finally {
+      setActivatingHost(false)
     }
   }
 
@@ -127,6 +144,22 @@ export function ProfilePage() {
               </div>
             </div>
           </form>
+
+          <section aria-labelledby="host-mode-title" className="mt-6 rounded-card border border-line bg-white p-5 sm:p-7">
+            <h2 id="host-mode-title" className="font-display text-xl font-bold">Modo propietario</h2>
+            {data.isHost ? (
+              <p className="mt-3 text-muted">Tu cuenta está habilitada para publicar espacios.</p>
+            ) : (
+              <>
+                <p className="mt-3 text-muted">
+                  Activa este modo para empezar a publicar espacios. También se activa al publicar tu primer espacio.
+                </p>
+                <Button className="mt-4" loading={activatingHost} onClick={activateHostMode}>
+                  Habilitarme como propietario
+                </Button>
+              </>
+            )}
+          </section>
         </>
       )}
     </div>

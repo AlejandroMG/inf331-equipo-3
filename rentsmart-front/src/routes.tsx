@@ -7,7 +7,6 @@ import { CatalogPage } from './features/catalog/CatalogPage'
 import { SpaceDetailPage } from './features/catalog/SpaceDetailPage'
 import { LoginPage } from './features/auth/LoginPage'
 import { RegisterPage } from './features/auth/RegisterPage'
-import { ProfilePage } from './features/auth/ProfilePage'
 import { RequireRole } from './features/auth/RequireRole'
 import { ComponentsPage } from './features/dev/ComponentsPage'
 import { AdminSpacesPage } from './features/moderation/AdminSpacesPage'
@@ -45,7 +44,6 @@ export const routes: RouteObject[] = [
           { path: 'owner/metrics', element: <OwnerMetricsPage />, handle: { title: 'Métricas' } },
           { path: 'favorites', element: <FavoritesPage />, handle: { title: 'Mis favoritos' } },
           { path: 'bookings/:bookingId', element: <BookingPage /> },
-          { path: 'profile', element: <ProfilePage />, handle: { title: 'Mi perfil' } },
         ],
       },
       {
