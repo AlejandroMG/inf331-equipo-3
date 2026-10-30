@@ -52,11 +52,11 @@ Lo que no entra quedó en el milestone [Post 9 de octubre](https://github.com/Al
 Reserva inmediata, sin aprobación del propietario ([P-05](decisiones.md#p-05--reserva-inmediata)):
 
 1. El arrendatario elige horario y ve el desglose (subtotal, comisión y total).
-2. Al confirmar, la reserva queda **Pendiente** y retiene el horario **30 minutos** mientras paga en Stripe ([P-06](decisiones.md#p-06--pendiente--pagada--confirmada)).
+2. Al confirmar, la reserva queda **Pendiente** y retiene el horario **31 minutos** mientras paga en Stripe ([P-06](decisiones.md#p-06--pendiente--pagada--confirmada)).
 3. Cuando Stripe confirma el pago, pasa a **Pagada**.
 4. El sistema valida automáticamente que el espacio siga activo y el horario libre, y la pasa a **Confirmada**. Si la validación falla, la **Cancela** y reembolsa el total.
 5. Al terminar el horario pasa a **Finalizada**.
-6. Si el arrendatario no paga en 30 minutos, pasa a **Expirada** y libera el horario.
+6. Si el arrendatario no paga en 31 minutos, pasa a **Expirada** y libera el horario. Si el pago llega igual después de vencer, se reembolsa el total y la reserva sigue **Expirada**.
 
 Cancelación ([P-14](decisiones.md#p-14--cancelación-gratis-hasta-24-horas-antes)): el arrendatario o el propietario pueden cancelar una reserva **Pendiente** o **Confirmada**, con un motivo. Si cancela el arrendatario hasta 24 horas antes del inicio, o si cancela el propietario, se reembolsa el total (con la comisión); si el arrendatario cancela con menos de 24 horas, no hay reembolso.
 

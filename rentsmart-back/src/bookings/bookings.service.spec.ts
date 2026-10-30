@@ -7,7 +7,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { BookingExpiryService } from './booking-expiry.service';
 import { BookingStateService } from './booking-state.service';
 import { BOOKING_VIEW } from './booking-view';
-import { BookingsService } from './bookings.service';
+import { BookingsService, MAX_BOOKING_TOTAL, MAX_DB_INT, MAX_STRIPE_AMOUNT } from './bookings.service';
 import { CreateBookingDto } from './dto/create-booking.dto';
 
 const NOW = new Date('2026-10-10T12:00:00.000Z');
@@ -244,6 +244,7 @@ describe('BookingsService (RE-02)', () => {
   const tx = {
     space: { findUnique: jest.fn() },
     booking: { create: jest.fn(), update: jest.fn() },
+    payment: { create: jest.fn() },
   };
   const prisma = {
     $transaction: jest.fn(),
@@ -252,7 +253,7 @@ describe('BookingsService (RE-02)', () => {
   const state = { recordCreation: jest.fn() };
   const availability = { isAvailable: jest.fn() };
   const expiry = { expireStalePending: jest.fn() };
-  const checkout = { createSession: jest.fn() };
+  const checkout = { createSession: jest.fn(), cancelSession: jest.fn() };
 
   // Lunes 14 de octubre de 2030, de 10:00 a 12:00 en Chile; el reloj está un día antes.
   const CLOCK = new Date('2030-10-13T15:07:00.000Z');
@@ -272,6 +273,7 @@ describe('BookingsService (RE-02)', () => {
     expiry.expireStalePending.mockResolvedValue({ changed: 0, skipped: 0, failed: 0 });
     availability.isAvailable.mockResolvedValue(true);
     checkout.createSession.mockResolvedValue({ url: 'http://front.test/bookings/b1' });
+    checkout.cancelSession.mockResolvedValue(undefined);
     const module = await Test.createTestingModule({
       providers: [
         BookingsService,
@@ -286,7 +288,7 @@ describe('BookingsService (RE-02)', () => {
   });
 
   describe('create', () => {
-    it('crea la reserva PENDING con los montos del servidor y una retención de 30 minutos, y devuelve el checkout', async () => {
+    it('crea la reserva PENDING con los montos del servidor y una retención de 31 minutos, y devuelve el checkout', async () => {
       const result = await service.create('renter', HOURLY, CLOCK);
 
       expect(result).toEqual({ bookingId: 'b1', checkoutUrl: 'http://front.test/bookings/b1' });
@@ -300,7 +302,8 @@ describe('BookingsService (RE-02)', () => {
           subtotal: 24000,
           fee: 2400,
           total: 26400,
-          expiresAt: new Date('2030-10-13T15:37:00.000Z'),
+          // 31 minutos después del reloj (P-06).
+          expiresAt: new Date('2030-10-13T15:38:00.000Z'),
         },
         select: { id: true },
       });
@@ -311,10 +314,11 @@ describe('BookingsService (RE-02)', () => {
         subtotal: 24000,
         fee: 2400,
         total: 26400,
-        expiresAt: new Date('2030-10-13T15:37:00.000Z'),
+        expiresAt: new Date('2030-10-13T15:38:00.000Z'),
       });
-      // Sin id de sesión (el checkout provisorio), no hay nada que guardar.
+      // Sin id de sesión (el checkout provisorio), no hay nada que guardar ni pago que registrar.
       expect(tx.booking.update).not.toHaveBeenCalled();
+      expect(tx.payment.create).not.toHaveBeenCalled();
     });
 
     it('por día cobra el precio por día y revisa la disponibilidad como día completo', async () => {
@@ -361,6 +365,18 @@ describe('BookingsService (RE-02)', () => {
 
       expect(result.checkoutUrl).toBe('https://checkout.stripe.test/cs_1');
       expect(tx.booking.update).toHaveBeenCalledWith({ where: { id: 'b1' }, data: { stripeCheckoutSessionId: 'cs_1' } });
+    });
+
+    it('con una sesión de Stripe registra el pago PENDING con el total, la comisión y el id de la sesión (PA-01)', async () => {
+      checkout.createSession.mockResolvedValue({ url: 'https://checkout.stripe.test/cs_1', sessionId: 'cs_1' });
+
+      await service.create('renter', HOURLY, CLOCK);
+
+      // En `tx`: si el COMMIT falla, no queda un pago sin reserva.
+      expect(tx.payment.create).toHaveBeenCalledTimes(1);
+      expect(tx.payment.create).toHaveBeenCalledWith({
+        data: { bookingId: 'b1', stripeSessionId: 'cs_1', amount: 26400, fee: 2400, status: 'PENDING' },
+      });
     });
 
     it('sin reloj usa la hora actual', async () => {
@@ -429,6 +445,80 @@ describe('BookingsService (RE-02)', () => {
       expect(checkout.createSession).not.toHaveBeenCalled();
     });
 
+    describe('sesión de pago huérfana (PA-01)', () => {
+      /** Deja correr las promesas que `create` no espera (la anulación de la sesión). */
+      const flush = () => new Promise((resolve) => setImmediate(resolve));
+      let log: jest.SpyInstance;
+      let warn: jest.SpyInstance;
+      beforeEach(() => {
+        log = jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
+        warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+        checkout.createSession.mockResolvedValue({ url: 'https://checkout.stripe.test/cs_1', sessionId: 'cs_1' });
+      });
+      afterEach(() => {
+        log.mockRestore();
+        warn.mockRestore();
+      });
+
+      it('si la transacción falla después de crear la sesión, la anula y responde el error original', async () => {
+        tx.payment.create.mockRejectedValue(new Error('Se cayó la base'));
+
+        await expect(service.create('renter', HOURLY, CLOCK)).rejects.toThrow('Se cayó la base');
+        await flush();
+
+        expect(checkout.cancelSession).toHaveBeenCalledTimes(1);
+        expect(checkout.cancelSession).toHaveBeenCalledWith('cs_1');
+        expect(log).toHaveBeenCalledWith(expect.stringContaining('cs_1 anulada'));
+      });
+
+      it('también si falla el COMMIT o vence el tiempo de la transacción (fuera del callback)', async () => {
+        prisma.$transaction.mockImplementation(async (run: (client: typeof tx) => unknown) => {
+          await run(tx);
+          throw new Error('Transaction already closed');
+        });
+
+        await expect(service.create('renter', HOURLY, CLOCK)).rejects.toThrow('Transaction already closed');
+        expect(checkout.cancelSession).toHaveBeenCalledWith('cs_1');
+      });
+
+      it('no espera a Stripe para responder, y si anular falla solo lo registra', async () => {
+        tx.payment.create.mockRejectedValue(new Error('Se cayó la base'));
+        let finish: (value: unknown) => void = () => undefined;
+        checkout.cancelSession.mockReturnValue(new Promise((_resolve, reject) => (finish = reject)));
+
+        // Responde con el error de la base aunque la anulación siga pendiente.
+        await expect(service.create('renter', HOURLY, CLOCK)).rejects.toThrow('Se cayó la base');
+        finish(new Error('Stripe no responde'));
+        await flush();
+
+        expect(warn).toHaveBeenCalledWith('No se pudo anular la sesión de pago cs_1, que quedó sin reserva: Error');
+      });
+
+      it('si el checkout no llegó a crear la sesión, no hay nada que anular', async () => {
+        checkout.createSession.mockRejectedValue(new Error('Stripe no responde'));
+
+        await expect(service.create('renter', HOURLY, CLOCK)).rejects.toThrow('Stripe no responde');
+        expect(checkout.cancelSession).not.toHaveBeenCalled();
+      });
+
+      it('si la reserva se guarda, no anula la sesión', async () => {
+        await service.create('renter', HOURLY, CLOCK);
+
+        expect(checkout.cancelSession).not.toHaveBeenCalled();
+      });
+
+      it('con un checkout sin cancelSession (el provisorio) el error sale igual', async () => {
+        const { cancelSession } = checkout;
+        Reflect.deleteProperty(checkout, 'cancelSession');
+        tx.payment.create.mockRejectedValue(new Error('Se cayó la base'));
+        try {
+          await expect(service.create('renter', HOURLY, CLOCK)).rejects.toThrow('Se cayó la base');
+        } finally {
+          checkout.cancelSession = cancelSession;
+        }
+      });
+    });
+
     it('si el checkout falla, el error sale desde dentro del callback de la transacción', async () => {
       checkout.createSession.mockRejectedValue(new Error('Stripe no responde'));
 
@@ -449,27 +539,55 @@ describe('BookingsService (RE-02)', () => {
       expect(prisma.$transaction).not.toHaveBeenCalled();
     });
 
-    it('responde 400 si el total no cabe en un Int de Postgres, antes de insertar', async () => {
-      // 20 horas a $100.000.000: subtotal 2.000.000.000 y total 2.200.000.000, más que 2.147.483.647.
+    it('el tope de Stripe es menor que el de la base, así que también cubre el Int de Postgres', () => {
+      expect(MAX_STRIPE_AMOUNT).toBe(99_999_999);
+      expect(MAX_BOOKING_TOTAL).toBe(MAX_STRIPE_AMOUNT);
+      expect(MAX_BOOKING_TOTAL).toBeLessThan(MAX_DB_INT);
+    });
+
+    it('responde 400 si el total supera lo que acepta Stripe, antes de insertar y sin pedir el checkout', async () => {
+      // 1 hora: subtotal 90.909.091 y comisión 9.090.909 suman 100.000.000, uno más que 99.999.999.
+      tx.space.findUnique.mockResolvedValue({ ...SPACE, pricePerHour: 90_909_091 });
+      const oneHour = { ...HOURLY, endAt: '2030-10-14T14:00:00.000Z' };
+
+      const error = await service.create('renter', oneHour, CLOCK).catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(BadRequestException);
+      expect((error as Error).message).toBe(
+        'El total de la reserva supera el máximo que se puede pagar en línea (99999999 CLP); elige menos horas',
+      );
+      expect(tx.booking.create).not.toHaveBeenCalled();
+      expect(checkout.createSession).not.toHaveBeenCalled();
+    });
+
+    it('el 400 del tope va antes de revisar el horario: sale aunque el horario esté ocupado', async () => {
+      tx.space.findUnique.mockResolvedValue({ ...SPACE, pricePerHour: 90_909_091 });
+      availability.isAvailable.mockResolvedValue(false);
+      const oneHour = { ...HOURLY, endAt: '2030-10-14T14:00:00.000Z' };
+
+      await expect(service.create('renter', oneHour, CLOCK)).rejects.toThrow(BadRequestException);
+      expect(expiry.expireStalePending).not.toHaveBeenCalled();
+      expect(availability.isAvailable).not.toHaveBeenCalled();
+    });
+
+    it('un total muy por sobre el Int de Postgres también responde 400', async () => {
+      // 20 horas a $100.000.000: total 2.200.000.000.
       tx.space.findUnique.mockResolvedValue({ ...SPACE, pricePerHour: 100_000_000 });
       const twentyHours = { ...HOURLY, endAt: '2030-10-15T09:00:00.000Z' };
 
-      const error = await service.create('renter', twentyHours, CLOCK).catch((e: unknown) => e);
-
-      expect(error).toBeInstanceOf(BadRequestException);
-      expect((error as Error).message).toContain('supera el máximo permitido (2147483647 CLP)');
+      await expect(service.create('renter', twentyHours, CLOCK)).rejects.toThrow(BadRequestException);
       expect(tx.booking.create).not.toHaveBeenCalled();
     });
 
-    it('un total justo en el máximo sí se guarda', async () => {
-      // 1 hora: subtotal 1.952.257.861 y comisión 195.225.786 suman exactamente 2.147.483.647.
-      tx.space.findUnique.mockResolvedValue({ ...SPACE, pricePerHour: 1_952_257_861 });
+    it('un total justo en el tope de Stripe sí se guarda', async () => {
+      // 1 hora: subtotal 90.909.090 y comisión 9.090.909 suman exactamente 99.999.999.
+      tx.space.findUnique.mockResolvedValue({ ...SPACE, pricePerHour: 90_909_090 });
       const oneHour = { ...HOURLY, endAt: '2030-10-14T14:00:00.000Z' };
 
       await service.create('renter', oneHour, CLOCK);
 
       expect(tx.booking.create).toHaveBeenCalledWith(
-        expect.objectContaining({ data: expect.objectContaining({ total: 2_147_483_647 }) }),
+        expect.objectContaining({ data: expect.objectContaining({ total: 99_999_999 }) }),
       );
     });
   });

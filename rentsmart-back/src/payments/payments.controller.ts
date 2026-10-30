@@ -46,7 +46,8 @@ export class PaymentsController {
   @ApiBearerAuth()
   @ApiOperation({
     summary: 'Mis pagos',
-    description: 'Los pagos de mis reservas como arrendatario, los más recientes primero.',
+    description:
+      'Los pagos de mis reservas como arrendatario, los más recientes primero. Un pago nace `PENDING` al reservar con Stripe Checkout; las reservas hechas sin Stripe (sin `STRIPE_SECRET_KEY`) no tienen pago.',
   })
   @ApiOkResponse({ type: PaymentsPageDto })
   @ApiBadRequestResponse({ description: 'Un parámetro inválido o desconocido' })

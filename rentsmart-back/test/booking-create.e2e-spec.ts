@@ -1,4 +1,4 @@
-import { INestApplication } from '@nestjs/common';
+import { BadGatewayException, INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { App } from 'supertest/types';
 import { BookingsService } from '../src/bookings/bookings.service';
@@ -75,6 +75,7 @@ describe('Reservar un espacio (e2e)', () => {
   });
 
   afterAll(async () => {
+    await prisma.payment.deleteMany({ where: { booking: { spaceId: { in: spaceIds } } } });
     await prisma.booking.deleteMany({ where: { spaceId: { in: spaceIds } } });
     await prisma.space.deleteMany({ where: { ownerId } });
     await prisma.user.deleteMany({ where: { id: { in: [ownerId, renterId, otherId] } } });
@@ -91,7 +92,7 @@ describe('Reservar un espacio (e2e)', () => {
 
       const { bookingId, checkoutUrl } = body as { bookingId: string; checkoutUrl: string };
       expect(Object.keys(body as object).sort()).toEqual(['bookingId', 'checkoutUrl']);
-      // Mientras no exista Stripe (PA-01), el checkout lleva a la página de la reserva en el front.
+      // Sin STRIPE_SECRET_KEY (los e2e la quitan), el checkout lleva a la página de la reserva en el front.
       expect(checkoutUrl).toMatch(new RegExp(`^https?://.+/bookings/${bookingId}$`));
 
       const stored = await prisma.booking.findUniqueOrThrow({ where: { id: bookingId } });
@@ -105,9 +106,11 @@ describe('Reservar un espacio (e2e)', () => {
         total: 26400,
         stripeCheckoutSessionId: null,
       });
-      // Retiene el horario 30 minutos desde que se creó (P-06).
-      expect(stored.expiresAt!.getTime()).toBeGreaterThanOrEqual(before + 30 * MINUTE);
-      expect(stored.expiresAt!.getTime()).toBeLessThanOrEqual(Date.now() + 30 * MINUTE);
+      // Retiene el horario 31 minutos desde que se creó (P-06).
+      expect(stored.expiresAt!.getTime()).toBeGreaterThanOrEqual(before + 31 * MINUTE);
+      expect(stored.expiresAt!.getTime()).toBeLessThanOrEqual(Date.now() + 31 * MINUTE);
+      // Sin Stripe no hay sesión de pago, así que tampoco hay Payment.
+      expect(await prisma.payment.count({ where: { bookingId } })).toBe(0);
 
       const events = await prisma.bookingEvent.findMany({ where: { bookingId } });
       expect(events).toEqual([expect.objectContaining({ fromStatus: null, toStatus: 'PENDING', actorId: renterId })]);
@@ -124,7 +127,7 @@ describe('Reservar un espacio (e2e)', () => {
       expect(stored).toMatchObject({ unit: 'DAY', subtotal: 90000, fee: 9000, total: 99000, status: 'PENDING' });
     });
 
-    it('con un reloj fijo, la retención vence exactamente 30 minutos después', async () => {
+    it('con un reloj fijo, la retención vence exactamente 31 minutos después', async () => {
       const id = await space();
       // El domingo anterior a las 12:07 de Chile.
       const now = new Date(Date.parse(at(-1, 12)) + 7 * MINUTE);
@@ -134,7 +137,54 @@ describe('Reservar un espacio (e2e)', () => {
         .create(renterId, hourly(id, at(0, 10), at(0, 11)) as never, now);
 
       const stored = await prisma.booking.findUniqueOrThrow({ where: { id: bookingId } });
-      expect(stored.expiresAt).toEqual(new Date(now.getTime() + 30 * MINUTE));
+      expect(stored.expiresAt).toEqual(new Date(now.getTime() + 31 * MINUTE));
+    });
+
+    it('con una sesión de Stripe, guarda su id en la reserva y registra el pago PENDING con los montos (PA-01)', async () => {
+      const id = await space();
+      // Un checkout que se comporta como Stripe (devuelve un id de sesión), sin llamar a Stripe.
+      const gateway = app.get<CheckoutGateway>(CHECKOUT_GATEWAY);
+      const stripeLike = jest.spyOn(gateway, 'createSession').mockImplementationOnce((booking) =>
+        Promise.resolve({ url: `https://checkout.stripe.test/c/pay/cs_test_${booking.id}`, sessionId: `cs_test_${booking.id}` }),
+      );
+
+      let bookingId: string;
+      try {
+        const { body } = await book(renterId, hourly(id, at(0, 10), at(0, 12))).expect(201);
+        ({ bookingId } = body as { bookingId: string });
+        expect((body as { checkoutUrl: string }).checkoutUrl).toBe(`https://checkout.stripe.test/c/pay/cs_test_${bookingId}`);
+      } finally {
+        stripeLike.mockRestore();
+      }
+
+      const stored = await prisma.booking.findUniqueOrThrow({ where: { id: bookingId } });
+      expect(stored.stripeCheckoutSessionId).toBe(`cs_test_${bookingId}`);
+      const payment = await prisma.payment.findUniqueOrThrow({ where: { bookingId } });
+      expect(payment).toMatchObject({
+        stripeSessionId: `cs_test_${bookingId}`,
+        stripePaymentIntentId: null,
+        amount: 26400,
+        fee: 2400,
+        refundedAmount: 0,
+        status: 'PENDING',
+      });
+    });
+
+    it('si Stripe falla responde 502 con un mensaje claro, y no queda nada (PA-01)', async () => {
+      const id = await space();
+      const gateway = app.get<CheckoutGateway>(CHECKOUT_GATEWAY);
+      const failing = jest
+        .spyOn(gateway, 'createSession')
+        .mockRejectedValueOnce(new BadGatewayException('No pudimos iniciar el pago con Stripe; intenta de nuevo'));
+
+      try {
+        const { body } = await book(renterId, hourly(id, at(0, 10), at(0, 11))).expect(502);
+        expect(body).toMatchObject({ message: 'No pudimos iniciar el pago con Stripe; intenta de nuevo' });
+      } finally {
+        failing.mockRestore();
+      }
+
+      expect(await prisma.booking.count({ where: { spaceId: id } })).toBe(0);
     });
 
     it('si el checkout falla, no queda la reserva ni su evento: la transacción se deshace', async () => {
@@ -220,6 +270,18 @@ describe('Reservar un espacio (e2e)', () => {
       await book(renterId, hourly(id, at(0, 10), at(0, 10))).expect(400);
       const { body } = await book(renterId, hourly(id, at(0, 10), at(32, 10))).expect(400);
       expect(body).toMatchObject({ message: 'Una reserva no puede durar más de 31 días' });
+    });
+
+    it('responde 400 si el total supera lo que acepta Stripe (99 999 999 CLP), y no crea nada (PA-01)', async () => {
+      // 1 hora: subtotal 90.909.091 y comisión 9.090.909 suman 100.000.000.
+      const id = await space({ pricePerHour: 90_909_091 });
+
+      const { body } = await book(renterId, hourly(id, at(0, 10), at(0, 11))).expect(400);
+
+      expect(body).toMatchObject({
+        message: 'El total de la reserva supera el máximo que se puede pagar en línea (99999999 CLP); elige menos horas',
+      });
+      expect(await prisma.booking.count({ where: { spaceId: id } })).toBe(0);
     });
 
     it('responde 403 si el dueño reserva su propio espacio', async () => {

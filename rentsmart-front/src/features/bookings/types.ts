@@ -88,7 +88,7 @@ export interface Booking {
   fee: number
   /** CLP enteros: lo que paga el arrendatario (subtotal + fee). */
   total: number
-  /** Hasta cuándo se retiene el horario mientras se paga (30 min). Solo importa en `PENDING`. */
+  /** Hasta cuándo se retiene el horario mientras se paga (31 min); la sesión de Stripe vence en el mismo instante. Solo importa en `PENDING`. */
   expiresAt: string | null
   createdAt: string
   space: BookingSpace

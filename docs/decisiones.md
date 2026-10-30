@@ -11,7 +11,7 @@ Cada decisión del producto tiene un ID `P-xx` que coincide con su issue en GitH
 | [P-03](#p-03--postgresql--prisma) | PostgreSQL + Prisma | Decidida | 25-09-2026 |
 | [P-04](#p-04--front-en-typescript) | Front en TypeScript | Decidida | 25-09-2026 |
 | [P-05](#p-05--reserva-inmediata) | Reserva inmediata | Decidida | 25-09-2026 |
-| [P-06](#p-06--pendiente--pagada--confirmada) | Pendiente → Pagada → Confirmada | Decidida | 25-09-2026 |
+| [P-06](#p-06--pendiente--pagada--confirmada) | Pendiente → Pagada → Confirmada (retención de 31 min desde la enmienda) | Decidida, enmendada | 25-09-2026 · 29-10-2026 |
 | [P-07](#p-07--por-hora-yo-por-día-en-bloques-de-1-hora) | Por hora y/o por día, bloques de 1 hora | Decidida | 25-09-2026 |
 | [P-08](#p-08--lista-cerrada-de-8-tipos-de-espacio) | Lista cerrada de 8 tipos de espacio | Decidida | 25-09-2026 |
 | [P-09](#p-09--ubicación-pública-con-detalle-privado) | Ubicación pública con detalle privado | Decidida | 25-09-2026 |
@@ -74,15 +74,26 @@ Decisiones abiertas: ver [al final](#decisiones-abiertas).
 
 ## P-06 · Pendiente → Pagada → Confirmada
 
-- **Estado:** Decidida, 25-09-2026 · Issue [#73](https://github.com/AlejandroMG/inf331-equipo-3/issues/73)
+- **Estado:** Decidida, 25-09-2026; enmendada el 29-10-2026 (retención de 31 minutos, [ver abajo](#enmienda-del-29-10-2026-retención-de-31-minutos)) · Issue [#73](https://github.com/AlejandroMG/inf331-equipo-3/issues/73)
 - **Contexto:** con reserva inmediata había que definir los estados y qué pasa con el horario mientras la persona paga.
 - **Decisión:**
-  - La reserva nace en **Pendiente** y retiene el horario **30 minutos**, el mínimo que permite Stripe Checkout para expirar una sesión.
+  - La reserva nace en **Pendiente** y retiene el horario **31 minutos** (eran 30 hasta la enmienda), y la sesión de Stripe Checkout vence en el mismo instante.
   - El webhook de Stripe la pasa a **Pagada**.
   - Una validación automática (espacio activo y horario libre) la pasa a **Confirmada** y avisa a ambas partes. Si falla, la pasa a **Cancelada** con reembolso total.
-  - Además existen **Finalizada** (terminó el horario), **Cancelada** y **Expirada** (no pagó en 30 minutos).
+  - Además existen **Finalizada** (terminó el horario), **Cancelada** y **Expirada** (no pagó en 31 minutos).
 - **Alternativas descartadas:** Pendiente → Confirmada al pagar, sin un estado Pagada separado; que el propietario confirme después del pago.
 - **Consecuencias:** se mantienen los estados del enunciado. Pagada y Confirmada se distinguen por la validación posterior al pago. Bloquean el horario: Pendiente no vencida, Pagada y Confirmada. Diagrama en [arquitectura.md](arquitectura.md#ciclo-de-vida-de-una-reserva).
+
+### Enmienda del 29-10-2026: retención de 31 minutos
+
+- **Estado:** Decidida, 29-10-2026 (aprobada por C) · PA-01 ([#45](https://github.com/AlejandroMG/inf331-equipo-3/issues/45))
+- **Contexto:** Stripe exige que el `expires_at` de una Checkout Session quede entre 30 minutos y 24 horas después de **crear la sesión**. La reserva se crea antes que la sesión, dentro de la misma transacción, así que con una retención de 30 minutos el `expires_at` igual a `expiresAt` quedaría unos milisegundos por debajo del mínimo y Stripe rechazaría la llamada. Con 30 minutos y la sesión venciendo después, la reserva podía pasar a Expirada mientras la sesión seguía aceptando el pago.
+- **Decisión:**
+  - La retención pasa a **31 minutos** (`HOLD_MINUTES = 31` en `rentsmart-back/src/bookings/bookings.service.ts`).
+  - La sesión de Stripe vence **en el mismo instante** que la retención: `expires_at = floor(expiresAt / 1000)`. El minuto de más cubre lo que tarda la transacción hasta crear la sesión: la transacción dura a lo más 15 s y la llamada a Stripe, con su reintento, termina antes, así que el `expires_at` queda unos 40 s o más por sobre el mínimo de Stripe. Solo una diferencia de reloj grande entre la API y Stripe podría comerse ese margen; en ese caso Stripe rechaza la sesión, la API responde 502 y la reserva no queda creada.
+  - Si igual llega un `checkout.session.completed` para una reserva **Expirada** (por ejemplo, un webhook atrasado o un pago que se completó en el último segundo), se **reembolsa el total automáticamente** y la reserva **no revive** (`EXPIRED → PAID` sigue sin ser una transición válida). Lo implementan PA-02 (#46, el webhook) y PA-03 (#47, el reembolso).
+- **Alternativas descartadas:** mantener 30 minutos con un margen de gracia en el barrido de vencimientos (RE-06): la sesión seguiría venciendo después de la reserva y el barrido tendría que esperar sin una regla clara; además el horario quedaría retenido más de lo que dice la regla.
+- **Consecuencias:** la reserva y la sesión vencen juntas, salvo por una diferencia de reloj con Stripe. Cambian `HOLD_MINUTES`, los textos que decían «30 minutos» (producto, arquitectura, `AGENTS.md`, el detalle del espacio en el front, Swagger) y el mock de MSW. El webhook de PA-02 tiene que manejar el `completed` sobre una `EXPIRED` como se describe arriba.
 
 ## P-07 · Por hora y/o por día, en bloques de 1 hora
 

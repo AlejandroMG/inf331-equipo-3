@@ -9,7 +9,7 @@ import {
 } from '@nestjs/common';
 import { MAX_RANGE_MS } from '../availability/availability-slots';
 import { AvailabilityService } from '../availability/availability.service';
-import { BookingStatus, BookingUnit, SpaceStatus } from '../generated/prisma/enums';
+import { BookingStatus, BookingUnit, PaymentStatus, SpaceStatus } from '../generated/prisma/enums';
 import { CHECKOUT_GATEWAY, type CheckoutGateway } from '../payments/checkout-gateway';
 import { PrismaService } from '../prisma/prisma.service';
 import { BookingExpiryService } from './booking-expiry.service';
@@ -22,8 +22,12 @@ import { CreateBookingDto } from './dto/create-booking.dto';
 import { PageQueryDto } from './dto/page-query.dto';
 import { bookingAmounts, priceFor } from './pricing';
 
-/** Cuánto retiene el horario una reserva `PENDING` mientras se paga (P-06). */
-export const HOLD_MINUTES = 30;
+/**
+ * Cuánto retiene el horario una reserva `PENDING` mientras se paga (P-06, enmienda del 29-10-2026). La sesión de
+ * Stripe Checkout vence en el mismo instante; Stripe exige al menos 30 minutos desde que se crea la sesión, y el
+ * minuto de más deja un margen de unos 40 s o más después de lo que tarda la transacción en llegar a crearla.
+ */
+export const HOLD_MINUTES = 31;
 
 /**
  * Tiempo máximo de la transacción de `create`. El de Prisma por defecto (5 s) queda justo si el checkout de PA-01
@@ -33,6 +37,17 @@ const CREATE_TX_TIMEOUT_MS = 15_000;
 
 /** El mayor `Int` de Postgres: `subtotal`, `fee` y `total` son columnas `Int` y un monto mayor no se puede guardar. */
 export const MAX_DB_INT = 2_147_483_647;
+
+/**
+ * El mayor monto que acepta Stripe en un pago: 8 dígitos en la unidad mínima de la moneda. CLP no tiene decimales,
+ * así que son 99 999 999 CLP. Es el límite general de la documentación de Stripe (docs.stripe.com/currencies); para
+ * tarjetas el límite es mayor (12 dígitos, 9 con American Express), pero Checkout puede ofrecer otros medios, así que
+ * se usa el de 8 como tope conservador (PA-01, #45).
+ */
+export const MAX_STRIPE_AMOUNT = 99_999_999;
+
+/** El total máximo de una reserva: el menor de los dos topes. Hoy es el de Stripe, que también cubre el de la base. */
+export const MAX_BOOKING_TOTAL = Math.min(MAX_DB_INT, MAX_STRIPE_AMOUNT);
 
 /** Desde qué estados cancela una persona (RE-05). `PAID` dura un instante y lo resuelve la validación automática. */
 const CANCELLABLE: BookingStatus[] = [BookingStatus.PENDING, BookingStatus.CONFIRMED];
@@ -51,13 +66,15 @@ export class BookingsService {
   ) {}
 
   /**
-   * Reserva un horario (RE-02): crea la reserva `PENDING`, que retiene el horario 30 minutos (P-06), y pide al
-   * puerto de checkout a dónde ir a pagar. Todo pasa en una sola transacción, así que si algo falla no queda nada.
+   * Reserva un horario (RE-02): crea la reserva `PENDING`, que retiene el horario 31 minutos (P-06), y pide al
+   * puerto de checkout a dónde ir a pagar; con Stripe, además registra el `Payment` pendiente (PA-01). Todo pasa en
+   * una sola transacción, así que si algo falla no queda nada.
    *
    * - 400 si el fin no es posterior al inicio, si el rango supera 31 días (el tope de la disponibilidad), si el
    *   inicio ya pasó (un bloque ya pasó desde que empieza, como en DI-02), si el espacio no tiene precio en esa
-   *   unidad o si el total no cabe en la base; 404 si el espacio no existe o no está `ACTIVE`; 403 si
-   *   quien reserva es el dueño del espacio; 409 si el horario está fuera del horario semanal o ya está ocupado.
+   *   unidad o si el total supera lo que acepta Stripe (`MAX_BOOKING_TOTAL`); 404 si el espacio no existe o no está
+   *   `ACTIVE`; 403 si quien reserva es el dueño del espacio; 409 si el horario está fuera del horario semanal o ya
+   *   está ocupado.
    * - Antes de revisar la disponibilidad pasa a `EXPIRED` las `PENDING` vencidas del espacio: dejan de bloquear el
    *   horario y no chocan con `booking_no_overlap` al insertar.
    * - Los montos los calcula el servidor (`bookingAmounts`); el cliente nunca los manda.
@@ -77,6 +94,8 @@ export class BookingsService {
     }
     if (startAt <= now) throw new BadRequestException('Ese horario ya empezó o ya pasó; elige uno futuro');
 
+    // PA-01: si el checkout ya creó una sesión de pago y después falla el resto de la transacción, se anula.
+    let createdSessionId: string | undefined;
     return this.prisma.$transaction(
       async (tx) => {
         const space = await tx.space.findUnique({
@@ -93,6 +112,15 @@ export class BookingsService {
           );
         }
 
+        const amounts = bookingAmounts(space, dto.unit, startAt, endAt);
+        // PA-01 (#45): el tope de Stripe (99 999 999 CLP) es menor que el `Int` de la base, así que cubre los dos.
+        // Va antes de revisar el horario: un total fuera de rango es un 400 aunque el horario esté ocupado.
+        if (amounts.total > MAX_BOOKING_TOTAL) {
+          throw new BadRequestException(
+            `El total de la reserva supera el máximo que se puede pagar en línea (${MAX_BOOKING_TOTAL} CLP); elige menos horas`,
+          );
+        }
+
         await this.expiry.expireStalePending(tx, now, space.id);
         const free = await this.availability.isAvailable(space.id, startAt, endAt, { tx, now, unit: dto.unit });
         if (!free) {
@@ -101,13 +129,6 @@ export class BookingsService {
           );
         }
 
-        const amounts = bookingAmounts(space, dto.unit, startAt, endAt);
-        // PA-01 (#45): Stripe probablemente tiene un tope menor por pago en CLP; por confirmar al integrar Checkout.
-        if (amounts.total > MAX_DB_INT) {
-          throw new BadRequestException(
-            `El total de la reserva supera el máximo permitido (${MAX_DB_INT} CLP); elige menos horas`,
-          );
-        }
         const expiresAt = new Date(now.getTime() + HOLD_MINUTES * 60_000);
         const booking = await tx.booking.create({
           data: { spaceId: space.id, renterId: userId, startAt, endAt, unit: dto.unit, ...amounts, expiresAt },
@@ -115,15 +136,47 @@ export class BookingsService {
         });
         await this.state.recordCreation(booking.id, { actorId: userId }, tx);
 
-        // PA-01 (#45): con Stripe, esta llamada crea la Checkout Session. Va dentro de la transacción para que,
+        // Con Stripe (PA-01), esta llamada crea la Checkout Session. Va dentro de la transacción para que,
         // si falla, no quede una reserva reteniendo el horario sin forma de pagarla.
         const session = await this.checkout.createSession({ id: booking.id, spaceName: space.name, ...amounts, expiresAt });
+        createdSessionId = session.sessionId;
         if (session.sessionId) {
           await tx.booking.update({ where: { id: booking.id }, data: { stripeCheckoutSessionId: session.sessionId } });
+          // PA-01: registra el pago pendiente con el monto, la comisión y el id de la sesión. El PaymentIntent y el
+          // cambio de estado los completa el webhook (PA-02). Sin `sessionId` (checkout provisorio, sin Stripe) no
+          // hay pago que registrar.
+          await tx.payment.create({
+            data: {
+              bookingId: booking.id,
+              stripeSessionId: session.sessionId,
+              amount: amounts.total,
+              fee: amounts.fee,
+              status: PaymentStatus.PENDING,
+            },
+          });
         }
         return { bookingId: booking.id, checkoutUrl: session.url };
       },
       { timeout: CREATE_TX_TIMEOUT_MS },
+    ).catch((error: unknown) => {
+      if (createdSessionId) this.releaseOrphanSession(createdSessionId);
+      throw error;
+    });
+  }
+
+  /**
+   * Anula, sin esperar, una sesión de pago que quedó sin reserva porque la transacción de `create` falló después de
+   * crearla (un error al guardar, el COMMIT o el tiempo máximo). Si no se puede, queda en el log y la sesión vence
+   * sola en `expiresAt`; el webhook de PA-02 tolera una sesión sin reserva.
+   */
+  private releaseOrphanSession(sessionId: string): void {
+    if (!this.checkout.cancelSession) return;
+    void this.checkout.cancelSession(sessionId).then(
+      () => this.logger.log(`Sesión de pago ${sessionId} anulada: la reserva no se pudo guardar`),
+      (error: unknown) =>
+        this.logger.warn(
+          `No se pudo anular la sesión de pago ${sessionId}, que quedó sin reserva: ${error instanceof Error ? error.name : 'error'}`,
+        ),
     );
   }
 

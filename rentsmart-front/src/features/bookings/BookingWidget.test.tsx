@@ -103,6 +103,8 @@ describe('BookingWidget', () => {
 
     expect(await screen.findByRole('heading', { name: 'Página de la reserva booking-1' })).toBeInTheDocument()
     expect(router.state.location.pathname).toBe('/bookings/booking-1')
+    // El mock simula que se pagó: vuelve con ?pago=ok, como el success_url de Stripe (PA-01).
+    expect(router.state.location.search).toBe('?pago=ok')
     // Se mandan las horas en UTC tal como vinieron de la disponibilidad, sin montos.
     expect(sent).toEqual({
       spaceId: SPACE,

@@ -36,11 +36,12 @@ const UNIT_LABELS: Record<BookingUnit, string> = { HOUR: 'Por hora', DAY: 'Por d
 
 /**
  * Lleva al checkout (ver `checkoutDestination`). Si es la página de la reserva, navega dentro de la app a
- * `paths.booking(bookingId)` sin recargar; si es otro sitio (Stripe Checkout, PA-01), cambia de página.
+ * `paths.booking(bookingId)`, con su query string, sin recargar; si es otro sitio (Stripe Checkout, PA-01), cambia
+ * de página.
  */
 function goToCheckout(checkoutUrl: string, bookingId: string, navigate: NavigateFunction) {
   const destination = checkoutDestination(checkoutUrl, bookingId, window.location.origin)
-  if (destination.inApp) navigate(paths.booking(destination.bookingId))
+  if (destination.inApp) navigate(destination.path)
   else window.location.assign(destination.url)
 }
 

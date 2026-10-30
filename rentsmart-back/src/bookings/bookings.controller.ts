@@ -1,5 +1,6 @@
 import { Body, Controller, Get, HttpCode, Param, Post, Query, UseGuards } from '@nestjs/common';
 import {
+  ApiBadGatewayResponse,
   ApiBadRequestResponse,
   ApiBearerAuth,
   ApiConflictResponse,
@@ -32,17 +33,21 @@ export class BookingsController {
   @ApiOperation({
     summary: 'Reserva un horario y entrega el enlace de pago',
     description:
-      'Crea la reserva en `PENDING`, que retiene el horario 30 minutos, y entrega el enlace de pago (Stripe Checkout desde PA-01; mientras tanto, la página de la reserva). El front redirige a `checkoutUrl`.',
+      'Crea la reserva en `PENDING`, que retiene el horario 31 minutos, y entrega el enlace de pago. Con `STRIPE_SECRET_KEY` es una sesión de Stripe Checkout en modo test, que vence junto con la retención, y queda registrado un pago `PENDING`; sin la clave (desarrollo sin Stripe, CI), es la página de la reserva en el front y no hay pago. El front redirige a `checkoutUrl`.',
   })
   @ApiCreatedResponse({ type: BookingCheckoutDto })
   @ApiBadRequestResponse({
     description:
-      'Datos inválidos: fechas que no son horas cerradas en UTC, un fin que no es posterior al inicio, un rango de más de 31 días, un horario que ya pasó, un espacio que no se arrienda en esa unidad o un total que supera 2 147 483 647 CLP',
+      'Datos inválidos: fechas que no son horas cerradas en UTC, un fin que no es posterior al inicio, un rango de más de 31 días, un horario que ya pasó, un espacio que no se arrienda en esa unidad o un total que supera el máximo que acepta Stripe (99 999 999 CLP)',
   })
   @ApiForbiddenResponse({ description: 'El espacio es tuyo: el propietario no puede reservar sus propios espacios' })
   @ApiNotFoundResponse({ description: 'El espacio no existe o no está activo' })
   @ApiConflictResponse({
     description: 'El horario está fuera del horario semanal o ya tiene una reserva pendiente, pagada o confirmada',
+  })
+  @ApiBadGatewayResponse({
+    description:
+      'Stripe no pudo crear la sesión de pago (no responde, rechazó la clave o el monto, por ejemplo uno bajo su mínimo). La reserva no queda creada',
   })
   create(@CurrentUser() user: AuthUser, @Body() dto: CreateBookingDto): Promise<BookingCheckoutDto> {
     return this.service.create(user.id, dto);

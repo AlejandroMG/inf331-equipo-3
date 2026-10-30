@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Link, useParams } from 'react-router'
+import { Link, useParams, useSearchParams } from 'react-router'
 import { Button, LinkButton } from '../../components/Button'
 import { cn } from '../../lib/cn'
 import { formatClp } from '../../lib/format'
@@ -7,9 +7,10 @@ import { ApiError } from '../../lib/http'
 import { usePageTitle } from '../../lib/page-title'
 import { paths } from '../../lib/paths'
 import { useRequest } from '../../lib/useRequest'
-import { FEE_PERCENT, formatRange, hoursBetween, remainingLabel, STATUS_LABELS } from './booking-selection'
+import { FEE_PERCENT, formatRange, formatTime, hoursBetween, remainingLabel, STATUS_LABELS } from './booking-selection'
 import { getBooking } from './bookings-api'
 import type { Booking, BookingStatus } from './types'
+import { useConfirmationPolling } from './useConfirmationPolling'
 
 const STATUS_CLASSES: Record<BookingStatus, string> = {
   PENDING: 'bg-accent-soft text-accent-ink',
@@ -57,7 +58,39 @@ function HoldCountdown({ booking }: { booking: Booking }) {
   )
 }
 
-function BookingDetail({ booking, onRefresh }: { booking: Booking; onRefresh: () => void }) {
+/** Cómo volvió el arrendatario de Stripe Checkout: `?pago=ok` (success_url) o `?pago=cancelado` (cancel_url). */
+type PaymentReturn = 'ok' | 'cancelado' | null
+
+function paymentReturnOf(value: string | null): PaymentReturn {
+  return value === 'ok' || value === 'cancelado' ? value : null
+}
+
+/**
+ * Volvió de Stripe sin pagar: el horario sigue retenido mientras la reserva no venza. No hay un enlace para volver a
+ * pagar (la API no expone la URL de la sesión; pendiente para PA-02), así que el aviso dice cómo seguir.
+ */
+function CancelledPaymentNotice({ booking }: { booking: Booking }) {
+  const now = useNow()
+  if (booking.status !== 'PENDING' || !booking.expiresAt || !remainingLabel(booking.expiresAt, now)) return null
+  return (
+    <div role="status" className="rounded-xl border border-accent bg-accent-soft p-4 text-[15px] text-accent-ink">
+      Cancelaste el pago. El horario sigue retenido hasta las {formatTime(booking.expiresAt)}; puedes volver atrás a la
+      página de pago o esperar a que venza para elegir otro.
+    </div>
+  )
+}
+
+function BookingDetail({
+  booking: initial,
+  payment,
+  onRefresh,
+}: {
+  booking: Booking
+  payment: PaymentReturn
+  onRefresh: () => void
+}) {
+  // Al volver de pagar, consulta hasta ver la reserva confirmada (PA-01).
+  const { booking, polling, exhausted } = useConfirmationPolling(initial, payment === 'ok')
   const hours = hoursBetween(booking.startAt, booking.endAt)
   const { space } = booking
 
@@ -81,7 +114,20 @@ function BookingDetail({ booking, onRefresh }: { booking: Booking; onRefresh: ()
         </span>
       </p>
 
-      {booking.status === 'PENDING' && <HoldCountdown booking={booking} />}
+      {polling && (
+        <div role="status" className="flex items-center gap-3 rounded-xl bg-primary-soft p-4 text-[15px]">
+          <span aria-hidden="true" className="size-4 shrink-0 rounded-full border-2 border-primary border-t-transparent motion-safe:animate-spin" />
+          Pago recibido, confirmando tu reserva…
+        </div>
+      )}
+      {exhausted && (
+        <div role="status" className="rounded-xl border border-accent bg-accent-soft p-4 text-[15px] text-accent-ink">
+          Todavía no recibimos la confirmación del pago. Prueba con «Actualizar el estado» en unos minutos.
+        </div>
+      )}
+      {payment === 'cancelado' && <CancelledPaymentNotice booking={booking} />}
+
+      {booking.status === 'PENDING' && !polling && <HoldCountdown booking={booking} />}
 
       <section aria-labelledby="booking-schedule" className="rounded-card border border-line bg-white p-5">
         <h2 id="booking-schedule" className="mb-2 text-lg font-bold">
@@ -117,9 +163,14 @@ function BookingDetail({ booking, onRefresh }: { booking: Booking; onRefresh: ()
   )
 }
 
-/** /bookings/:bookingId: una reserva propia, con su estado, horario, desglose y la retención si está pendiente. */
+/**
+ * /bookings/:bookingId: una reserva propia, con su estado, horario, desglose y la retención si está pendiente.
+ * Stripe Checkout vuelve aquí con `?pago=ok` (se consulta hasta ver la reserva confirmada) o `?pago=cancelado`.
+ */
 export function BookingPage() {
   const { bookingId = '' } = useParams()
+  const [searchParams] = useSearchParams()
+  const payment = paymentReturnOf(searchParams.get('pago'))
   const { data: booking, error, loading, retry } = useRequest(bookingId, (signal) => getBooking(bookingId, signal))
   usePageTitle(booking ? `Reserva en ${booking.space.name}` : 'Tu reserva')
   const status = error instanceof ApiError ? error.status : null
@@ -155,7 +206,7 @@ export function BookingPage() {
         </div>
       )}
 
-      {booking && <BookingDetail booking={booking} onRefresh={retry} />}
+      {booking && <BookingDetail booking={booking} payment={payment} onRefresh={retry} />}
     </div>
   )
 }

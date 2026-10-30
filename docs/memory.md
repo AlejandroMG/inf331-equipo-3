@@ -2912,3 +2912,85 @@ Implementar reservar (`POST /api/bookings`), mis reservas (`GET /api/bookings/me
 - Para fechas de e2e de reservas que no queden en el pasado, usar `bookingWeek` de `test/utils/booking-dates.ts`.
 
 ---
+
+### 2026-10-29 · C (@gonzzza-lol) · PA-01 pagar con Stripe Checkout en modo test
+
+**Issues:** #45 (PA-01), #73 (P-06)
+**Rama / PR:** `feature/PA-01-stripe-checkout` · sin PR todavía
+**Duración aproximada:** 3 h
+**Herramientas:** Claude Code
+
+#### Objetivo
+Cobrar las reservas con Stripe Checkout en modo test: crear la sesión al reservar, registrar el pago, listar mis pagos y mostrar en el front el regreso desde Stripe (pago recibido o cancelado), sin que ningún test llame a Stripe.
+
+#### Qué se hizo
+- **Enmienda a P-06 (aprobada por C):** la retención pasa de 30 a **31 minutos** (`HOLD_MINUTES = 31`) y la sesión de Stripe vence en el mismo instante (`expires_at = floor(expiresAt / 1000)`). Stripe exige `expires_at` ≥ creación de la sesión + 30 min; el minuto de margen cubre lo que tarda la transacción. Si llega un `checkout.session.completed` sobre una `EXPIRED`, se reembolsa el total y la reserva no revive (lo implementan PA-02 y PA-03). Registrada en `decisiones.md` y actualizados `producto.md`, `AGENTS.md`, `arquitectura.md`, Swagger, el front y el mock.
+- Back:
+  - Dependencia `stripe` fijada en **`23.0.0` exacto** (sin `^`; SDK oficial, ESM y CJS, Node ≥ 20, API `2026-09-30.endive`). Primero se instaló 23.1.0, pero salió el mismo día y 23.0.1 tenía 7 días; 23.0.0 es del 30-09-2026. El código no fija `apiVersion`: usa la del SDK.
+  - `StripeModule` (`src/payments/stripe.module.ts`): token `STRIPE_CLIENT` con `new Stripe(STRIPE_SECRET_KEY, { timeout: 6000, maxNetworkRetries: 1 })`, o `null` si no hay clave. Reutilizable por PA-02 y PA-03.
+  - `StripeCheckoutGateway` (`src/payments/stripe-checkout.gateway.ts`): `checkout.sessions.create` con `mode: 'payment'`, `currency: 'clp'`, una línea «Reserva en <espacio>» por el `total` (sin × 100), `metadata.bookingId`, `client_reference_id`, `expires_at` en segundos y `success_url`/`cancel_url` a `/bookings/<id>?pago=ok` y `?pago=cancelado`. Devuelve `{ url, sessionId }`. Un error del SDK, o una sesión sin `url`, responde **502** «No pudimos iniciar el pago con Stripe; intenta de nuevo»; el log guarda tipo, código, estado HTTP e id de la solicitud, no el mensaje (puede traer parte de la clave). `cancelSession(id)` expira una sesión con `checkout.sessions.expire`.
+  - `CheckoutModule` elige con `chooseCheckoutGateway`: Stripe si hay cliente, si no `PendingCheckoutGateway`. La URL del front de los dos sale de `bookingPageUrl` (`src/payments/frontend-url.ts`).
+  - `BookingsService.create`: además de guardar `stripeCheckoutSessionId`, crea el `Payment` `PENDING` (`amount = total`, `fee`, `stripeSessionId`) en la misma transacción, solo cuando hay `sessionId`. Tope nuevo `MAX_STRIPE_AMOUNT = 99 999 999` y `MAX_BOOKING_TOTAL = min(MAX_DB_INT, MAX_STRIPE_AMOUNT)`: 400 «El total de la reserva supera el máximo que se puede pagar en línea (99999999 CLP); elige menos horas». El cálculo de montos y el tope van antes de `expireStalePending`, así el 400 sale aunque el horario esté ocupado. Si la transacción falla después de recibir una sesión (al guardar, en el COMMIT o por tiempo), `create` llama sin esperar a `cancelSession?` del puerto (método opcional nuevo) y registra si falla; `BookingsService` no conoce Stripe.
+  - `GET /api/payments/me` implementado (`PaymentsService.findMine`): los pagos de mis reservas como arrendatario, por `createdAt` y `id` descendentes, paginados, con `spaceName`. El webhook sigue en 501 (PA-02).
+  - `env.validation.ts`: `STRIPE_SECRET_KEY` (opcional, debe ser `sk_test_…` o `rk_test_…`) y `STRIPE_WEBHOOK_SECRET` (opcional, `whsec_…`). Vacías cuentan como ausentes.
+  - `test/utils/setup-env.ts` deja `STRIPE_SECRET_KEY` y `STRIPE_WEBHOOK_SECRET` en **cadena vacía**: los e2e siempre usan el checkout provisorio. **No sirve `delete`:** `ConfigModule.forRoot` vuelve a leer `rentsmart-back/.env` y copia a `process.env` toda variable que no exista (`!(key in process.env)`), así que una clave real del `.env` volvería y los e2e crearían sesiones reales en Stripe. Lo prueban `test/stripe-disabled.e2e-spec.ts` (en los e2e `CHECKOUT_GATEWAY` es `PendingCheckoutGateway` y `STRIPE_CLIENT` es `null`) y un unitario de `checkout.module.spec.ts` con un `.env` temporal con una clave falsa.
+- Front:
+  - `BookingPage` lee `?pago=`. Con `ok` muestra «Pago recibido, confirmando tu reserva…» y consulta la reserva cada 2 s, hasta 30 veces, mientras esté `PENDING` o `PAID` (`useConfirmationPolling.ts`); se detiene en `CONFIRMED` u otro estado final y, si se agotan los intentos, avisa y queda el botón «Actualizar el estado». Mientras consulta no muestra la cuenta regresiva. Con `cancelado` muestra «Cancelaste el pago. El horario sigue retenido hasta las HH:MM; puedes volver atrás a la página de pago o esperar a que venza para elegir otro» si la reserva sigue `PENDING` y no ha vencido.
+  - `checkoutDestination` devuelve `{ inApp: true, path }` con el query string, y `BookingWidget` navega a ese `path`.
+  - Mock de `POST /api/bookings`: `checkoutUrl` a `/bookings/<id>?pago=ok` y retención de 31 min. Texto del detalle del espacio a 31 minutos.
+- Docs: `.env.example` y `arquitectura.md` (variables de entorno, sección Stripe, tabla de endpoints, flujo de pago, RE-02 y RE-06).
+
+#### Decisiones y por qué
+| Decisión | Alternativas consideradas | Por qué se eligió |
+|---|---|---|
+| Retención de 31 min y la sesión vence junto con ella ([enmienda a P-06](decisiones.md#enmienda-del-29-10-2026-retención-de-31-minutos)) | Mantener 30 min con un margen de gracia en el barrido | Aprobada por C. La reserva y la sesión vencen juntas y la llamada siempre cumple el mínimo de Stripe |
+| Tope de 99 999 999 CLP (8 dígitos) | 12 dígitos (tarjetas); dejar solo el `Int` de la base | La documentación de Stripe da 8 dígitos para los medios que no son tarjeta y 9 para American Express; Checkout puede ofrecer otros medios, así que es el tope seguro. Leído en docs.stripe.com/currencies; la página no listó CLP aparte |
+| Elegir el gateway con un `useFactory` según el cliente de Stripe | Elegir por `NODE_ENV`; exigir la clave siempre | El desarrollo sin claves, el CI y los e2e funcionan sin Stripe y sin configuración extra |
+| Timeout de 6 s y 1 reintento en el cliente de Stripe | Los valores por defecto del SDK (80 s) | La sesión se crea dentro de la transacción de 15 s: así la llamada termina antes y la reserva se deshace limpio si Stripe no responde |
+| `STRIPE_SECRET_KEY` solo de test (`sk_test_`/`rk_test_`) | Aceptar cualquier texto | El proyecto usa Stripe en modo test; una clave live por error cobraría de verdad |
+| El `Payment` se crea al reservar, solo con `sessionId` | Crearlo en el webhook (PA-02) | El criterio de PA-01 pide registrar el pago con monto, comisión e IDs; con el checkout provisorio no hay sesión que registrar |
+| Sondeo con un `setTimeout` encadenado | `setInterval` cada 2 s | Nunca hay dos consultas a la vez si una tarda más de 2 s; igual se limpia al desmontar |
+| `pago=cancelado` sin enlace para reintentar, con un texto que dice cómo seguir | Agregar `checkoutUrl` a `BookingDto` | Sería un cambio de contrato que la historia no exige; el texto no promete un reintento que la página no ofrece |
+| Errores de Stripe como 502 | Dejar el 500 genérico | Es una falla de un servicio externo, no de la API; el arrendatario ve un mensaje claro. Cubre también un monto bajo el mínimo de Stripe: no se agregó un mínimo propio porque el precio mínimo es de B |
+| Anular la sesión huérfana con `cancelSession?` opcional en el puerto, sin esperar | Que `BookingsService` llame a Stripe; esperar la anulación | `BookingsService` sigue sin conocer Stripe y la respuesta no depende de Stripe |
+| Claves de Stripe en `''` en los e2e | `delete` | `ConfigModule` repone desde el `.env` las variables que no existen; con `''` gana el vacío |
+| `stripe` 23.0.0 exacto | 23.1.0 (del mismo día), 23.0.1 (7 días) | Cadena de suministro: una versión con un mes de publicada y sin rango que la cambie sola |
+
+#### Archivos principales
+- `rentsmart-back/src/payments/stripe.module.ts`, `stripe-checkout.gateway.ts`, `frontend-url.ts` (nuevos), `checkout.module.ts`, `pending-checkout.gateway.ts`, `checkout-gateway.ts`, `payments.service.ts`, `payments.controller.ts` y sus specs (`checkout.module.spec.ts`, `stripe-checkout.gateway.spec.ts`, `payments.service.spec.ts`).
+- `rentsmart-back/src/bookings/bookings.service.ts`: `HOLD_MINUTES`, el tope de Stripe y el `Payment`. Swagger en `bookings.controller.ts` y `dto/booking.dto.ts`.
+- `rentsmart-back/src/config/env.validation.ts` y su spec.
+- `rentsmart-back/test/payments.e2e-spec.ts` (nuevo), `booking-create.e2e-spec.ts`, `booking-contract.e2e-spec.ts`, `utils/setup-env.ts`.
+- `rentsmart-front/src/features/bookings/BookingPage.tsx`, `useConfirmationPolling.ts` (nuevo), `booking-selection.ts`, `BookingWidget.tsx`, `bookings-api.ts`, `types.ts` y sus tests; `src/mocks/bookings-handlers.ts` y su test; `src/features/catalog/SpaceDetailPage.tsx` (de B, solo el texto de 30 a 31 minutos).
+- `docs/decisiones.md`, `docs/producto.md`, `docs/arquitectura.md`, `AGENTS.md`, `.env.example`.
+
+#### Cómo probarlo
+- Back: `npm test`; e2e con una base propia: `docker compose exec db-test createdb -U testuser testdb_pa01`, `DATABASE_URL=postgresql://testuser:testpassword@localhost:5433/testdb_pa01 npx prisma migrate deploy` y `npx prisma db seed`, y `DATABASE_TEST_URL=postgresql://testuser:testpassword@localhost:5433/testdb_pa01 npm run test:e2e`.
+- Con Stripe de verdad (manual): poner una `STRIPE_SECRET_KEY` de test en `rentsmart-back/.env`, `npm run start:dev`, reservar desde el front y pagar con `4242 4242 4242 4242`. Hoy la reserva queda `PENDING` hasta que exista el webhook (PA-02); el front consulta un minuto y deja el botón para actualizar.
+- Front: `npm test`; con `VITE_USE_MOCKS=true npm run dev`, reservar un espacio: vuelve a `/bookings/<id>?pago=ok`, muestra el aviso y llega a «Confirmada».
+
+#### Estado de verificación
+- Build: ✅ back y front
+- Lint: ✅ back (oxlint) y front (ESLint)
+- Tests: ✅ back 33 suites / 593 unitarias y 26 suites / 526 e2e (contra `testdb_pa01`); front 54 archivos / 720 tests y 3 de Playwright. Ningún test llama a Stripe. No se probó contra la API real de Stripe.
+
+#### Pendientes y bloqueos
+- PA-02 (#46): el webhook. Tiene que completar `Payment.stripePaymentIntentId` y `Payment.status` (`SUCCEEDED`), pasar la reserva a `PAID`, tolerar una sesión cuya reserva no existe (COMMIT fallido después de crear la sesión) y manejar el `completed` sobre una `EXPIRED`: reembolso total y la reserva sigue `EXPIRED` (enmienda a P-06). Para el cliente de Stripe, importar `StripeModule` e inyectar `STRIPE_CLIENT`; `STRIPE_WEBHOOK_SECRET` ya se valida.
+- PA-03 (#47): reembolsos con `STRIPE_CLIENT`, actualizando `Payment.refundedAmount` y `Payment.status`; incluye el caso «completed sobre EXPIRED» y el aviso que hoy deja `BookingsService.cancel`.
+- `?pago=cancelado` no ofrece un enlace para volver a pagar: haría falta guardar la URL de la sesión o un endpoint que la entregue (cambio de contrato, por decidir).
+- Una reserva hecha sin Stripe (checkout provisorio) no tiene `Payment`, así que no aparece en mis pagos.
+- El tope de 99 999 999 CLP queda por confirmar en el dashboard de Stripe si alguna vez hace falta cobrar más.
+- PA-02: exponer la URL de la sesión de Checkout (para reintentar desde `?pago=cancelado`) o permitir cancelar la `PENDING` desde su página; hoy el aviso solo dice que se puede volver atrás o esperar a que venza.
+- Si Stripe creó la sesión pero la respuesta no llegó (tiempo agotado), la API no conoce su id y no puede anularla: vence sola en `expiresAt` y el webhook de PA-02 debe tolerarla.
+- Monto mínimo: Stripe rechaza montos bajo su mínimo y hoy eso es un 502 al reservar. Si se quiere un 400 antes, el precio mínimo de un espacio lo define B.
+- P-12 (Connect) sigue abierta; esto implementa su recomendación (Checkout sin Connect).
+
+#### Para el resto del equipo
+- **B (@xReNatS):** en `SpaceDetailPage.tsx` solo cambió el texto «retenido 30 minutos» a 31 minutos.
+- **A (@AlejandroMG):** no se tocó `schema.prisma`; se usan `Payment` y `Booking.stripeCheckoutSessionId` tal como están.
+- **RE-03:** en `bookings.service.ts` cambié solo `HOLD_MINUTES`, los topes (`MAX_STRIPE_AMOUNT`, `MAX_BOOKING_TOTAL` y la revisión del total), el bloque del `sessionId` (ahora también crea el `Payment`) y el comentario de `create`; no reordené la transacción.
+- Un e2e que borre reservas creadas con un `sessionId` tiene que borrar antes sus `Payment` (la relación no tiene `onDelete: Cascade`).
+- `checkoutDestination` ahora devuelve `{ inApp: true, path }` en vez de `{ inApp: true, bookingId }`.
+- Sin `STRIPE_SECRET_KEY` todo sigue como antes de PA-01; con una clave `sk_live_` la API no arranca.
+
+---

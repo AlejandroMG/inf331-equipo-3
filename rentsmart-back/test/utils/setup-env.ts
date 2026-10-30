@@ -19,3 +19,11 @@ process.env.UPLOADS_DIR = join(tmpdir(), 'rentsmart-e2e-uploads');
 // Sin el barrido periódico de vencimientos (RE-06): no deja temporizadores abiertos en Jest ni cambia los datos de
 // otras pruebas. test/booking-expiry.e2e-spec.ts llama al servicio directamente, con su propio reloj.
 process.env.BOOKING_SWEEP_ENABLED = 'false';
+
+// Ningún e2e llama a Stripe (PA-01): sin la clave, CheckoutModule usa el checkout provisorio. Se dejan en cadena
+// vacía, no se borran: ConfigModule.forRoot vuelve a leer rentsmart-back/.env y copia a process.env cada variable que
+// no esté definida (`!(key in process.env)`), así que con `delete` volvería una clave real del .env. Vacías, la
+// validación las toma como ausentes y createStripeClient devuelve null (lo comprueba test/stripe-disabled.e2e-spec.ts).
+// Los e2e que necesitan una sesión de Stripe sobrescriben el gateway con jest.spyOn.
+process.env.STRIPE_SECRET_KEY = '';
+process.env.STRIPE_WEBHOOK_SECRET = '';
