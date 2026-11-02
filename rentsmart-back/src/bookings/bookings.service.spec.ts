@@ -519,6 +519,9 @@ describe('BookingsService (RE-02)', () => {
         } finally {
           checkout.cancelSession = cancelSession;
         }
+      });
+    });
+
     describe('reservas simultáneas (RE-03)', () => {
       it('toma el lock del espacio en la transacción, con el id como parámetro, antes de expirar y revisar', async () => {
         const calls: string[] = [];

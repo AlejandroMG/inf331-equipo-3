@@ -167,7 +167,7 @@ export class BookingsService {
       { timeout: CREATE_TX_TIMEOUT_MS },
     ).catch((error: unknown) => {
       if (createdSessionId) this.releaseOrphanSession(createdSessionId);
-      throw error;
+      return overlapAsConflict(error);
     });
   }
 
@@ -185,7 +185,6 @@ export class BookingsService {
           `No se pudo anular la sesión de pago ${sessionId}, que quedó sin reserva: ${error instanceof Error ? error.name : 'error'}`,
         ),
     );
-    ).catch(overlapAsConflict);
   }
 
   /** Mis reservas como arrendatario, de cualquier estado, las creadas más recientemente primero. */
