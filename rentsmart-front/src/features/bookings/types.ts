@@ -91,6 +91,11 @@ export interface Booking {
   /** Hasta cuándo se retiene el horario mientras se paga (31 min); la sesión de Stripe vence en el mismo instante. Solo importa en `PENDING`. */
   expiresAt: string | null
   createdAt: string
+  /**
+   * CLP enteros: cuánto se le ha devuelto al arrendatario (PA-03); 0 si no hay pago o no se ha devuelto nada. En una
+   * reserva cancelada, 0 por sí solo no dice si tenía derecho a reembolso o si el reembolso falló.
+   */
+  refundedAmount: number
   space: BookingSpace
 }
 

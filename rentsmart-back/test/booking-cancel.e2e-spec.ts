@@ -103,6 +103,7 @@ describe('Cancelar una reserva (e2e)', () => {
         total: 26400,
         expiresAt: null,
         createdAt: expect.any(String),
+        refundedAmount: 0,
         space: {
           id: spaceId,
           name: `Sala ${SUFFIX}`,

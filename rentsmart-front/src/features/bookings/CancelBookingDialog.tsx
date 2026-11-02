@@ -44,7 +44,7 @@ function consequence(booking: CancellableBooking, cancelledBy: CancelledBy, tota
   }
   if (cancelledBy === 'OWNER') return `Al cancelarla, el arrendatario recibe el reembolso total${amount}.`
   return refundsOnCancel(booking, cancelledBy, now)
-    ? `Faltan más de 24 horas para el inicio: se te reembolsa el total${amount}.`
+    ? `Faltan 24 horas o más para el inicio: se te reembolsa el total${amount}.`
     : 'Faltan menos de 24 horas para el inicio: si la cancelas no hay reembolso.'
 }
 

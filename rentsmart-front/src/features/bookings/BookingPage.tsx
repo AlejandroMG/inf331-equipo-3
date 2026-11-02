@@ -80,6 +80,23 @@ function CancelledPaymentNotice({ booking }: { booking: Booking }) {
   )
 }
 
+/**
+ * Qué se devolvió (PA-03). Solo afirma lo que dice el pago: una cancelada con `refundedAmount` en 0 puede ser una
+ * pendiente que nunca se pagó, una sin derecho a reembolso o un reembolso que falló, y la página no sabe cuál es, así
+ * que el texto vale para todas.
+ */
+function RefundNotice({ booking }: { booking: Booking }) {
+  if (booking.refundedAmount > 0) {
+    return <p className="mt-3 text-[15px] font-bold text-primary-dark">Reembolsado: {formatClp(booking.refundedAmount)}</p>
+  }
+  if (booking.status !== 'CANCELLED') return null
+  return (
+    <p className="mt-3 text-sm text-muted">
+      No hay un reembolso registrado para esta reserva. Si pagaste y te correspondía uno según la política de cancelación, aún no se ha completado.
+    </p>
+  )
+}
+
 function BookingDetail({
   booking: initial,
   payment,
@@ -152,6 +169,7 @@ function BookingDetail({
           <dt className="border-t border-line pt-1 font-bold">Total</dt>
           <dd className="border-t border-line pt-1 text-right font-bold">{formatClp(booking.total)}</dd>
         </dl>
+        <RefundNotice booking={booking} />
       </section>
 
       <div>

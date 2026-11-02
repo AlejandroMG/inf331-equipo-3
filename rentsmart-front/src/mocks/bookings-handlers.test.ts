@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Availability, Booking, BookingCheckout, BookingsPage, PaymentsPage, Schedule } from '../features/bookings/types'
 import { http } from '../lib/http'
 import { clearToken, setToken } from '../lib/token'
@@ -129,6 +129,7 @@ describe('reservas simuladas', () => {
       total: 26400,
       expiresAt: expect.any(String),
       createdAt: expect.any(String),
+      refundedAmount: 0,
       space: { id: SPACE, name: 'Sala Alameda', communeName: 'Santiago', address: expect.any(String), addressDetail: null, coverUrl: null },
     })
   })
@@ -230,6 +231,42 @@ describe('reservas simuladas', () => {
     expect((await booking(bookingId)).status).toBe('CONFIRMED')
     expect((await http.post<Booking>(`/bookings/${bookingId}/cancel`, REASON)).status).toBe('CANCELLED')
   })
+
+  it('una pendiente cancelada no reembolsa: nunca se cobró', async () => {
+    const { bookingId } = await book()
+
+    expect((await http.post<Booking>(`/bookings/${bookingId}/cancel`, REASON)).refundedAmount).toBe(0)
+  })
+
+  describe('reembolso al cancelar (P-14)', () => {
+    /** Una reserva confirmada del lunes a las 10:00 de Chile (13:00 UTC), cancelada con el reloj en `now`. */
+    const cancelConfirmedAt = async (now: string) => {
+      vi.useFakeTimers({ toFake: ['Date'], now: new Date(now) })
+      const { bookingId } = await book()
+      await booking(bookingId)
+      await booking(bookingId)
+      expect((await booking(bookingId)).status).toBe('CONFIRMED')
+      return { bookingId, cancelled: await http.post<Booking>(`/bookings/${bookingId}/cancel`, REASON) }
+    }
+
+    afterEach(() => vi.useRealTimers())
+
+    it('con 24 horas exactas devuelve el total, también al consultarla después y en mis pagos', async () => {
+      const { bookingId, cancelled } = await cancelConfirmedAt('2026-10-11T13:00:00.000Z')
+
+      expect(cancelled.refundedAmount).toBe(26400)
+      expect((await booking(bookingId)).refundedAmount).toBe(26400)
+      expect((await http.get<PaymentsPage>('/payments/me')).items[0]).toMatchObject({ status: 'REFUNDED', refundedAmount: 26400 })
+    })
+
+    it('con menos de 24 horas no devuelve nada y el pago sigue cobrado', async () => {
+      const { bookingId, cancelled } = await cancelConfirmedAt('2026-10-11T13:00:00.001Z')
+
+      expect(cancelled).toMatchObject({ status: 'CANCELLED', refundedAmount: 0 })
+      expect((await booking(bookingId)).refundedAmount).toBe(0)
+      expect((await http.get<PaymentsPage>('/payments/me')).items[0]).toMatchObject({ status: 'SUCCEEDED', refundedAmount: 0 })
+    })
+  })
 })
 
 describe('pagos simulados', () => {
@@ -239,7 +276,7 @@ describe('pagos simulados', () => {
     await expect(http.get('/payments/me')).rejects.toMatchObject({ status: 401 })
   })
 
-  it('lista un pago por cada reserva pagada, y lo marca reembolsado si se cancela', async () => {
+  it('lista un pago por cada reserva pagada', async () => {
     const { bookingId } = await book()
     expect((await http.get<PaymentsPage>('/payments/me')).items).toEqual([])
 
@@ -258,9 +295,5 @@ describe('pagos simulados', () => {
       status: 'SUCCEEDED',
       createdAt: expect.any(String),
     })
-    // Pagada sin confirmar no se cancela: la tercera consulta la deja confirmada.
-    await booking(bookingId)
-    await http.post(`/bookings/${bookingId}/cancel`, REASON)
-    expect((await http.get<PaymentsPage>('/payments/me')).items[0]).toMatchObject({ status: 'REFUNDED', refundedAmount: 26400 })
   })
 })

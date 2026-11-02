@@ -3200,3 +3200,77 @@ Que dos solicitudes simultáneas por el mismo horario terminen en un 201 y un 40
 - No se tocaron `schema.prisma` ni las migraciones.
 
 ---
+
+### 2026-11-02 · C (@gonzzza-lol) · PA-03 reembolsos en Stripe
+
+**Issues:** #47 (PA-03), #81 (P-14), #73 (P-06)
+**Rama / PR:** `feature/PA-03-reembolsos` · sin PR todavía
+**Duración aproximada:** 2 h
+**Herramientas:** Claude Code
+
+#### Objetivo
+Que cancelar devuelva de verdad el dinero en Stripe, según lo que decide P-14, y dejar un puerto de reembolso para el webhook (PA-02) y la validación automática (RE-04). Ningún test llama a Stripe.
+
+#### Qué se hizo
+- **Puerto compartido con PA-02:** `src/payments/payment-refunder.ts` (`PaymentRefunder`, `PAYMENT_REFUNDER`), con el contenido exacto acordado, igual en las dos ramas.
+- **`RefundGateway`** (`src/payments/refund-gateway.ts`): `StripeRefundGateway` llama a `refunds.create({ payment_intent, amount }, { idempotencyKey })`, en CLP sin × 100; `charge_already_refunded` cuenta como éxito y otro error se propaga. Del `Refund` que responde, `succeeded` y `pending` cuentan como aceptados; cualquier otro estado lanza un error. `NoopRefundGateway` se usa sin cliente de Stripe.
+- **`PaymentRefundService`:** no hace nada sin `Payment`, si ya está `REFUNDED` o con `amount <= 0`. Lanza un error si el pago no está `SUCCEEDED`, si no tiene PaymentIntent o si `refundedAmount` superaría `amount`. Llama al gateway fuera de cualquier transacción y escribe con un `updateMany` condicionado a lo que leyó. Si Stripe reembolsó y falla esa escritura, registra cómo repararlo a mano y lanza `RefundNotRecordedError`.
+- **`RefundsModule`:** elige el gateway como `CheckoutModule` y exporta `PAYMENT_REFUNDER`. `BookingsModule` lo importa.
+- **`BookingsService.cancel`:** reemplaza el `logger.warn` de RE-05. Después de la transacción pide y espera el reembolso si `refund > 0`; si falla, `logger.error` con los ids y responde igual. La respuesta calcula `refundedAmount` con el resultado conocido, sin releer el pago. Una `PENDING` con `stripeCheckoutSessionId` expira su sesión sin esperar, y un fallo solo queda en el log.
+- **Contrato:** `BookingDto` suma `refundedAmount` (0 si no hay pago), con Swagger, `booking-contract.e2e-spec.ts`, el tipo del front y el mock de MSW al día. `BOOKING_VIEW` carga el id, el estado y el `refundedAmount` del pago.
+- **Front:** `BookingPage` muestra «Reembolsado: $X» si `refundedAmount > 0`. Una cancelada con 0 dice que no hay un reembolso registrado y que, si pagó y le correspondía uno, aún no se ha completado. En `CancelBookingDialog`, «Faltan más de 24 horas» pasó a «Faltan 24 horas o más», porque P-14 incluye las 24 horas exactas. El mock de cancelar aplica el plazo de P-14 como arrendatario.
+- **Pruebas:** `refund-gateway.spec.ts`, `payment-refund.service.spec.ts`, casos nuevos de `cancel` en `bookings.service.spec.ts`, `test/booking-refund.e2e-spec.ts` y casos en `BookingPage.test.tsx` y `bookings-handlers.test.ts`.
+- **Docs:** `arquitectura.md` (tabla de endpoints, RE-05 y una sección de PA-03 con la limitación) y `producto.md`.
+
+#### Decisiones y por qué
+| Decisión | Alternativas consideradas | Por qué se eligió |
+|---|---|---|
+| Módulo propio, `RefundsModule` | Ponerlo en `PaymentsModule` | PA-02 hace que `PaymentsModule` importe `BookingsModule`; sería un ciclo |
+| La clave de idempotencia es `refund-<pago>-<ya devuelto>-<monto>` | Solo el id del pago | Con solo el id, un segundo parcial recibe la respuesta guardada del primero: Stripe no devuelve nada y `refundedAmount` suma igual. Dos llamadas con el mismo estado del pago siguen mandando la misma clave; si una sigue en curso, Stripe puede rechazar la otra con `idempotency_key_in_use` |
+| `requires_action` del `Refund` cuenta como error | Tratarlo como aceptado | Según el SDK solo ocurre en medios de pago que piden una acción del cliente, no en tarjetas, y aquí nadie la haría. Marcarlo `REFUNDED` afirmaría algo que no pasó |
+| `cancel` calcula el resultado, sin releer el pago | Releerlo y usar el valor anterior si falla | Una relectura que falla respondería 0 con el dinero ya devuelto. Sin relectura desaparece ese caso |
+| `RefundNotRecordedError` vive en `payment-refund.service.ts` | Agregarlo a `payment-refunder.ts` | Ese archivo tiene que quedar idéntico en la rama de PA-02 |
+| `NoopRefundGateway` rechaza en vez de responder como si nada | Que no haga nada y resuelva | Solo llega ahí un pago cobrado sin cliente de Stripe. Resolver lo dejaría `REFUNDED` y el front diría «Reembolsado» sin que se devolviera el dinero |
+| El reembolso se espera; expirar la sesión, no | Esperar los dos, o ninguno | La respuesta informa el reembolso. La sesión vence sola y el webhook cubre el pago que llegue igual, así que no justifica hacer esperar |
+| `refundBooking` recibe un motivo fijo al cancelar | Pasarle `dto.reason` | El motivo va al log, y el que escribe la persona puede traer datos personales |
+| Los logs de `cancel` guardan el nombre del error, no su mensaje | Registrar el mensaje | En un error de Stripe el mensaje puede traer parte de la clave (el mismo criterio de PA-01) |
+| El texto de una cancelada con 0 vale para los dos casos | Calcular en el front si tenía derecho | El front no sabe quién canceló ni cuándo; afirmar algo podría ser falso |
+
+#### Archivos principales
+- `rentsmart-back/src/payments/`: `payment-refunder.ts`, `refund-gateway.ts`, `payment-refund.service.ts`, `refunds.module.ts` y sus `.spec.ts`; `checkout-gateway.ts` (comentario de `cancelSession`).
+- `rentsmart-back/src/bookings/`: `bookings.service.ts` (+ spec), `bookings.module.ts`, `booking-view.ts`, `bookings.controller.ts` (Swagger), `dto/booking.dto.ts`.
+- `rentsmart-back/test/`: `booking-refund.e2e-spec.ts` (nuevo), `booking-cancel.e2e-spec.ts`, `booking-contract.e2e-spec.ts`.
+- `rentsmart-front/src/features/bookings/`: `BookingPage.tsx`, `CancelBookingDialog.tsx`, `types.ts` y sus tests; `src/mocks/bookings-handlers.ts` (+ test).
+- `docs/arquitectura.md`, `docs/producto.md`.
+
+#### Cómo probarlo
+- Back, en `rentsmart-back`: `npm test -- src/payments src/bookings/bookings.service` y `npm run test:e2e -- booking-refund` con `DATABASE_TEST_URL` apuntando a una base de test.
+- Front: `npm test -- --run src/features/bookings src/mocks/bookings-handlers`. Hoy no se puede cancelar desde el front: `CancelBookingDialog` no está montado en ninguna página. El reembolso en pantalla se ve solo con los tests de `BookingPage`, o llamando a mano al mock de cancelar y entrando a la reserva sin recargar.
+
+#### Estado de verificación
+- Build: ✅ back y front.
+- Lint: ✅ back y front.
+- Tests: ✅ back: 37 suites y 663 unitarios; e2e: 31 suites y 561 tests. Front: 56 archivos y 734 tests; Playwright: 3 de 3.
+- 375 px y escritorio: revisado en Chromium, con «Reembolsado» y con el texto sin reembolso anterior, sin scroll horizontal. El texto definitivo tiene un largo parecido y no se volvió a revisar en pantalla.
+- **No probado contra Stripe de verdad:** todo usa dobles. Falta un reembolso en modo test cuando PA-02 complete `stripePaymentIntentId`.
+
+#### Pendientes y bloqueos
+- **Un reembolso que falla no se reintenta solo.** La reserva queda `CANCELLED`, el pago `SUCCEEDED` con `refundedAmount` en 0 y hay un `logger.error`; hoy se resuelve a mano desde el log. Un barrido de reintento es posible sin cambiar el schema y queda pendiente (lo decide C): el derecho a reembolso se puede recalcular desde el `BookingEvent` hacia `CANCELLED` (`actorId`, `createdAt`), `renterId` y `startAt`.
+- **Un corte del proceso entre el COMMIT y el reembolso no deja log.** Solo lo encontraría ese recálculo.
+- **Un reembolso `pending` que después falla** (`refund.failed`) queda fuera de esta historia: el pago seguiría `REFUNDED`.
+- **`CancelBookingDialog` no está montado en ninguna página**, así que hoy no se puede cancelar desde el front. No se montó en esta historia.
+- Hasta que entre PA-02 ningún pago real queda `SUCCEEDED` con PaymentIntent, así que con Stripe de verdad `cancel` todavía no llega a reembolsar.
+- Una `PENDING` cancelada deja su `Payment` en `PENDING`; PA-03 no lo toca.
+- El issue #47 hay que cerrarlo a mano al mergear a `develop` (T-05).
+
+#### Para el resto del equipo
+- **PA-02 y RE-04:** importen `RefundsModule` e inyecten `@Inject(PAYMENT_REFUNDER)`. No importen `PaymentRefundService` ni `REFUND_GATEWAY` directamente. RE-04 lo usa cuando falla la validación.
+- **PA-02:** `refundBooking` lanza un error si el pago no está `SUCCEEDED` o no tiene `stripePaymentIntentId`. Para una sesión pagada de una reserva `EXPIRED` o `CANCELLED`, primero deja el pago en `SUCCEEDED` con su PaymentIntent y después llama al puerto.
+- **`refundBooking` lanza si el proveedor falla:** quien llama decide. Responder 500 al webhook hace que Stripe reintente el evento, pero eso no siempre basta: la clave de idempotencia puede repetir un error guardado durante unas 24 horas, sin intentar de nuevo el reembolso. `RefundNotRecordedError` significa que el dinero ya se devolvió y solo falta registrarlo.
+- **`reason` va al log:** no le pasen texto escrito por una persona.
+- **Merge con PA-02:** los dos tocan `bookings.module.ts`; conserven `RefundsModule` en `imports`. `payment-refunder.ts` debería quedar idéntico en las dos ramas.
+- **`BookingDto` tiene un campo nuevo:** quien arme uno en un test o en un mock debe incluir `refundedAmount`.
+- **Una clave restringida `rk_test_`** necesita permiso de escritura en Refunds.
+- No se tocaron `schema.prisma` ni las migraciones.
+
+---
