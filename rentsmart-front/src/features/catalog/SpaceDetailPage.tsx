@@ -179,7 +179,7 @@ export function SpaceDetailPage() {
               </div>
               <BookingWidget spaceId={space.id} pricePerHour={space.pricePerHour} pricePerDay={space.pricePerDay} />
               <p className="text-sm leading-relaxed text-muted">
-                Reserva inmediata: no necesitas esperar la aprobación del propietario. El horario queda retenido 30 minutos mientras pagas.
+                Reserva inmediata: no necesitas esperar la aprobación del propietario. El horario queda retenido 31 minutos mientras pagas.
               </p>
             </aside>
           </div>

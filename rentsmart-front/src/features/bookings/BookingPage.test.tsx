@@ -1,12 +1,13 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { createMemoryRouter, RouterProvider } from 'react-router'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setToken } from '../../lib/token'
 import { server } from '../../mocks/server'
 import { BookingPage } from './BookingPage'
-import type { Booking } from './types'
+import type { Booking, BookingStatus } from './types'
+import { POLL_INTERVAL_MS, POLL_MAX_ATTEMPTS } from './useConfirmationPolling'
 
 const MINUTE = 60_000
 
@@ -34,12 +35,28 @@ function serve(response: Booking | { status: number; message: string }) {
   )
 }
 
-function renderPage() {
+function renderPage(entry = '/bookings/b1') {
   const router = createMemoryRouter([{ path: '/bookings/:bookingId', element: <BookingPage /> }], {
-    initialEntries: ['/bookings/b1'],
+    initialEntries: [entry],
   })
-  render(<RouterProvider router={router} />)
+  return render(<RouterProvider router={router} />)
 }
+
+/** Responde la reserva con el estado que toca en cada consulta (el último se repite) y cuenta las consultas. */
+function serveSequence(statuses: BookingStatus[]) {
+  const counter = { calls: 0 }
+  server.use(
+    http.get('*/api/bookings/:id', () => {
+      const status = statuses[Math.min(counter.calls, statuses.length - 1)]
+      counter.calls += 1
+      return HttpResponse.json(booking({ status }))
+    }),
+  )
+  return counter
+}
+
+/** Avanza los temporizadores falsos y deja que terminen las consultas que dispararon. */
+const advance = (ms: number) => act(() => vi.advanceTimersByTimeAsync(ms))
 
 describe('BookingPage', () => {
   beforeEach(() => setToken('token-de-prueba'))
@@ -112,6 +129,131 @@ describe('BookingPage', () => {
 
     expect(await screen.findByRole('heading', { level: 1, name: heading })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Ver el catálogo' })).toHaveAttribute('href', '/')
+  })
+
+  // PA-01: Stripe vuelve con ?pago=ok o ?pago=cancelado. Con temporizadores falsos que igual avanzan solos, para que
+  // findBy* funcione; los saltos de 2 s se hacen a mano.
+  describe('al volver de Stripe Checkout', () => {
+    beforeEach(() => vi.useFakeTimers({ shouldAdvanceTime: true }))
+    afterEach(() => vi.useRealTimers())
+
+    it('con pago=ok avisa que confirma y consulta cada 2 s hasta verla CONFIRMED, y ahí se detiene', async () => {
+      const counter = serveSequence(['PENDING', 'PAID', 'CONFIRMED'])
+      renderPage('/bookings/b1?pago=ok')
+
+      expect(await screen.findByText('Pago recibido, confirmando tu reserva…')).toBeInTheDocument()
+      // Ya pagó: no muestra la cuenta regresiva de la retención.
+      expect(screen.queryByText(/Tu horario queda retenido/)).not.toBeInTheDocument()
+      expect(counter.calls).toBe(1)
+
+      await advance(POLL_INTERVAL_MS)
+      expect(await screen.findByText('Pagada')).toBeInTheDocument()
+      expect(counter.calls).toBe(2)
+
+      await advance(POLL_INTERVAL_MS)
+      expect(await screen.findByText('Confirmada')).toBeInTheDocument()
+      expect(counter.calls).toBe(3)
+      expect(screen.queryByText('Pago recibido, confirmando tu reserva…')).not.toBeInTheDocument()
+
+      await advance(10 * POLL_INTERVAL_MS)
+      expect(counter.calls).toBe(3)
+    })
+
+    it('se detiene también en otro estado final, como CANCELLED', async () => {
+      const counter = serveSequence(['PAID', 'CANCELLED'])
+      renderPage('/bookings/b1?pago=ok')
+
+      await screen.findByText('Pago recibido, confirmando tu reserva…')
+      await advance(POLL_INTERVAL_MS)
+      expect(await screen.findByText('Cancelada')).toBeInTheDocument()
+
+      await advance(5 * POLL_INTERVAL_MS)
+      expect(counter.calls).toBe(2)
+      expect(screen.queryByText('Pago recibido, confirmando tu reserva…')).not.toBeInTheDocument()
+    })
+
+    it(`si después de ${POLL_MAX_ATTEMPTS} consultas sigue pendiente, deja de consultar y deja el botón para actualizar`, async () => {
+      const counter = serveSequence(['PENDING'])
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+      renderPage('/bookings/b1?pago=ok')
+
+      await screen.findByText('Pago recibido, confirmando tu reserva…')
+      for (let i = 0; i < POLL_MAX_ATTEMPTS; i += 1) await advance(POLL_INTERVAL_MS)
+
+      // La carga inicial más los 30 intentos.
+      expect(counter.calls).toBe(1 + POLL_MAX_ATTEMPTS)
+      expect(await screen.findByText(/Todavía no recibimos la confirmación del pago/)).toBeInTheDocument()
+      expect(screen.queryByText('Pago recibido, confirmando tu reserva…')).not.toBeInTheDocument()
+      await advance(10 * POLL_INTERVAL_MS)
+      expect(counter.calls).toBe(1 + POLL_MAX_ATTEMPTS)
+
+      await user.click(screen.getByRole('button', { name: 'Actualizar el estado' }))
+      await waitFor(() => expect(counter.calls).toBe(2 + POLL_MAX_ATTEMPTS))
+    })
+
+    it('al salir de la página deja de consultar', async () => {
+      const counter = serveSequence(['PENDING'])
+      const { unmount } = renderPage('/bookings/b1?pago=ok')
+
+      await screen.findByText('Pago recibido, confirmando tu reserva…')
+      unmount()
+      await advance(5 * POLL_INTERVAL_MS)
+
+      expect(counter.calls).toBe(1)
+    })
+
+    it('si la reserva ya está confirmada, no consulta de nuevo ni muestra el aviso', async () => {
+      const counter = serveSequence(['CONFIRMED'])
+      renderPage('/bookings/b1?pago=ok')
+
+      expect(await screen.findByText('Confirmada')).toBeInTheDocument()
+      await advance(3 * POLL_INTERVAL_MS)
+
+      expect(counter.calls).toBe(1)
+      expect(screen.queryByText('Pago recibido, confirmando tu reserva…')).not.toBeInTheDocument()
+    })
+
+    it('con pago=cancelado avisa hasta qué hora sigue retenido el horario, sin consultar de nuevo', async () => {
+      // La retención vence el lunes 12 de octubre de 2026 a las 12:38 de Chile.
+      vi.setSystemTime(new Date('2026-10-12T15:10:00.000Z'))
+      const counter = { calls: 0 }
+      server.use(
+        http.get('*/api/bookings/:id', () => {
+          counter.calls += 1
+          return HttpResponse.json(booking({ expiresAt: '2026-10-12T15:38:00.000Z' }))
+        }),
+      )
+      renderPage('/bookings/b1?pago=cancelado')
+
+      expect(
+        await screen.findByText(
+          'Cancelaste el pago. El horario sigue retenido hasta las 12:38; puedes volver atrás a la página de pago o esperar a que venza para elegir otro.',
+        ),
+      ).toBeInTheDocument()
+      // La cuenta regresiva sigue a la vista.
+      expect(screen.getByText(/Tu horario queda retenido por/)).toBeInTheDocument()
+      await advance(3 * POLL_INTERVAL_MS)
+      expect(counter.calls).toBe(1)
+    })
+
+    it('con pago=cancelado y la retención ya vencida, no dice que sigue retenido', async () => {
+      serve(booking({ expiresAt: new Date(Date.now() - MINUTE).toISOString() }))
+      renderPage('/bookings/b1?pago=cancelado')
+
+      expect(await screen.findByText('La retención del horario venció.')).toBeInTheDocument()
+      expect(screen.queryByText(/Cancelaste el pago/)).not.toBeInTheDocument()
+    })
+
+    it('sin pago en la URL no avisa nada ni consulta de nuevo', async () => {
+      const counter = serveSequence(['PENDING', 'CONFIRMED'])
+      renderPage()
+
+      expect(await screen.findByText('Pendiente de pago')).toBeInTheDocument()
+      await advance(3 * POLL_INTERVAL_MS)
+
+      expect(counter.calls).toBe(1)
+      expect(screen.queryByText(/Pago recibido|Cancelaste el pago/)).not.toBeInTheDocument()
+    })
   })
 
   it('otro error se puede reintentar', async () => {

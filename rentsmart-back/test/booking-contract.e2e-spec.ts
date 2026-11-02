@@ -65,7 +65,7 @@ describe('Contrato de disponibilidad, reservas y pagos (e2e)', () => {
       ['get', '/api/spaces/{id}/availability', ['200', '400', '404']],
       ['get', '/api/spaces/{id}/schedule', ['200', '401', '403', '404']],
       ['put', '/api/spaces/{id}/schedule', ['200', '400', '401', '403', '404', '409']],
-      ['post', '/api/bookings', ['201', '400', '401', '403', '404', '409']],
+      ['post', '/api/bookings', ['201', '400', '401', '403', '404', '409', '502']],
       ['get', '/api/bookings/me', ['200', '400', '401']],
       ['get', '/api/bookings/{id}', ['200', '401', '403', '404']],
       ['post', '/api/bookings/{id}/cancel', ['200', '400', '401', '403', '404', '409']],
@@ -516,14 +516,8 @@ describe('Contrato de disponibilidad, reservas y pagos (e2e)', () => {
   });
 
   // Los datos válidos del contrato pasan la validación y llegan al servicio, que todavía no existe (501).
-  // Cada historia cambia su línea por tests de verdad.
+  // Cada historia cambia su línea por tests de verdad. `GET /api/payments/me` ya está (PA-01, test/payments.e2e-spec.ts).
   describe('pendiente de implementar', () => {
-    it.each([
-      ['get', '/api/payments/me?page=1&pageSize=10', undefined],
-    ] as const)('%s %s responde 501 con datos válidos', (method, path, body) => {
-      return request(server())[method](path).set(auth()).send(body).expect(501);
-    });
-
     it('el webhook con firma llega al servicio (501)', () => {
       return request(server())
         .post('/api/payments/webhook')

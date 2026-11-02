@@ -103,4 +103,28 @@ describe('validate', () => {
       ).not.toThrow();
     });
   });
+
+  // Valores inventados: no son claves reales.
+  describe('Stripe (PA-01)', () => {
+    it('las dos variables son opcionales, también vacías', () => {
+      expect(() => validate(BASE)).not.toThrow();
+      expect(() => validate({ ...BASE, STRIPE_SECRET_KEY: '', STRIPE_WEBHOOK_SECRET: '' })).not.toThrow();
+    });
+
+    it.each(['sk_test_abc123', 'rk_test_abc123'])('acepta la clave de test %s', (key) => {
+      expect(validate({ ...BASE, STRIPE_SECRET_KEY: key }).STRIPE_SECRET_KEY).toBe(key);
+    });
+
+    it.each(['sk_live_abc123', 'pk_test_abc123', 'cualquier-cosa'])(
+      'rechaza %s: solo claves secretas de modo test',
+      (key) => {
+        expect(() => validate({ ...BASE, STRIPE_SECRET_KEY: key })).toThrow('STRIPE_SECRET_KEY');
+      },
+    );
+
+    it('el secreto del webhook debe empezar con whsec_', () => {
+      expect(() => validate({ ...BASE, STRIPE_WEBHOOK_SECRET: 'whsec_abc123' })).not.toThrow();
+      expect(() => validate({ ...BASE, STRIPE_WEBHOOK_SECRET: 'abc123' })).toThrow('STRIPE_WEBHOOK_SECRET');
+    });
+  });
 });

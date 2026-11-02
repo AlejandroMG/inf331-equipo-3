@@ -72,6 +72,21 @@ class EnvironmentVariables {
   })
   JWT_EXPIRES_IN: string;
 
+  // Stripe en modo test (PA-01). Opcional: sin ella la reserva usa el checkout provisorio, que no cobra. Si viene,
+  // tiene que ser una clave de test (sk_test_ o rk_test_), así nunca se cobra de verdad por error.
+  @ValidateIf((env: EnvironmentVariables) => Boolean(env.STRIPE_SECRET_KEY))
+  @IsString()
+  @Matches(/^(sk|rk)_test_\w+$/, {
+    message: 'STRIPE_SECRET_KEY debe ser una clave de Stripe en modo test (sk_test_… o rk_test_…)',
+  })
+  STRIPE_SECRET_KEY: string;
+
+  // Secreto para verificar la firma del webhook (whsec_…). Opcional; lo usa el webhook desde PA-02.
+  @ValidateIf((env: EnvironmentVariables) => Boolean(env.STRIPE_WEBHOOK_SECRET))
+  @IsString()
+  @Matches(/^whsec_\w+$/, { message: 'STRIPE_WEBHOOK_SECRET debe empezar con whsec_' })
+  STRIPE_WEBHOOK_SECRET: string;
+
   // Vencimientos automáticos de reservas (RE-06). Encendidos salvo que valga "false"; los e2e los apagan.
   @IsOptional()
   @IsIn(['true', 'false'])

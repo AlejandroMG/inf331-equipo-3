@@ -63,7 +63,7 @@ describe('createBooking y getBooking', () => {
   it('crea la reserva y entrega a dónde ir a pagar; getBooking la trae con el desglose', async () => {
     const { bookingId, checkoutUrl } = await createBooking({ spaceId: SPACE, ...MONDAY_10_TO_12, unit: 'HOUR' })
 
-    expect(checkoutUrl).toMatch(new RegExp(`/bookings/${bookingId}$`))
+    expect(checkoutUrl).toMatch(new RegExp(`/bookings/${bookingId}\\?pago=ok$`))
     const booking = await getBooking(bookingId)
     expect(booking).toMatchObject({ id: bookingId, status: 'PENDING', unit: 'HOUR', subtotal: 24000, fee: 2400, total: 26400 })
     expect(booking.space.id).toBe(SPACE)

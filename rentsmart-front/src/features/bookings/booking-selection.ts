@@ -1,3 +1,4 @@
+import { paths } from '../../lib/paths'
 import type { AvailabilitySlot, BookingStatus, BookingUnit } from './types'
 
 /** Cómo se muestra cada estado de una reserva. */
@@ -100,18 +101,21 @@ export function formatRange(startAt: string, endAt: string): string {
 /** Horas enteras entre dos instantes. */
 export const hoursBetween = (startAt: string, endAt: string) => Math.round((Date.parse(endAt) - Date.parse(startAt)) / 3_600_000)
 
-/** A dónde ir después de reservar: una página de la app o un sitio externo (el checkout de Stripe). */
-export type CheckoutDestination = { inApp: true; bookingId: string } | { inApp: false; url: string }
+/** A dónde ir después de reservar: una ruta de la app o un sitio externo (el checkout de Stripe). */
+export type CheckoutDestination = { inApp: true; path: string } | { inApp: false; url: string }
 
 /**
  * Decide a dónde lleva `checkoutUrl`. Si es del mismo origen que la app, o su ruta es `/bookings/<id>` (el checkout
- * provisorio de RE-02, que arma el back con `FRONTEND_URL`), se queda en la app y va a la página de la reserva: así no
+ * sin Stripe, que arma el back con `FRONTEND_URL`), se queda en la app y va a la página de la reserva: así no
  * depende de que `FRONTEND_URL` sea exactamente el origen del front (otro puerto, `127.0.0.1` en vez de `localhost`).
- * Cualquier otra URL (Stripe Checkout, PA-01) es externa.
+ * Conserva el query string (el mock de MSW vuelve con `?pago=ok`, como Stripe). Cualquier otra URL (Stripe Checkout,
+ * PA-01) es externa.
  */
 export function checkoutDestination(checkoutUrl: string, bookingId: string, origin: string): CheckoutDestination {
   const target = new URL(checkoutUrl, origin)
-  if (target.origin === origin || /^\/bookings\/[^/]+\/?$/.test(target.pathname)) return { inApp: true, bookingId }
+  if (target.origin === origin || /^\/bookings\/[^/]+\/?$/.test(target.pathname)) {
+    return { inApp: true, path: `${paths.booking(bookingId)}${target.search}` }
+  }
   return { inApp: false, url: target.href }
 }
 

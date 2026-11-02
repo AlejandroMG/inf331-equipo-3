@@ -56,7 +56,7 @@ export class BookingDto {
   @ApiProperty({
     type: Date,
     nullable: true,
-    description: 'Hasta cuándo se retiene el horario mientras se paga (30 min). Solo importa en `PENDING`',
+    description: 'Hasta cuándo se retiene el horario mientras se paga (31 min); la sesión de Stripe vence en el mismo instante. Solo importa en `PENDING`',
   })
   expiresAt: Date | null;
 
@@ -89,7 +89,7 @@ export class BookingCheckoutDto {
   @ApiProperty({
     example: 'https://checkout.stripe.com/c/pay/cs_test_...',
     description:
-      'El enlace de pago, donde el front redirige: Stripe Checkout desde PA-01; mientras tanto, la página de la reserva en el front (`/bookings/<id>`)',
+      'El enlace de pago, donde el front redirige: la sesión de Stripe Checkout (vuelve a `/bookings/<id>?pago=ok` o `?pago=cancelado`) o, sin `STRIPE_SECRET_KEY`, la página de la reserva en el front (`/bookings/<id>`)',
   })
   checkoutUrl: string;
 }
