@@ -43,7 +43,8 @@ export class BookingsController {
   @ApiForbiddenResponse({ description: 'El espacio es tuyo: el propietario no puede reservar sus propios espacios' })
   @ApiNotFoundResponse({ description: 'El espacio no existe o no está activo' })
   @ApiConflictResponse({
-    description: 'El horario está fuera del horario semanal o ya tiene una reserva pendiente, pagada o confirmada',
+    description:
+      'El horario está fuera del horario semanal o ya tiene una reserva pendiente, pagada o confirmada, incluso si otra solicitud lo tomó al mismo tiempo',
   })
   @ApiBadGatewayResponse({
     description:

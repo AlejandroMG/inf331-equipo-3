@@ -13,6 +13,7 @@ export const paths = {
   ownerBookings: '/owner/bookings',
   ownerMetrics: '/owner/metrics',
   favorites: '/favorites',
+  profile: '/profile',
   login: '/login',
   register: '/register',
   admin: '/admin',
