@@ -13,7 +13,7 @@ export const cancelBooking = (bookingId: string, reason: string) =>
   http.post<Booking>(`/bookings/${encodeURIComponent(bookingId)}/cancel`, { reason } satisfies CancelBookingPayload)
 
 /**
- * Reserva un horario (RE-02). La reserva nace `PENDING` y retiene el horario 30 minutos; hay que redirigir a
+ * Reserva un horario (RE-02). La reserva nace `PENDING` y retiene el horario 31 minutos (P-06); hay que redirigir a
  * `checkoutUrl` para pagar. Los montos los calcula el back: aquí no se mandan.
  */
 export const createBooking = (payload: CreateBookingPayload) =>

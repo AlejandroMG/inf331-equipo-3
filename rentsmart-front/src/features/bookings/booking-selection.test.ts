@@ -111,13 +111,24 @@ describe('checkoutDestination', () => {
   const ORIGIN = 'http://localhost:5173'
 
   it('del mismo origen: va a la página de la reserva dentro de la app', () => {
-    expect(checkoutDestination('http://localhost:5173/bookings/b1', 'b1', ORIGIN)).toEqual({ inApp: true, bookingId: 'b1' })
-    expect(checkoutDestination('/bookings/b1', 'b1', ORIGIN)).toEqual({ inApp: true, bookingId: 'b1' })
+    expect(checkoutDestination('http://localhost:5173/bookings/b1', 'b1', ORIGIN)).toEqual({ inApp: true, path: '/bookings/b1' })
+    expect(checkoutDestination('/bookings/b1', 'b1', ORIGIN)).toEqual({ inApp: true, path: '/bookings/b1' })
+  })
+
+  it('conserva el query string, como el ?pago=ok del mock de MSW (PA-01)', () => {
+    expect(checkoutDestination('http://localhost:5173/bookings/b1?pago=ok', 'b1', ORIGIN)).toEqual({
+      inApp: true,
+      path: '/bookings/b1?pago=ok',
+    })
+    expect(checkoutDestination('http://127.0.0.1:5173/bookings/b1/?pago=cancelado', 'b1', ORIGIN)).toEqual({
+      inApp: true,
+      path: '/bookings/b1?pago=cancelado',
+    })
   })
 
   it('con la ruta /bookings/<id> en otro origen (FRONTEND_URL distinto del front) también se queda en la app', () => {
-    expect(checkoutDestination('http://127.0.0.1:5173/bookings/b1', 'b1', ORIGIN)).toEqual({ inApp: true, bookingId: 'b1' })
-    expect(checkoutDestination('https://rentsmart.test/bookings/b1/', 'b1', ORIGIN)).toEqual({ inApp: true, bookingId: 'b1' })
+    expect(checkoutDestination('http://127.0.0.1:5173/bookings/b1', 'b1', ORIGIN)).toEqual({ inApp: true, path: '/bookings/b1' })
+    expect(checkoutDestination('https://rentsmart.test/bookings/b1/', 'b1', ORIGIN)).toEqual({ inApp: true, path: '/bookings/b1' })
   })
 
   it('otro sitio, como Stripe Checkout, es externo', () => {

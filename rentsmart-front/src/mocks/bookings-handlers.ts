@@ -259,7 +259,8 @@ export const bookingHandlers = [
       subtotal,
       fee,
       total: subtotal + fee,
-      expiresAt: new Date(now + 30 * 60_000).toISOString(),
+      // Retiene el horario 31 minutos, como el back (P-06).
+      expiresAt: new Date(now + 31 * 60_000).toISOString(),
       createdAt: new Date(now).toISOString(),
       space: { id: space.id, name: space.name, communeName: space.communeName, address: 'Av. Libertador Bernardo O’Higgins 1234', addressDetail: null, coverUrl: space.coverUrl },
       polls: 0,
@@ -268,7 +269,9 @@ export const bookingHandlers = [
     bookings.push(booking)
     const origin = typeof location === 'undefined' ? '' : location.origin
     return HttpResponse.json(
-      { bookingId: booking.id, checkoutUrl: `${origin}/bookings/${booking.id}` } satisfies BookingCheckout,
+      // Como el success_url de Stripe Checkout (PA-01): vuelve a la reserva con ?pago=ok, así en modo mock se ve el
+      // flujo completo (el aviso de pago recibido y la consulta hasta CONFIRMED).
+      { bookingId: booking.id, checkoutUrl: `${origin}/bookings/${booking.id}?pago=ok` } satisfies BookingCheckout,
       { status: 201 },
     )
   }),

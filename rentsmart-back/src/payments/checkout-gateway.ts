@@ -2,19 +2,23 @@
  * Puerto de checkout: dónde paga el arrendatario una reserva recién creada. `BookingsService.create` solo conoce esta
  * interfaz, así que cambiar de implementación no toca las reservas.
  *
- * PA-01 (#45): la implementación de Stripe Checkout reemplaza a `PendingCheckoutGateway` en `CheckoutModule`
- * (`{ provide: CHECKOUT_GATEWAY, useClass: StripeCheckoutGateway }`). Debe crear la sesión en CLP por `total`, con
- * `success_url` a `/bookings/<id>` del front y el id de la reserva en los metadatos, para que el webhook (PA-02) la
- * encuentre, y devolver el id de la sesión en `sessionId`. Dos advertencias para PA-01:
+ * Implementaciones (las elige `CheckoutModule` según `STRIPE_SECRET_KEY`):
+ * - `StripeCheckoutGateway` (PA-01, #45): crea la Checkout Session en CLP por `total`, con el id de la reserva en los
+ *   metadatos, y devuelve su `sessionId`. La sesión vence en `expiresAt`: la retención es de 31 minutos (P-06) para
+ *   cumplir con margen el mínimo de Stripe (`expires_at` ≥ creación + 30 min).
+ * - `PendingCheckoutGateway`: sin Stripe, manda a la página de la reserva y no devuelve `sessionId`.
  *
- * - Stripe exige `expires_at` ≥ creación + 30 min, así que no puede ser igual a `expiresAt` (la reserva se crea antes
- *   que la sesión); cómo calzar los dos plazos se decide en PA-01.
+ * Advertencias:
  * - `createSession` se llama dentro de la transacción de `BookingsService.create`. Si falla, la reserva se deshace.
- *   Pero si la sesión se crea y después el COMMIT falla, queda una sesión de Stripe sin reserva: el webhook de PA-02
- *   debe tolerar un evento cuyo id de reserva no existe (responder 200 sin hacer nada).
+ *   Si la sesión se crea y después falla el resto de la transacción (o el COMMIT), `create` llama a `cancelSession`
+ *   para expirarla, sin esperar. Si eso también falla, o si Stripe creó la sesión pero la respuesta no llegó, queda
+ *   una sesión sin reserva hasta que venza sola: el webhook de PA-02 debe tolerar un evento cuyo id de reserva no
+ *   existe (responder 200 sin hacer nada).
  */
 export interface CheckoutGateway {
   createSession(booking: CheckoutBooking): Promise<CheckoutSession>;
+  /** Anula una sesión que quedó sin reserva. Opcional: el checkout provisorio no crea sesiones. */
+  cancelSession?(sessionId: string): Promise<void>;
 }
 
 /** Lo que el checkout necesita saber de la reserva. Montos en CLP enteros. */
@@ -24,7 +28,7 @@ export interface CheckoutBooking {
   subtotal: number;
   fee: number;
   total: number;
-  /** Hasta cuándo se retiene el horario (P-06): la sesión de pago no debería durar más. */
+  /** Hasta cuándo se retiene el horario (P-06): la sesión de pago vence en ese mismo instante. */
   expiresAt: Date;
 }
 

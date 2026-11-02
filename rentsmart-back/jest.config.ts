@@ -25,6 +25,8 @@ const config: Config = {
     'src/**/*.(t|j)s',
     'libs/**/*.(t|j)s',
     'apps/**/*.(t|j)s',
+    // Datos de prueba que solo usan los specs.
+    '!**/*.fixture.ts',
   ],
   coverageDirectory: './coverage',
   testEnvironment: 'node',

@@ -3012,6 +3012,66 @@ Permitir consultar y editar el perfil personal y mostrar la antigüedad y reseñ
 - La API permite consultar y editar los datos privados, subir o quitar la foto y consultar el perfil público de anfitriones activos con promedio, cantidad y hasta 20 reseñas recientes; no devuelve correo ni teléfono públicamente.
 - El front incorpora `/profile` y `/users/:id`, con acceso al perfil del anfitrión desde el detalle del espacio.
 - Se conservaron las rutas de reservas existentes al integrar los cambios.
+### 2026-10-29 · C (@gonzzza-lol) · PA-01 pagar con Stripe Checkout en modo test
+
+**Issues:** #45 (PA-01), #73 (P-06)
+**Rama / PR:** `feature/PA-01-stripe-checkout` · sin PR todavía
+### 2026-10-29 · C (gonzzza-lol) · RE-03: evitar reservas cruzadas
+
+**Issues:** #40 (RE-03)
+**Rama / PR:** `feature/RE-03-reservas-cruzadas` · sin PR todavía
+**Duración aproximada:** 3 h
+**Herramientas:** Claude Code
+
+#### Objetivo
+Cobrar las reservas con Stripe Checkout en modo test: crear la sesión al reservar, registrar el pago, listar mis pagos y mostrar en el front el regreso desde Stripe (pago recibido o cancelado), sin que ningún test llame a Stripe.
+
+#### Qué se hizo
+- **Enmienda a P-06 (aprobada por C):** la retención pasa de 30 a **31 minutos** (`HOLD_MINUTES = 31`) y la sesión de Stripe vence en el mismo instante (`expires_at = floor(expiresAt / 1000)`). Stripe exige `expires_at` ≥ creación de la sesión + 30 min; el minuto de margen cubre lo que tarda la transacción. Si llega un `checkout.session.completed` sobre una `EXPIRED`, se reembolsa el total y la reserva no revive (lo implementan PA-02 y PA-03). Registrada en `decisiones.md` y actualizados `producto.md`, `AGENTS.md`, `arquitectura.md`, Swagger, el front y el mock.
+- Back:
+  - Dependencia `stripe` fijada en **`23.0.0` exacto** (sin `^`; SDK oficial, ESM y CJS, Node ≥ 20, API `2026-09-30.endive`). Primero se instaló 23.1.0, pero salió el mismo día y 23.0.1 tenía 7 días; 23.0.0 es del 30-09-2026. El código no fija `apiVersion`: usa la del SDK.
+  - `StripeModule` (`src/payments/stripe.module.ts`): token `STRIPE_CLIENT` con `new Stripe(STRIPE_SECRET_KEY, { timeout: 6000, maxNetworkRetries: 1 })`, o `null` si no hay clave. Reutilizable por PA-02 y PA-03.
+  - `StripeCheckoutGateway` (`src/payments/stripe-checkout.gateway.ts`): `checkout.sessions.create` con `mode: 'payment'`, `currency: 'clp'`, una línea «Reserva en <espacio>» por el `total` (sin × 100), `metadata.bookingId`, `client_reference_id`, `expires_at` en segundos y `success_url`/`cancel_url` a `/bookings/<id>?pago=ok` y `?pago=cancelado`. Devuelve `{ url, sessionId }`. Un error del SDK, o una sesión sin `url`, responde **502** «No pudimos iniciar el pago con Stripe; intenta de nuevo»; el log guarda tipo, código, estado HTTP e id de la solicitud, no el mensaje (puede traer parte de la clave). `cancelSession(id)` expira una sesión con `checkout.sessions.expire`.
+  - `CheckoutModule` elige con `chooseCheckoutGateway`: Stripe si hay cliente, si no `PendingCheckoutGateway`. La URL del front de los dos sale de `bookingPageUrl` (`src/payments/frontend-url.ts`).
+  - `BookingsService.create`: además de guardar `stripeCheckoutSessionId`, crea el `Payment` `PENDING` (`amount = total`, `fee`, `stripeSessionId`) en la misma transacción, solo cuando hay `sessionId`. Tope nuevo `MAX_STRIPE_AMOUNT = 99 999 999` y `MAX_BOOKING_TOTAL = min(MAX_DB_INT, MAX_STRIPE_AMOUNT)`: 400 «El total de la reserva supera el máximo que se puede pagar en línea (99999999 CLP); elige menos horas». El cálculo de montos y el tope van antes de `expireStalePending`, así el 400 sale aunque el horario esté ocupado. Si la transacción falla después de recibir una sesión (al guardar, en el COMMIT o por tiempo), `create` llama sin esperar a `cancelSession?` del puerto (método opcional nuevo) y registra si falla; `BookingsService` no conoce Stripe.
+  - `GET /api/payments/me` implementado (`PaymentsService.findMine`): los pagos de mis reservas como arrendatario, por `createdAt` y `id` descendentes, paginados, con `spaceName`. El webhook sigue en 501 (PA-02).
+  - `env.validation.ts`: `STRIPE_SECRET_KEY` (opcional, debe ser `sk_test_…` o `rk_test_…`) y `STRIPE_WEBHOOK_SECRET` (opcional, `whsec_…`). Vacías cuentan como ausentes.
+  - `test/utils/setup-env.ts` deja `STRIPE_SECRET_KEY` y `STRIPE_WEBHOOK_SECRET` en **cadena vacía**: los e2e siempre usan el checkout provisorio. **No sirve `delete`:** `ConfigModule.forRoot` vuelve a leer `rentsmart-back/.env` y copia a `process.env` toda variable que no exista (`!(key in process.env)`), así que una clave real del `.env` volvería y los e2e crearían sesiones reales en Stripe. Lo prueban `test/stripe-disabled.e2e-spec.ts` (en los e2e `CHECKOUT_GATEWAY` es `PendingCheckoutGateway` y `STRIPE_CLIENT` es `null`) y un unitario de `checkout.module.spec.ts` con un `.env` temporal con una clave falsa.
+- Front:
+  - `BookingPage` lee `?pago=`. Con `ok` muestra «Pago recibido, confirmando tu reserva…» y consulta la reserva cada 2 s, hasta 30 veces, mientras esté `PENDING` o `PAID` (`useConfirmationPolling.ts`); se detiene en `CONFIRMED` u otro estado final y, si se agotan los intentos, avisa y queda el botón «Actualizar el estado». Mientras consulta no muestra la cuenta regresiva. Con `cancelado` muestra «Cancelaste el pago. El horario sigue retenido hasta las HH:MM; puedes volver atrás a la página de pago o esperar a que venza para elegir otro» si la reserva sigue `PENDING` y no ha vencido.
+  - `checkoutDestination` devuelve `{ inApp: true, path }` con el query string, y `BookingWidget` navega a ese `path`.
+  - Mock de `POST /api/bookings`: `checkoutUrl` a `/bookings/<id>?pago=ok` y retención de 31 min. Texto del detalle del espacio a 31 minutos.
+- Docs: `.env.example` y `arquitectura.md` (variables de entorno, sección Stripe, tabla de endpoints, flujo de pago, RE-02 y RE-06).
+Que dos solicitudes simultáneas por el mismo horario terminen en un 201 y un 409, nunca en un 500. Para eso:
+- poner en fila las reservas de un mismo espacio;
+- traducir a 409 la violación de `booking_no_overlap`;
+- probar la carrera de verdad.
+
+#### Qué se hizo
+- **Back: lock por espacio.** Está en `lockSpaceForBooking(tx, spaceId)`, en `src/bookings/space-booking-lock.ts`. Es un advisory lock de transacción, `SELECT pg_advisory_xact_lock(hashtextextended(${spaceId}, 0))` con `$executeRaw` y el id como parámetro. `create` lo toma después de validar el espacio (404, 403 y 400) y antes de `expireStalePending`, así que la segunda solicitud espera el COMMIT de la primera y su `isAvailable` ya ve el horario tomado.
+- **Back: traducción del error.** `isOverlapViolation(error)` y `overlapAsConflict(error)` están en `src/bookings/overlap-error.ts`:
+  - `isOverlapViolation` reconoce solo la violación de `booking_no_overlap`;
+  - `overlapAsConflict` la convierte en `ConflictException` («Alguien acaba de reservar ese horario; elige otro», `OVERLAP_MESSAGE`) y relanza cualquier otro error.
+
+  `BookingsService.create` termina en `$transaction(...).catch(overlapAsConflict)`, o sea, atrapa el error afuera de la transacción completa. Es la red de seguridad si la base igual rechaza un `INSERT`.
+- **Back: cambios en `bookings.service.ts`.** Son pocos para que el merge con PA-01 quede limpio: dos imports, la llamada al lock, el `.catch` y el JSDoc.
+- **Back: fixture.** Se capturó la forma real del error en un e2e y se copió a `src/bookings/overlap-error.fixture.ts`. Ese archivo queda fuera del build (`"**/*.fixture.ts"` en el `exclude` de `tsconfig.build.json`; se comprobó que `dist/` ya no lo trae) y de la cobertura (`!**/*.fixture.ts` en `collectCoverageFrom` de `jest.config.ts`).
+- **Back: unitarios.** `overlap-error.spec.ts` tiene 15 casos. En `bookings.service.spec.ts` hay 5 casos nuevos:
+  - el lock se toma con el id como parámetro, antes de `expireStalePending` y de `isAvailable`;
+  - no se toma si el espacio da 404, 403 o 400;
+  - el error del `INSERT` da 409 sin pedir el checkout;
+  - el error que sale de la transacción completa también da 409;
+  - cualquier otro error pasa tal cual.
+- **Back: e2e nuevo.** `test/booking-overlap.e2e-spec.ts` tiene 12 casos:
+  - **Restricción, directo en la base:** dos `CONFIRMED` traslapadas fallan y `isOverlapViolation` reconoce el error real; `PENDING`, `PAID` y `CONFIRMED` bloquean; `CANCELLED`, `EXPIRED` y `FINISHED` no bloquean en ningún sentido; un rango contiguo o el mismo horario en otro espacio no chocan.
+  - **Con `isAvailable` espiado para que deje pasar:** se prueba en secuencia y con dos solicitudes simultáneas. La segunda espera el lock, llega al `INSERT` y recibe el 409 con `OVERLAP_MESSAGE`, sin reserva ni evento de más.
+  - **Carreras reales:** dos `POST` simultáneos (`Promise.all`) de dos arrendatarios en 5 horarios del mismo espacio, más un traslape parcial de 10–12 contra 11–13. Siempre hay un 201 y un 409, y el 409 es siempre el de la disponibilidad, porque el lock las pone en fila. Queda una sola reserva retenida en el rango.
+- **Swagger:** el texto del 409 de `POST /api/bookings` aclara que también aplica si otra solicitud tomó el horario al mismo tiempo. El contrato no cambia.
+- **Docs:** `arquitectura.md` ya no lista el riesgo como pendiente.
+  - «Cómo se evitan reservas cruzadas» describe las tres capas: el lock por espacio, `isAvailable` y la restricción traducida a 409.
+  - Explica que el lock evita la carrera y el deadlock de la restricción de exclusión.
+  - Incluye la forma del error, las pruebas y la nota para PA-01.
+  - También se actualizaron los pasos de RE-02, la tabla de endpoints, el diagrama de pago y la lista de historias implementadas.
 
 #### Decisiones y por qué
 | Decisión | Alternativas consideradas | Por qué se eligió |
@@ -3039,5 +3099,104 @@ Permitir consultar y editar el perfil personal y mostrar la antigüedad y reseñ
 
 #### Para el resto del equipo
 - El perfil público no expone correo ni teléfono; las reseñas se agregan por propietario de espacio.
+| Retención de 31 min y la sesión vence junto con ella ([enmienda a P-06](decisiones.md#enmienda-del-29-10-2026-retención-de-31-minutos)) | Mantener 30 min con un margen de gracia en el barrido | Aprobada por C. La reserva y la sesión vencen juntas y la llamada siempre cumple el mínimo de Stripe |
+| Tope de 99 999 999 CLP (8 dígitos) | 12 dígitos (tarjetas); dejar solo el `Int` de la base | La documentación de Stripe da 8 dígitos para los medios que no son tarjeta y 9 para American Express; Checkout puede ofrecer otros medios, así que es el tope seguro. Leído en docs.stripe.com/currencies; la página no listó CLP aparte |
+| Elegir el gateway con un `useFactory` según el cliente de Stripe | Elegir por `NODE_ENV`; exigir la clave siempre | El desarrollo sin claves, el CI y los e2e funcionan sin Stripe y sin configuración extra |
+| Timeout de 6 s y 1 reintento en el cliente de Stripe | Los valores por defecto del SDK (80 s) | La sesión se crea dentro de la transacción de 15 s: así la llamada termina antes y la reserva se deshace limpio si Stripe no responde |
+| `STRIPE_SECRET_KEY` solo de test (`sk_test_`/`rk_test_`) | Aceptar cualquier texto | El proyecto usa Stripe en modo test; una clave live por error cobraría de verdad |
+| El `Payment` se crea al reservar, solo con `sessionId` | Crearlo en el webhook (PA-02) | El criterio de PA-01 pide registrar el pago con monto, comisión e IDs; con el checkout provisorio no hay sesión que registrar |
+| Sondeo con un `setTimeout` encadenado | `setInterval` cada 2 s | Nunca hay dos consultas a la vez si una tarda más de 2 s; igual se limpia al desmontar |
+| `pago=cancelado` sin enlace para reintentar, con un texto que dice cómo seguir | Agregar `checkoutUrl` a `BookingDto` | Sería un cambio de contrato que la historia no exige; el texto no promete un reintento que la página no ofrece |
+| Errores de Stripe como 502 | Dejar el 500 genérico | Es una falla de un servicio externo, no de la API; el arrendatario ve un mensaje claro. Cubre también un monto bajo el mínimo de Stripe: no se agregó un mínimo propio porque el precio mínimo es de B |
+| Anular la sesión huérfana con `cancelSession?` opcional en el puerto, sin esperar | Que `BookingsService` llame a Stripe; esperar la anulación | `BookingsService` sigue sin conocer Stripe y la respuesta no depende de Stripe |
+| Claves de Stripe en `''` en los e2e | `delete` | `ConfigModule` repone desde el `.env` las variables que no existen; con `''` gana el vacío |
+| `stripe` 23.0.0 exacto | 23.1.0 (del mismo día), 23.0.1 (7 días) | Cadena de suministro: una versión con un mes de publicada y sin rango que la cambie sola |
+
+#### Archivos principales
+- `rentsmart-back/src/payments/stripe.module.ts`, `stripe-checkout.gateway.ts`, `frontend-url.ts` (nuevos), `checkout.module.ts`, `pending-checkout.gateway.ts`, `checkout-gateway.ts`, `payments.service.ts`, `payments.controller.ts` y sus specs (`checkout.module.spec.ts`, `stripe-checkout.gateway.spec.ts`, `payments.service.spec.ts`).
+- `rentsmart-back/src/bookings/bookings.service.ts`: `HOLD_MINUTES`, el tope de Stripe y el `Payment`. Swagger en `bookings.controller.ts` y `dto/booking.dto.ts`.
+- `rentsmart-back/src/config/env.validation.ts` y su spec.
+- `rentsmart-back/test/payments.e2e-spec.ts` (nuevo), `booking-create.e2e-spec.ts`, `booking-contract.e2e-spec.ts`, `utils/setup-env.ts`.
+- `rentsmart-front/src/features/bookings/BookingPage.tsx`, `useConfirmationPolling.ts` (nuevo), `booking-selection.ts`, `BookingWidget.tsx`, `bookings-api.ts`, `types.ts` y sus tests; `src/mocks/bookings-handlers.ts` y su test; `src/features/catalog/SpaceDetailPage.tsx` (de B, solo el texto de 30 a 31 minutos).
+- `docs/decisiones.md`, `docs/producto.md`, `docs/arquitectura.md`, `AGENTS.md`, `.env.example`.
+
+#### Cómo probarlo
+- Back: `npm test`; e2e con una base propia: `docker compose exec db-test createdb -U testuser testdb_pa01`, `DATABASE_URL=postgresql://testuser:testpassword@localhost:5433/testdb_pa01 npx prisma migrate deploy` y `npx prisma db seed`, y `DATABASE_TEST_URL=postgresql://testuser:testpassword@localhost:5433/testdb_pa01 npm run test:e2e`.
+- Con Stripe de verdad (manual): poner una `STRIPE_SECRET_KEY` de test en `rentsmart-back/.env`, `npm run start:dev`, reservar desde el front y pagar con `4242 4242 4242 4242`. Hoy la reserva queda `PENDING` hasta que exista el webhook (PA-02); el front consulta un minuto y deja el botón para actualizar.
+- Front: `npm test`; con `VITE_USE_MOCKS=true npm run dev`, reservar un espacio: vuelve a `/bookings/<id>?pago=ok`, muestra el aviso y llega a «Confirmada».
+
+#### Estado de verificación
+- Build: ✅ back y front
+- Lint: ✅ back (oxlint) y front (ESLint)
+- Tests: ✅ back 33 suites / 593 unitarias y 26 suites / 526 e2e (contra `testdb_pa01`); front 54 archivos / 720 tests y 3 de Playwright. Ningún test llama a Stripe. No se probó contra la API real de Stripe.
+
+#### Pendientes y bloqueos
+- PA-02 (#46): el webhook. Tiene que completar `Payment.stripePaymentIntentId` y `Payment.status` (`SUCCEEDED`), pasar la reserva a `PAID`, tolerar una sesión cuya reserva no existe (COMMIT fallido después de crear la sesión) y manejar el `completed` sobre una `EXPIRED`: reembolso total y la reserva sigue `EXPIRED` (enmienda a P-06). Para el cliente de Stripe, importar `StripeModule` e inyectar `STRIPE_CLIENT`; `STRIPE_WEBHOOK_SECRET` ya se valida.
+- PA-03 (#47): reembolsos con `STRIPE_CLIENT`, actualizando `Payment.refundedAmount` y `Payment.status`; incluye el caso «completed sobre EXPIRED» y el aviso que hoy deja `BookingsService.cancel`.
+- `?pago=cancelado` no ofrece un enlace para volver a pagar: haría falta guardar la URL de la sesión o un endpoint que la entregue (cambio de contrato, por decidir).
+- Una reserva hecha sin Stripe (checkout provisorio) no tiene `Payment`, así que no aparece en mis pagos.
+- El tope de 99 999 999 CLP queda por confirmar en el dashboard de Stripe si alguna vez hace falta cobrar más.
+- PA-02: exponer la URL de la sesión de Checkout (para reintentar desde `?pago=cancelado`) o permitir cancelar la `PENDING` desde su página; hoy el aviso solo dice que se puede volver atrás o esperar a que venza.
+- Si Stripe creó la sesión pero la respuesta no llegó (tiempo agotado), la API no conoce su id y no puede anularla: vence sola en `expiresAt` y el webhook de PA-02 debe tolerarla.
+- Monto mínimo: Stripe rechaza montos bajo su mínimo y hoy eso es un 502 al reservar. Si se quiere un 400 antes, el precio mínimo de un espacio lo define B.
+- P-12 (Connect) sigue abierta; esto implementa su recomendación (Checkout sin Connect).
+
+#### Para el resto del equipo
+- **B (@xReNatS):** en `SpaceDetailPage.tsx` solo cambió el texto «retenido 30 minutos» a 31 minutos.
+- **A (@AlejandroMG):** no se tocó `schema.prisma`; se usan `Payment` y `Booking.stripeCheckoutSessionId` tal como están.
+- **RE-03:** en `bookings.service.ts` cambié solo `HOLD_MINUTES`, los topes (`MAX_STRIPE_AMOUNT`, `MAX_BOOKING_TOTAL` y la revisión del total), el bloque del `sessionId` (ahora también crea el `Payment`) y el comentario de `create`; no reordené la transacción.
+- Un e2e que borre reservas creadas con un `sessionId` tiene que borrar antes sus `Payment` (la relación no tiene `onDelete: Cascade`).
+- `checkoutDestination` ahora devuelve `{ inApp: true, path }` en vez de `{ inApp: true, bookingId }`.
+- Sin `STRIPE_SECRET_KEY` todo sigue como antes de PA-01; con una clave `sk_live_` la API no arranca.
+| Advisory lock de transacción por espacio, en `create` | Solo la restricción traducida a 409; `SELECT … FOR UPDATE` sobre `Space`; aislamiento serializable | Dos `INSERT` simultáneos contra una restricción de exclusión pueden terminar en deadlock (40P01, ver «Exclusion Constraints» en `execIndexing.c`). El adapter lo entrega como `P2034` y sería un 500. `FOR UPDATE` bloquearía la fila del espacio que edita B (por ejemplo `PhotosService`). Serializable obligaría a reintentar. El lock solo compite con otras reservas del mismo espacio |
+| El lock va después de validar el espacio | Tomarlo al inicio de la transacción | Un espacio que no existe, que es del que reserva o que no tiene precio no hace esperar a nadie, y el lock queda justo antes de lo que protege: expirar, revisar e insertar |
+| Reconocer el error por el SQLSTATE `23P01` y el nombre de la restricción dentro del mensaje, como palabra completa | Por el código de Prisma (`P2039`); por un campo `constraint` | Con Prisma 7 y `@prisma/adapter-pg`, el adapter no traduce 23P01: lo deja como `kind: "postgres"`, sin campo de restricción, y `P2039` es genérico para cualquier error de la base. El SQLSTATE no depende del idioma de Postgres y el nombre aparece en el mensaje en cualquier idioma |
+| Mantener la restricción y `overlapAsConflict` aunque exista el lock | Quitar la traducción | Son la red de seguridad: un error en `isAvailable` u otro código que inserte reservas sin el lock no debe dar un 500 ni dejar dos reservas |
+| Un mensaje propio para el 409 de la base, distinto del de `isAvailable` | Reusar el mismo texto | Dice lo que pasó y permite comprobar en los e2e qué capa rechazó |
+| `.catch(overlapAsConflict)` sobre la promesa de `$transaction` | Un `try/catch` dentro del callback; reindentar `create` dentro de un `try` | Al fallar el `INSERT`, la transacción ya está abortada, así que solo sirve atraparlo afuera. Un `.catch` de una línea no reindenta el bloque que también toca PA-01 |
+| El fixture en `src/bookings/overlap-error.fixture.ts`, excluido del build y de la cobertura | Dentro de un `*.spec.ts`; en `test/` | Lo usan dos specs. Importar un spec desde otro correría sus tests dos veces, y `src/` no importa desde `test/` |
+
+#### Archivos principales
+- `rentsmart-back/src/bookings/space-booking-lock.ts` (nuevo): `lockSpaceForBooking`.
+- `rentsmart-back/src/bookings/overlap-error.ts` (nuevo): `OVERLAP_CONSTRAINT`, `OVERLAP_MESSAGE`, `isOverlapViolation` y `overlapAsConflict`.
+- `rentsmart-back/src/bookings/overlap-error.fixture.ts` y `overlap-error.spec.ts` (nuevos).
+- `rentsmart-back/src/bookings/bookings.service.ts`: el lock, el `.catch(overlapAsConflict)` en `create` y su JSDoc.
+- `rentsmart-back/src/bookings/bookings.service.spec.ts`: el bloque «reservas simultáneas (RE-03)» y `$executeRaw` en el doble de `tx`.
+- `rentsmart-back/src/bookings/bookings.controller.ts`: el texto del 409 en Swagger.
+- `rentsmart-back/tsconfig.build.json` y `rentsmart-back/jest.config.ts`: excluyen `*.fixture.ts`.
+- `rentsmart-back/test/booking-overlap.e2e-spec.ts` (nuevo).
+- `docs/arquitectura.md`.
+
+#### Cómo probarlo
+- Back: `npm test`.
+- e2e con una base propia:
+  1. `docker compose exec db-test createdb -U testuser testdb_re03`.
+  2. `DATABASE_URL=postgresql://testuser:testpassword@localhost:5433/testdb_re03 npx prisma migrate deploy`, y luego `npm run seed`.
+  3. `DATABASE_TEST_URL=postgresql://testuser:testpassword@localhost:5433/testdb_re03 npm run test:e2e`, o solo `-- booking-overlap`.
+- Qué detecta cada parte:
+  - Sin el `.catch(overlapAsConflict)`, los casos con `isAvailable` espiado responden 500 en vez de 409. Los casos de carreras reales no lo detectan con certeza, porque con el lock el 409 sale de la disponibilidad.
+  - Sin el lock, fallaron los casos de carreras reales: en la mayoría de las carreras el 409 venía de la restricción, no de la disponibilidad. En estas corridas no se reprodujo el deadlock.
+
+#### Estado de verificación
+- Build: ✅ en el back; `dist/` no incluye el fixture. El front no aplica, porque no se tocó.
+- Lint: ✅ en el back (oxlint, sin advertencias).
+- Tests: ✅ en el back:
+  - unitarias: 31 suites, 577 tests;
+  - e2e: 25 suites, 528 tests;
+  - `booking-overlap`: pasó 6 veces seguidas, 12 de 12 cada vez.
+
+#### Pendientes y bloqueos
+- El issue #40 hay que cerrarlo a mano al mergear a `develop` (T-05).
+- **PA-01 (#45):**
+  - El lock y el `INSERT` se mantienen hasta el COMMIT, y el COMMIT incluye la llamada a Stripe para crear la sesión de Checkout. Mientras esa llamada dura, otra reserva del mismo espacio espera, con un máximo de 15 s (`CREATE_TX_TIMEOUT_MS`). Si Stripe se demora, el perdedor tarda en recibir su 409.
+  - Al mergear hay que conservar en `create` la llamada a `lockSpaceForBooking`, antes de `expireStalePending`, y el `.catch(overlapAsConflict)` después de `{ timeout: ... }`.
+- **Otros flujos:** RE-04 (#41), PA-02 (#46) y cualquier otro código que inserte una reserva o cambie su rango o su estado a uno que bloquea debería tomar el mismo lock con `lockSpaceForBooking` y usar `isOverlapViolation` como respaldo.
+
+#### Para el resto del equipo
+- **B:** el lock es un advisory lock y no bloquea la fila de `Space`. Editar un espacio no espera a las reservas, ni las reservas esperan la edición.
+- Para reconocer en otro módulo el choque de reservas que detecta la base, usa `isOverlapViolation(error)` de `src/bookings/overlap-error.ts`, no `error.code === 'P2039'`: con el adapter de Postgres, ese código es genérico para cualquier error de la base.
+- Con `@prisma/adapter-pg`, los SQLSTATE que el adapter no traduce, como 23P01, llegan en `error.meta.driverAdapterError.cause`, con `originalCode` y `originalMessage`. Un deadlock (40P01) llega como `P2034`.
+- Un test que arme un doble de `tx` para `BookingsService.create` tiene que incluir `$executeRaw`.
+- No se tocaron `schema.prisma` ni las migraciones.
 
 ---

@@ -116,7 +116,8 @@ describe('reservas simuladas', () => {
   it('crea la reserva pendiente, con el desglose y a dónde ir a pagar', async () => {
     const { bookingId, checkoutUrl } = await book()
 
-    expect(checkoutUrl).toMatch(new RegExp(`/bookings/${bookingId}$`))
+    // Como el success_url de Stripe (PA-01): vuelve a la reserva como si ya se hubiera pagado.
+    expect(checkoutUrl).toMatch(new RegExp(`/bookings/${bookingId}\\?pago=ok$`))
     expect(await booking(bookingId)).toEqual({
       id: bookingId,
       status: 'PENDING',
