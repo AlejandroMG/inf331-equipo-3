@@ -3200,3 +3200,83 @@ Que dos solicitudes simultáneas por el mismo horario terminen en un 201 y un 40
 - No se tocaron `schema.prisma` ni las migraciones.
 
 ---
+
+### 2026-11-02 · C (gonzzza-lol) · PA-02: confirmar el pago por webhook de Stripe
+
+**Issues:** #46
+**Rama / PR:** `feature/PA-02-webhook-stripe` · sin PR todavía
+**Duración aproximada:** 1 h
+**Herramientas:** Claude Code
+
+#### Objetivo
+Que el webhook de Stripe registre el pago y mueva la reserva, sin perder ningún cobro: ni con eventos repetidos, ni con carreras contra el barrido o una cancelación, ni cuando el pago llega sobre una reserva que ya no sigue en pie.
+
+#### Qué se hizo
+- `PaymentsService.handleWebhook` deja de responder 501: verifica la firma (503 sin configuración, 400 con firma inválida o sin cuerpo) y atiende `checkout.session.completed` y `checkout.session.expired`. Los demás tipos responden 200.
+- Puerto `PaymentRefunder` (`PAYMENT_REFUNDER`), con el contenido acordado con PA-03, y su provider provisorio `PendingPaymentRefunder`.
+- `BookingConfirmationService.confirm`, que por ahora no hace nada (RE-04).
+- `PaymentsModule` importa `BookingsModule` y `StripeModule`. No hay ciclo, porque `BookingsModule` usa `CheckoutModule`.
+- `createTestApp` recibe un parámetro opcional para sobrescribir providers.
+- Enmienda del 02-11-2026 a P-06 (`completed` sobre `CANCELLED`), arquitectura, Swagger y `.env.example`.
+- Correcciones de la revisión: el checkout fija tarjeta; `completed` sobre `PAID` vuelve a llamar a `confirm`; `payment_status` no pagado sube a `logger.error`; un `logger.warn` en la `CANCELLED` con evento hacia `PAID`; e2e de fallo dentro de `markPaid`, de `EXPIRED` con pago `FAILED` y de una carrera con concurrencia real.
+- El front no se tocó.
+
+#### Decisiones y por qué
+| Decisión | Alternativas consideradas | Por qué se eligió |
+|---|---|---|
+| `completed` sobre `EXPIRED` o `CANCELLED`: reembolso total y la reserva no cambia ([enmienda a P-06](decisiones.md#enmienda-del-02-11-2026-pago-recibido-sobre-una-reserva-cancelada)) | Reembolso manual | Aprobado por C: cobrar sin dar el servicio no es aceptable |
+| Idempotencia por el estado | Tabla de eventos procesados | `schema.prisma` es de A y el estado de la reserva y del pago alcanza |
+| `CANCELLED` con pago `SUCCEEDED` y un `BookingEvent` hacia `PAID`: no se reembolsa | Reembolsar siempre que el pago esté `SUCCEEDED`, sin mirar el historial | Sin esto, un evento repetido sobre una reserva pagada y cancelada con menos de 24 horas devolvería un total que P-14 dice que no se devuelve. **Precisa el brief**, que pedía reintentar con ese estado sin distinguir este caso |
+| Carrera (409 de `transition`): volver a leer y aplicar la rama del estado que quedó | Responder error y que Stripe reintente | Resuelve en la misma entrega. Una reserva sale de `PENDING` una sola vez, así que basta una relectura; si siguiera `PENDING`, 409 y Stripe reintenta |
+| Si el reembolso falla: `InternalServerErrorException` genérica, no el error original | Propagar el error tal cual | Nest registra el mensaje de los errores que no son `HttpException`, y el del proveedor puede traer datos. El log propio guarda el id y el nombre del error |
+| El pago `FAILED` que llega con `completed` también pasa a `SUCCEEDED` y se reembolsa | Solo desde `PENDING` | No debería ocurrir, pero un evento fuera de orden no debe dejar un cobro sin devolver |
+| El checkout fija tarjeta con `allowed_payment_method_types: ['card']` | `payment_method_types`, que pedía la revisión | El SDK 23.0.0 lo quitó de `SessionCreateParams` (su `CHANGELOG`) y `tsc` lo rechaza. Según sus tipos, el nuevo filtra el conjunto de medios elegibles. **Sin probar contra Stripe real** |
+| `completed` sobre `PAID` vuelve a llamar a `confirm` | 200 sin hacer nada | Un reenvío repara una caída entre el COMMIT y `confirm`. Obliga a que `confirm` sea idempotente |
+| Carrera probada con `pg_blocking_pids` | Dormir un tiempo fijo | Una transacción del test retiene la fila y confirma solo cuando Postgres dice que el webhook está bloqueado por ella: cubre `updateManyAndReturn` con 0 filas sin depender de tiempos |
+| Doble del cliente con solo `webhooks` en el e2e | Un `new Stripe()` con clave falsa | Así el archivo no puede llamar a Stripe aunque alguien lo intente |
+
+#### Archivos principales
+- `rentsmart-back/src/payments/payments.service.ts`: el webhook.
+- `rentsmart-back/src/payments/stripe-checkout.gateway.ts`: solo tarjeta.
+- `rentsmart-back/src/payments/payment-refunder.ts`: el puerto (igual en PA-03).
+- `rentsmart-back/src/payments/pending-payment.refunder.ts`: el provider provisorio.
+- `rentsmart-back/src/bookings/booking-confirmation.service.ts`: el punto de entrada de RE-04.
+- `rentsmart-back/test/payments-webhook.e2e-spec.ts`: e2e con cuerpos firmados y secreto falso.
+- `rentsmart-back/test/utils/create-test-app.ts`: parámetro opcional `customize`.
+- `docs/decisiones.md`, `docs/arquitectura.md`, `.env.example`.
+
+#### Cómo probarlo
+- `npm test -- src/payments` y `npm run test:e2e -- payments-webhook` en `rentsmart-back`. Ningún test llama a Stripe.
+- A mano, en modo test: `stripe listen --forward-to localhost:3000/api/payments/webhook`, poner en `.env` el `whsec_` que imprime, reservar y pagar con `4242 4242 4242 4242`. La reserva queda `PAID`. **Esta prueba con Stripe real no se hizo en esta sesión.**
+
+#### Estado de verificación
+- Build: ✅ back y front.
+- Lint: ✅ back y front.
+- Tests: ✅ back, unitarias 36 suites y 657 tests; e2e 31 suites y 578 tests. ✅ front, Vitest 56 archivos y 727 tests; Playwright 3 de 3.
+- La primera corrida de e2e dio 38 fallos, todos en `owner-panel.e2e-spec.ts`, mientras la suite del front corría al mismo tiempo. No se guardó el mensaje del error. La suite sola y dos corridas completas después, sin esa carga, pasaron enteras. Ese archivo no usa el webhook. Parece un problema de carga, pero la causa no quedó confirmada.
+
+#### Pendientes y bloqueos
+- **Integración con PA-03 (#47), la hace C:** en `PaymentsModule`, importar `RefundsModule` y quitar el provider de `PendingPaymentRefunder`; borrar `pending-payment.refunder.ts` y su spec. **Hasta entonces, un pago sobre una reserva `EXPIRED` o `CANCELLED` no se devuelve:** el webhook responde 500, Stripe reintenta y el log avisa del reembolso manual.
+- **RE-04 (#41), requisito explícito:** hasta RE-04, `confirm` no hace nada y **toda reserva pagada queda `PAID`**, con estas consecuencias:
+  - no se puede cancelar: `POST /api/bookings/:id/cancel` responde 409;
+  - el barrido no la finaliza, porque solo pasa `CONFIRMED` a `FINISHED`;
+  - retiene el horario sin plazo, porque `expiresAt` solo vale para `PENDING`;
+  - `BookingPage` con `?pago=ok` espera ver `CONFIRMED` y no la verá.
+
+  **RE-04 debe resolver esto y debe decidir qué pasa con las `PAID` atascadas**, incluidas las que ya existan al desplegarlo.
+- **Para RE-04:**
+  - `confirm` tiene que ser idempotente: un `completed` sobre `PAID` lo vuelve a llamar, y dos entregas simultáneas pueden llamarlo dos veces.
+  - Si el proceso cae entre el COMMIT y `confirm`, o `confirm` lanza un error, el webhook ya respondió o responderá 200, así que Stripe no reintenta por su cuenta: solo lo repara un reenvío del evento. Ese es otro caso de `PAID` atascada.
+  - Si RE-04 cancela y reembolsa, el historial tendrá un evento hacia `PAID` y el webhook no reembolsará: el reembolso queda a cargo de RE-04, y reenviar el evento no lo repara.
+- **Reembolsos que siguen fallando, lo decide C:** los reintentos de Stripe son limitados, así que un pago tardío cuyo reembolso falla puede requerir reparación manual. Un barrido de reintento es posible sin cambiar `schema.prisma`; no se implementó.
+- El issue #46 hay que cerrarlo a mano al mergear a `develop` (T-05).
+- El PR pasa de las 400 líneas, sobre todo por los tests.
+
+#### Para el resto del equipo
+- Nada cambia en `schema.prisma` ni en las migraciones. No hay variables de entorno nuevas.
+- **A y B:** no se tocaron sus módulos.
+- Un e2e que necesite el webhook usa `createTestApp((builder) => builder.overrideProvider(STRIPE_CLIENT)...)` y un `jest.spyOn` de `ConfigService.get` para el secreto. Cambiar `process.env` en el spec no sirve: `ConfigModule` ya validó el entorno al importar `AppModule`.
+- Cancelar una `PENDING` no anula la sesión de Stripe, así que se puede pagar después; ese es el caso que cubre la enmienda.
+- `docs/arquitectura.md` decía que el webhook guardaba el id del evento: ya no es cierto y se corrigió.
+
+---
