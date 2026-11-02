@@ -8,6 +8,7 @@ const NOW = new Date('2026-10-24T15:00:00.000Z');
 const NOTHING: SweepResult = {
   finished: { changed: 0, skipped: 0, failed: 0 },
   expired: { changed: 0, skipped: 0, failed: 0 },
+  stuckPaid: { changed: 0, skipped: 0, failed: 0 },
 };
 
 describe('BookingExpiryScheduler', () => {
@@ -122,6 +123,15 @@ describe('BookingExpiryScheduler', () => {
     await expect(first).resolves.toEqual(NOTHING);
     expect(expiry.sweep).toHaveBeenCalledTimes(1);
     await expect(task.tick()).resolves.toEqual(NOTHING);
+  });
+
+  it('informa las pagadas atascadas que resolvió, y las que fallaron como error', async () => {
+    const log = jest.spyOn(Logger.prototype, 'log');
+    expiry.sweep.mockResolvedValueOnce({ ...NOTHING, stuckPaid: { changed: 2, skipped: 0, failed: 1 } });
+
+    await scheduler({}).tick(NOW);
+
+    expect(log).toHaveBeenCalledWith('Barrido: 0 finalizadas, 0 expiradas, 2 pagadas resueltas, 1 con error');
   });
 
   it('si un barrido falla, lo registra y el siguiente corre igual', async () => {

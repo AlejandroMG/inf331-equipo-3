@@ -31,7 +31,7 @@ export class PaymentsController {
   @ApiOperation({
     summary: 'Webhook de Stripe',
     description:
-      'Solo lo llama Stripe. Recibe el evento con el cuerpo sin interpretar y verifica su firma. `checkout.session.completed` pasa la reserva `PENDING` a `PAID` y dispara la confirmación; si la reserva ya está `EXPIRED` o `CANCELLED`, no cambia y se reembolsa el total. `checkout.session.expired` pasa la reserva `PENDING` a `EXPIRED`. Es idempotente: un evento repetido o de un tipo que no interesa responde 200 sin cambiar nada; sobre una reserva `PAID`, además vuelve a pedir la confirmación. Un 409 o un 500 hacen que Stripe reintente, un número limitado de veces.',
+      'Solo lo llama Stripe. Recibe el evento con el cuerpo sin interpretar y verifica su firma. `checkout.session.completed` pasa la reserva `PENDING` a `PAID` y la valida: queda `CONFIRMED` o, si no pasa la validación, `CANCELLED` con reembolso del total; si la reserva ya está `EXPIRED` o `CANCELLED`, no cambia y se reembolsa el total. `checkout.session.expired` pasa la reserva `PENDING` a `EXPIRED`. Es idempotente: un evento repetido o de un tipo que no interesa responde 200 sin cambiar nada; sobre una reserva `PAID`, además vuelve a pedir la confirmación. Un 409 o un 500 hacen que Stripe reintente, un número limitado de veces.',
   })
   @ApiHeader({ name: 'stripe-signature', required: true, description: 'Firma del evento, la pone Stripe' })
   @ApiOkResponse({ type: WebhookAckDto })
