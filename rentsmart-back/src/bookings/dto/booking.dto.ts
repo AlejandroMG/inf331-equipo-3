@@ -63,6 +63,13 @@ export class BookingDto {
   @ApiProperty({ type: Date })
   createdAt: Date;
 
+  @ApiProperty({
+    example: 0,
+    description:
+      'CLP enteros: cuánto se le ha devuelto al arrendatario; 0 si no hay pago o no se ha devuelto nada. En una reserva `CANCELLED`, 0 por sí solo no dice si no tenía derecho a reembolso o si el reembolso falló',
+  })
+  refundedAmount: number;
+
   @ApiProperty({ type: BookingSpaceDto })
   space: BookingSpaceDto;
 }

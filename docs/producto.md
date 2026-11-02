@@ -58,7 +58,7 @@ Reserva inmediata, sin aprobación del propietario ([P-05](decisiones.md#p-05--r
 5. Al terminar el horario pasa a **Finalizada**.
 6. Si el arrendatario no paga en 31 minutos, pasa a **Expirada** y libera el horario. Si el pago llega igual después de vencer, se reembolsa el total y la reserva sigue **Expirada**.
 
-Cancelación ([P-14](decisiones.md#p-14--cancelación-gratis-hasta-24-horas-antes)): el arrendatario o el propietario pueden cancelar una reserva **Pendiente** o **Confirmada**, con un motivo. Si cancela el arrendatario hasta 24 horas antes del inicio, o si cancela el propietario, se reembolsa el total (con la comisión); si el arrendatario cancela con menos de 24 horas, no hay reembolso.
+Cancelación ([P-14](decisiones.md#p-14--cancelación-gratis-hasta-24-horas-antes)): el arrendatario o el propietario pueden cancelar una reserva **Pendiente** o **Confirmada**, con un motivo. Si cancela el arrendatario hasta 24 horas antes del inicio, o si cancela el propietario, se reembolsa el total (con la comisión); si el arrendatario cancela con menos de 24 horas, no hay reembolso. Si Stripe falla al reembolsar, la reserva queda cancelada igual y la página de la reserva no afirma que se devolvió el dinero; hoy ese reembolso se resuelve a mano y no hay un reintento automático ([detalle](arquitectura.md#disponibilidad-reservas-y-pagos-f-05)).
 
 El diagrama de estados está en [arquitectura.md](arquitectura.md#ciclo-de-vida-de-una-reserva).
 

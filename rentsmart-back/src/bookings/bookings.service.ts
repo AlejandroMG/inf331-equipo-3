@@ -11,10 +11,12 @@ import { MAX_RANGE_MS } from '../availability/availability-slots';
 import { AvailabilityService } from '../availability/availability.service';
 import { BookingStatus, BookingUnit, PaymentStatus, SpaceStatus } from '../generated/prisma/enums';
 import { CHECKOUT_GATEWAY, type CheckoutGateway } from '../payments/checkout-gateway';
+import { RefundNotRecordedError } from '../payments/payment-refund.service';
+import { PAYMENT_REFUNDER, type PaymentRefunder } from '../payments/payment-refunder';
 import { PrismaService } from '../prisma/prisma.service';
 import { BookingExpiryService } from './booking-expiry.service';
 import { BookingStateService } from './booking-state.service';
-import { BOOKING_VIEW, toBookingDto } from './booking-view';
+import { BOOKING_VIEW, toBookingDto, type BookingWithSpace } from './booking-view';
 import { cancellationRefund, CancelledBy } from './cancellation-policy';
 import { BookingCheckoutDto, BookingDto, BookingsPageDto } from './dto/booking.dto';
 import { CancelBookingDto } from './dto/cancel-booking.dto';
@@ -54,6 +56,9 @@ export const MAX_BOOKING_TOTAL = Math.min(MAX_DB_INT, MAX_STRIPE_AMOUNT);
 /** Desde qué estados cancela una persona (RE-05). `PAID` dura un instante y lo resuelve la validación automática. */
 const CANCELLABLE: BookingStatus[] = [BookingStatus.PENDING, BookingStatus.CONFIRMED];
 
+/** Motivo del reembolso en el log. Fijo: el que escribe la persona al cancelar puede traer datos personales. */
+const CANCELLATION_REFUND_REASON = 'Cancelación de la reserva (P-14)';
+
 /** Reservas del arrendatario: reservar y consultar (RE-02) y cancelar (RE-05). */
 @Injectable()
 export class BookingsService {
@@ -65,6 +70,7 @@ export class BookingsService {
     private readonly availability: AvailabilityService,
     private readonly expiry: BookingExpiryService,
     @Inject(CHECKOUT_GATEWAY) private readonly checkout: CheckoutGateway,
+    @Inject(PAYMENT_REFUNDER) private readonly refunder: PaymentRefunder,
   ) {}
 
   /**
@@ -214,7 +220,8 @@ export class BookingsService {
 
   /**
    * Cancela una reserva `PENDING` o `CONFIRMED`. Puede hacerlo su arrendatario o el dueño del espacio, con un
-   * motivo que queda en el historial. El monto a reembolsar lo decide `cancellationRefund` (P-14).
+   * motivo que queda en el historial. El monto a reembolsar lo decide `cancellationRefund` (P-14) y lo ejecuta el
+   * puerto de reembolsos (PA-03); la respuesta trae en `refundedAmount` lo que quedó devuelto.
    */
   async cancel(userId: string, id: string, dto: CancelBookingDto): Promise<BookingDto> {
     const booking = await this.prisma.booking.findUnique({ where: { id }, include: BOOKING_VIEW });
@@ -249,13 +256,56 @@ export class BookingsService {
       await this.state.transition(id, BookingStatus.CANCELLED, { actorId: userId, reason: dto.reason }, tx);
     });
 
-    // PA-03 (#47): aquí va el reembolso en Stripe por `refund` CLP, que además debe actualizar
-    // `Payment.refundedAmount` y `Payment.status`. Todavía no existe; por ahora solo queda en el registro.
-    if (refund > 0) {
-      this.logger.warn(`Reserva ${id} cancelada: reembolso de ${refund} CLP pendiente (PA-03)`);
+    // PA-03: el dinero y la sesión se tocan después de la transacción, sin retener la fila mientras Stripe responde.
+    if (booking.status === BookingStatus.PENDING && booking.stripeCheckoutSessionId) {
+      this.expireCancelledSession(id, booking.stripeCheckoutSessionId);
     }
+    const payment = refund > 0 ? await this.refundCancelled(id, refund, booking.payment) : booking.payment;
 
-    return toBookingDto({ ...booking, status: BookingStatus.CANCELLED });
+    return toBookingDto({ ...booking, status: BookingStatus.CANCELLED, payment });
+  }
+
+  /**
+   * Reembolsa una reserva ya cancelada y devuelve cómo quedó su pago, sin volver a leerlo: el resultado se conoce y una
+   * relectura solo agregaría otra forma de fallar. Se espera porque la respuesta lo informa. Si falla, la cancelación
+   * vale igual: el pago sigue `SUCCEEDED` con `refundedAmount` en 0 y queda en el log para resolverlo a mano.
+   */
+  private async refundCancelled(
+    bookingId: string,
+    amount: number,
+    payment: BookingWithSpace['payment'],
+  ): Promise<BookingWithSpace['payment']> {
+    // Sin pago, o ya reembolsado, el puerto no hace nada y no hay nada que sumar.
+    const refunded =
+      payment && payment.status !== PaymentStatus.REFUNDED
+        ? { ...payment, refundedAmount: payment.refundedAmount + amount }
+        : payment;
+    try {
+      await this.refunder.refundBooking(bookingId, amount, CANCELLATION_REFUND_REASON);
+      return refunded;
+    } catch (error) {
+      // Stripe devolvió el dinero y falló la base: la respuesta dice la verdad, y PaymentRefundService ya dejó en el
+      // log cómo repararlo.
+      if (error instanceof RefundNotRecordedError) return refunded;
+      // Sin el mensaje del error: en uno de Stripe puede traer parte de la clave.
+      this.logger.error(
+        `Reserva ${bookingId} cancelada sin reembolso confirmado de ${amount} CLP (pago ${payment?.id ?? 'sin registro'}): ${error instanceof Error ? error.name : 'error'}`,
+      );
+      return payment;
+    }
+  }
+
+  /**
+   * Expira, sin esperar, la sesión de pago de una reserva `PENDING` recién cancelada, para que no se pueda pagar. Si
+   * falla, queda en el log y la sesión vence sola en `expiresAt`; si alguien paga antes, el webhook (PA-02) reembolsa.
+   */
+  private expireCancelledSession(bookingId: string, sessionId: string): void {
+    if (!this.checkout.cancelSession) return;
+    void this.checkout.cancelSession(sessionId).catch((error: unknown) =>
+      this.logger.warn(
+        `No se pudo expirar la sesión de pago ${sessionId} de la reserva cancelada ${bookingId}: ${error instanceof Error ? error.name : 'error'}`,
+      ),
+    );
   }
 }
 

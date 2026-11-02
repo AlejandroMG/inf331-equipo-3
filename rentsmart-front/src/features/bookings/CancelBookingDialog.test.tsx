@@ -63,7 +63,7 @@ describe('CancelBookingDialog', () => {
     it('el arrendatario, con más de 24 horas: reembolso total con el monto', () => {
       open(fake('CONFIRMED', 72), 'RENTER', 26400)
 
-      expect(screen.getByText(/Faltan más de 24 horas para el inicio: se te reembolsa el total \(\$26\.400\)\./)).toBeInTheDocument()
+      expect(screen.getByText(/Faltan 24 horas o más para el inicio: se te reembolsa el total \(\$26\.400\)\./)).toBeInTheDocument()
     })
 
     it('el arrendatario, con menos de 24 horas: sin reembolso', () => {
