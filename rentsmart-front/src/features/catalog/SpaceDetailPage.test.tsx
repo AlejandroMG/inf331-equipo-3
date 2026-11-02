@@ -11,6 +11,7 @@ import type { SpaceDetail } from './types'
 const detail: SpaceDetail = {
   id: 'abc',
   name: 'Sala Alameda',
+  host: { id: 'host-1', name: 'Ana Pérez', profilePhotoUrl: null },
   description: 'Sala luminosa en pleno centro.',
   typeName: 'Sala de reuniones',
   regionName: 'Región Metropolitana',

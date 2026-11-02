@@ -183,6 +183,11 @@ describe('Catálogo (e2e)', () => {
       expect(body).toEqual({
         id: ids['Activo-1'],
         name: `Activo-1 ${SUFFIX}`,
+        host: {
+          id: ownerId,
+          name: 'Propietario e2e',
+          profilePhotoUrl: null,
+        },
         description: 'Sala luminosa',
         typeName: `Tipo ${SUFFIX}`,
         regionName: `Región ${SUFFIX}`,

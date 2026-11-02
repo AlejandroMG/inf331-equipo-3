@@ -14,6 +14,7 @@ export const paths = {
   ownerMetrics: '/owner/metrics',
   favorites: '/favorites',
   profile: '/profile',
+  publicProfile: (id: string) => `/users/${id}`,
   login: '/login',
   register: '/register',
   admin: '/admin',

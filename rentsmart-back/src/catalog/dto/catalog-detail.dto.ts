@@ -22,6 +22,17 @@ export class CatalogScheduleDto {
   endTime: string;
 }
 
+export class CatalogHostDto {
+  @ApiProperty()
+  id: string;
+
+  @ApiProperty()
+  name: string;
+
+  @ApiProperty({ type: String, nullable: true })
+  profilePhotoUrl: string | null;
+}
+
 /** Zona donde está el espacio: un círculo, no un punto (ES-07). */
 export class CatalogLocationDto {
   @ApiProperty({ example: -33.449 })
@@ -44,6 +55,9 @@ export class CatalogDetailDto {
 
   @ApiProperty()
   name: string;
+
+  @ApiProperty({ type: CatalogHostDto })
+  host: CatalogHostDto;
 
   @ApiProperty({ type: String, nullable: true })
   description: string | null;

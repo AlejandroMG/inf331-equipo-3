@@ -7,7 +7,7 @@ export interface StoredFile {
 }
 
 /**
- * Almacenamiento de archivos (fotos de los espacios). Tiene dos implementaciones: disco local para
+ * Almacenamiento de archivos (fotos de espacios y perfiles). Tiene dos implementaciones: disco local para
  * desarrollo y tests, y Supabase Storage (P-10). Se elige con STORAGE_DRIVER.
  */
 export abstract class StorageService {

@@ -7,7 +7,6 @@ import { CatalogPage } from './features/catalog/CatalogPage'
 import { SpaceDetailPage } from './features/catalog/SpaceDetailPage'
 import { LoginPage } from './features/auth/LoginPage'
 import { RegisterPage } from './features/auth/RegisterPage'
-import { ProfilePage } from './features/auth/ProfilePage'
 import { RequireRole } from './features/auth/RequireRole'
 import { ComponentsPage } from './features/dev/ComponentsPage'
 import { AdminSpacesPage } from './features/moderation/AdminSpacesPage'
@@ -19,6 +18,8 @@ import { FavoritesPage } from './features/favorites/FavoritesPage'
 import { OwnerSpacesPage } from './features/owner/OwnerSpacesPage'
 import { PublishSpacePage } from './features/spaces/PublishSpacePage'
 import { BookingPage } from './features/bookings/BookingPage'
+import { ProfilePage } from './features/users/ProfilePage'
+import { PublicProfilePage } from './features/users/PublicProfilePage'
 
 /**
  * Rutas de la app. Cada dominio agrega las suyas aquí y reemplaza el placeholder por su pantalla.
@@ -30,6 +31,7 @@ export const routes: RouteObject[] = [
     children: [
       { index: true, element: <CatalogPage /> },
       { path: 'spaces/:spaceId', element: <SpaceDetailPage /> },
+      { path: 'users/:userId', element: <PublicProfilePage /> },
       { path: 'login', element: <LoginPage />, handle: { title: 'Iniciar sesión' } },
       { path: 'register', element: <RegisterPage />, handle: { title: 'Crear cuenta' } },
       {
