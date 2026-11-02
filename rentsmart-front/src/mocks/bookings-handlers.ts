@@ -9,7 +9,7 @@ import type {
   Payment,
   Schedule,
 } from '../features/bookings/types'
-import { canCancel, MAX_CANCEL_REASON, MIN_CANCEL_REASON } from '../features/bookings/cancellation'
+import { canCancel, MAX_CANCEL_REASON, MIN_CANCEL_REASON, refundsOnCancel } from '../features/bookings/cancellation'
 import type { ScheduleRule } from '../features/catalog/types'
 import { catalogData } from './catalog-data'
 
@@ -153,8 +153,8 @@ const sortRules = (rules: ScheduleRule[]) =>
 
 /** La reserva como la entrega la API: el detalle de la dirección solo si está confirmada (P-09). */
 function toBooking(mock: MockBooking): Booking {
-  const { id, status, unit, startAt, endAt, subtotal, fee, total, expiresAt, createdAt } = mock
-  const booking = { id, status, unit, startAt, endAt, subtotal, fee, total, expiresAt, createdAt, space: mock.space }
+  const { id, status, unit, startAt, endAt, subtotal, fee, total, expiresAt, createdAt, refundedAmount } = mock
+  const booking = { id, status, unit, startAt, endAt, subtotal, fee, total, expiresAt, createdAt, refundedAmount, space: mock.space }
   return {
     ...booking,
     space: { ...booking.space, addressDetail: booking.status === 'CONFIRMED' ? 'Oficina 502. Citófono 12, preguntar por recepción.' : null },
@@ -162,15 +162,15 @@ function toBooking(mock: MockBooking): Booking {
 }
 
 function paymentOf(booking: MockBooking): Payment {
-  const refunded = booking.status === 'CANCELLED'
+  const { refundedAmount } = booking
   return {
     id: `payment-${booking.id}`,
     bookingId: booking.id,
     spaceName: booking.space.name,
     amount: booking.total,
     fee: booking.fee,
-    refundedAmount: refunded ? booking.total : 0,
-    status: refunded ? 'REFUNDED' : 'SUCCEEDED',
+    refundedAmount,
+    status: refundedAmount > 0 ? 'REFUNDED' : 'SUCCEEDED',
     createdAt: booking.createdAt,
   }
 }
@@ -262,6 +262,7 @@ export const bookingHandlers = [
       // Retiene el horario 31 minutos, como el back (P-06).
       expiresAt: new Date(now + 31 * 60_000).toISOString(),
       createdAt: new Date(now).toISOString(),
+      refundedAmount: 0,
       space: { id: space.id, name: space.name, communeName: space.communeName, address: 'Av. Libertador Bernardo O’Higgins 1234', addressDetail: null, coverUrl: space.coverUrl },
       polls: 0,
       paid: false,
@@ -297,8 +298,8 @@ export const bookingHandlers = [
     return HttpResponse.json(toBooking(booking))
   }),
 
-  // RE-05: cancelar con motivo. Libera el horario; si ya estaba pagada, el pago queda reembolsado. A diferencia
-  // del back, no distingue al arrendatario del propietario ni aplica el plazo de 24 horas (no depende del reloj).
+  // RE-05 y PA-03: cancelar con motivo. Libera el horario y aplica P-14 con la misma regla del front. Estas reservas
+  // son siempre de quien tiene la sesión, así que cancela como arrendatario: el total hasta 24 horas antes, si no, nada.
   http.post('*/api/bookings/:id/cancel', async ({ params, request }) => {
     if (!hasSession(request)) return unauthorized()
     const body = (await request.json().catch(() => null)) as { reason?: unknown } | null
@@ -309,6 +310,7 @@ export const bookingHandlers = [
     const booking = bookings.find((item) => item.id === params.id)
     if (!booking) return notFound('La reserva no existe')
     if (!canCancel(booking.status)) return conflict(`Una reserva en estado ${booking.status} no se puede cancelar`)
+    booking.refundedAmount = refundsOnCancel(booking, 'RENTER', new Date()) ? booking.total : 0
     booking.status = 'CANCELLED'
     return HttpResponse.json(toBooking(booking))
   }),

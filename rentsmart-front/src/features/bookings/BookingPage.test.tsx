@@ -23,6 +23,7 @@ const booking = (extra: Partial<Booking> = {}): Booking => ({
   total: 26400,
   expiresAt: new Date(Date.now() + 10 * MINUTE + 30_000).toISOString(),
   createdAt: '2026-10-10T12:00:00.000Z',
+  refundedAmount: 0,
   space: { id: 's1', name: 'Sala Alameda', communeName: 'Santiago', address: 'Alameda 123', addressDetail: null, coverUrl: null },
   ...extra,
 })
@@ -101,6 +102,43 @@ describe('BookingPage', () => {
     expect(screen.getByText('Oficina 402')).toBeInTheDocument()
     expect(screen.getByRole('region', { name: 'Horario' })).toHaveTextContent('Por día')
     expect(screen.queryByText(/retenido/)).not.toBeInTheDocument()
+  })
+
+  describe('reembolso (PA-03)', () => {
+    const cancelled = (refundedAmount: number) => booking({ status: 'CANCELLED', refundedAmount })
+
+    it('con un monto devuelto muestra «Reembolsado» en CLP', async () => {
+      serve(cancelled(26400))
+      renderPage()
+
+      expect(await screen.findByText('Reembolsado: $26.400')).toBeInTheDocument()
+      expect(screen.queryByText(/No hay un reembolso registrado/)).not.toBeInTheDocument()
+    })
+
+    it('cancelada con el monto en 0 no afirma que se devolvió ni promete un reembolso a quien no pagó', async () => {
+      serve(cancelled(0))
+      renderPage()
+
+      expect(await screen.findByText(/No hay un reembolso registrado/)).toHaveTextContent(
+        'No hay un reembolso registrado para esta reserva. Si pagaste y te correspondía uno según la política de cancelación, aún no se ha completado.',
+      )
+      expect(screen.queryByText(/Reembolsado/)).not.toBeInTheDocument()
+    })
+
+    it('una reserva vigente sin reembolso no menciona reembolsos', async () => {
+      serve(booking({ status: 'CONFIRMED' }))
+      renderPage()
+
+      await screen.findByText('Confirmada')
+      expect(screen.queryByText(/reembols/i)).not.toBeInTheDocument()
+    })
+
+    it('muestra lo devuelto aunque la reserva no esté cancelada (por ejemplo, una vencida que se pagó tarde)', async () => {
+      serve(booking({ status: 'EXPIRED', refundedAmount: 26400 }))
+      renderPage()
+
+      expect(await screen.findByText('Reembolsado: $26.400')).toBeInTheDocument()
+    })
   })
 
   it('"Actualizar el estado" vuelve a consultar la reserva', async () => {

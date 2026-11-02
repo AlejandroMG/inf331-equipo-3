@@ -14,6 +14,7 @@ export const BOOKING_VIEW = {
       photos: { select: { url: true }, orderBy: { position: 'asc' }, take: 1 },
     },
   },
+  payment: { select: { id: true, status: true, refundedAmount: true } },
 } satisfies Prisma.BookingInclude;
 
 export type BookingWithSpace = Prisma.BookingGetPayload<{ include: typeof BOOKING_VIEW }>;
@@ -32,6 +33,7 @@ export function toBookingDto(booking: BookingWithSpace): BookingDto {
     total: booking.total,
     expiresAt: booking.expiresAt,
     createdAt: booking.createdAt,
+    refundedAmount: booking.payment?.refundedAmount ?? 0,
     space: {
       id: space.id,
       name: space.name,

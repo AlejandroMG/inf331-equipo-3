@@ -92,7 +92,7 @@ describe('Contrato de disponibilidad, reservas y pagos (e2e)', () => {
       expect(fields('CreateBookingDto')).toEqual(['endAt', 'spaceId', 'startAt', 'unit']);
       expect(fields('BookingCheckoutDto')).toEqual(['bookingId', 'checkoutUrl']);
       expect(fields('BookingDto')).toEqual([
-        'createdAt', 'endAt', 'expiresAt', 'fee', 'id', 'space', 'startAt', 'status', 'subtotal', 'total', 'unit',
+        'createdAt', 'endAt', 'expiresAt', 'fee', 'id', 'refundedAmount', 'space', 'startAt', 'status', 'subtotal', 'total', 'unit',
       ]);
       expect(fields('BookingSpaceDto')).toEqual(['address', 'addressDetail', 'communeName', 'coverUrl', 'id', 'name']);
       expect(fields('BookingsPageDto')).toEqual(['items', 'page', 'pageSize', 'total']);

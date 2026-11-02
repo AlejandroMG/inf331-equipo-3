@@ -3,6 +3,8 @@ import { Test } from '@nestjs/testing';
 import { AvailabilityService } from '../availability/availability.service';
 import { BookingStatus } from '../generated/prisma/enums';
 import { CHECKOUT_GATEWAY } from '../payments/checkout-gateway';
+import { RefundNotRecordedError } from '../payments/payment-refund.service';
+import { PAYMENT_REFUNDER } from '../payments/payment-refunder';
 import { PrismaService } from '../prisma/prisma.service';
 import { BookingExpiryService } from './booking-expiry.service';
 import { BookingStateService } from './booking-state.service';
@@ -19,12 +21,15 @@ const DTO = { reason: 'Se suspendió la reunión' };
 describe('BookingsService.cancel', () => {
   let service: BookingsService;
   let warn: jest.SpyInstance;
+  let logError: jest.SpyInstance;
   // El mismo objeto hace de cliente y de cliente de transacción.
   const prisma = {
     $transaction: jest.fn(),
     booking: { findUnique: jest.fn(), updateMany: jest.fn() },
   };
   const state = { transition: jest.fn() };
+  const checkout = { cancelSession: jest.fn() };
+  const refunder = { refundBooking: jest.fn() };
 
   /** Una reserva del arrendatario `renter` en un espacio de `owner`, que parte en 48 horas. */
   const stored = (status: BookingStatus, extra: Record<string, unknown> = {}) => {
@@ -61,16 +66,20 @@ describe('BookingsService.cancel', () => {
     jest.useFakeTimers({ now: NOW, doNotFake: ['nextTick', 'setImmediate'] });
     prisma.$transaction.mockImplementation((run: (tx: typeof prisma) => unknown) => run(prisma));
     prisma.booking.updateMany.mockResolvedValue({ count: 1 });
+    checkout.cancelSession.mockResolvedValue(undefined);
+    refunder.refundBooking.mockResolvedValue(undefined);
     warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    logError = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
     const module = await Test.createTestingModule({
       providers: [
         BookingsService,
         { provide: PrismaService, useValue: prisma },
         { provide: BookingStateService, useValue: state },
-        // Cancelar no reserva: estos tres no se usan aquí.
+        // Cancelar no reserva: estos dos no se usan aquí.
         { provide: AvailabilityService, useValue: {} },
         { provide: BookingExpiryService, useValue: {} },
-        { provide: CHECKOUT_GATEWAY, useValue: {} },
+        { provide: CHECKOUT_GATEWAY, useValue: checkout },
+        { provide: PAYMENT_REFUNDER, useValue: refunder },
       ],
     }).compile();
     service = module.get(BookingsService);
@@ -79,6 +88,7 @@ describe('BookingsService.cancel', () => {
   afterEach(() => {
     jest.useRealTimers();
     warn.mockRestore();
+    logError.mockRestore();
   });
 
   it.each([
@@ -103,6 +113,7 @@ describe('BookingsService.cancel', () => {
       total: 26400,
       expiresAt: null,
       createdAt: new Date('2026-10-09T12:00:00.000Z'),
+      refundedAmount: 0,
       // Cancelada, ya no muestra el detalle privado de la dirección (P-09).
       space: {
         id: 's1',
@@ -219,7 +230,7 @@ describe('BookingsService.cancel', () => {
     expect(warn).not.toHaveBeenCalled();
   });
 
-  describe('reembolso pendiente de PA-03', () => {
+  describe('reembolso (PA-03)', () => {
     const startsIn = (hours: number) => ({ startAt: new Date(NOW.getTime() + hours * HOUR) });
 
     it.each([
@@ -232,8 +243,155 @@ describe('BookingsService.cancel', () => {
 
       await service.cancel(userId, 'b1', DTO);
 
-      if (refunded) expect(warn).toHaveBeenCalledWith(expect.stringContaining('26400 CLP'));
-      else expect(warn).not.toHaveBeenCalled();
+      if (refunded) {
+        expect(refunder.refundBooking).toHaveBeenCalledTimes(1);
+        expect(refunder.refundBooking).toHaveBeenCalledWith('b1', 26400, expect.any(String));
+      } else {
+        expect(refunder.refundBooking).not.toHaveBeenCalled();
+      }
+    });
+
+    it('el motivo que escribió la persona no se manda al reembolso, que lo registra en el log', async () => {
+      stored('CONFIRMED');
+
+      await service.cancel('owner', 'b1', DTO);
+
+      expect(refunder.refundBooking).not.toHaveBeenCalledWith('b1', 26400, DTO.reason);
+    });
+
+    const PAYMENT = { id: 'p1', status: 'SUCCEEDED', refundedAmount: 0 };
+
+    it('pide el reembolso después de cancelar, y la respuesta trae el monto sin volver a leer el pago', async () => {
+      stored('CONFIRMED', { payment: PAYMENT });
+      refunder.refundBooking.mockImplementation(() => {
+        expect(state.transition).toHaveBeenCalledTimes(1);
+        return Promise.resolve();
+      });
+
+      const cancelled = await service.cancel('owner', 'b1', DTO);
+
+      expect(refunder.refundBooking).toHaveBeenCalledTimes(1);
+      expect(cancelled).toMatchObject({ status: 'CANCELLED', refundedAmount: 26400 });
+      expect(prisma.booking.findUnique).toHaveBeenCalledTimes(1);
+    });
+
+    it('sin pago, el puerto no hizo nada y la respuesta trae 0', async () => {
+      stored('CONFIRMED', { payment: null });
+
+      expect((await service.cancel('owner', 'b1', DTO)).refundedAmount).toBe(0);
+    });
+
+    it('un pago ya reembolsado no suma otra vez en la respuesta', async () => {
+      stored('CONFIRMED', { payment: { id: 'p1', status: 'REFUNDED', refundedAmount: 26400 } });
+
+      expect((await service.cancel('owner', 'b1', DTO)).refundedAmount).toBe(26400);
+    });
+
+    it('sin derecho a reembolso, la respuesta trae lo que ya tenía el pago', async () => {
+      stored('CONFIRMED', { ...startsIn(23), payment: PAYMENT });
+
+      expect((await service.cancel('renter', 'b1', DTO)).refundedAmount).toBe(0);
+    });
+
+    it('si el reembolso no se confirma, la reserva queda cancelada, responde igual y el log trae los ids sin el mensaje del error', async () => {
+      stored('CONFIRMED', { payment: PAYMENT });
+      refunder.refundBooking.mockRejectedValue(new Error('clave sk_test_secreta inválida'));
+
+      const cancelled = await service.cancel('owner', 'b1', DTO);
+
+      expect(state.transition).toHaveBeenCalledWith('b1', 'CANCELLED', { actorId: 'owner', reason: DTO.reason }, prisma);
+      expect(cancelled).toMatchObject({ status: 'CANCELLED', refundedAmount: 0 });
+      expect(logError).toHaveBeenCalledTimes(1);
+      const logged = logError.mock.calls.flat().join(' ');
+      expect(logged).toContain('sin reembolso confirmado');
+      expect(logged).toContain('b1');
+      expect(logged).toContain('p1');
+      expect(logged).toContain('26400');
+      expect(logged).not.toContain('sk_test_secreta');
+    });
+
+    it('si Stripe reembolsó y falló la base, responde lo devuelto y no registra «sin reembolso confirmado»', async () => {
+      stored('CONFIRMED', { payment: PAYMENT });
+      refunder.refundBooking.mockRejectedValue(new RefundNotRecordedError('Stripe reembolsó, la base falló'));
+
+      const cancelled = await service.cancel('owner', 'b1', DTO);
+
+      expect(cancelled).toMatchObject({ status: 'CANCELLED', refundedAmount: 26400 });
+      expect(logError.mock.calls.flat().join(' ')).not.toContain('sin reembolso confirmado');
+    });
+
+    it('si cancelar falla, no pide el reembolso', async () => {
+      stored('CONFIRMED');
+      state.transition.mockRejectedValue(new ConflictException('otro cambio ganó'));
+
+      await expect(service.cancel('owner', 'b1', DTO)).rejects.toThrow(ConflictException);
+
+      expect(refunder.refundBooking).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('sesión de pago de una pendiente (PA-03)', () => {
+    const pending = (extra: Record<string, unknown> = {}) =>
+      stored('PENDING', { expiresAt: new Date(NOW.getTime() + 60_000), ...extra });
+    const flush = () => new Promise((resolve) => setImmediate(resolve));
+
+    it('una pendiente con sesión la expira, para que no se pueda pagar una reserva cancelada', async () => {
+      pending({ stripeCheckoutSessionId: 'cs_1' });
+
+      const cancelled = await service.cancel('renter', 'b1', DTO);
+
+      expect(cancelled.status).toBe('CANCELLED');
+      expect(checkout.cancelSession).toHaveBeenCalledTimes(1);
+      expect(checkout.cancelSession).toHaveBeenCalledWith('cs_1');
+      expect(refunder.refundBooking).not.toHaveBeenCalled();
+    });
+
+    it('un fallo al expirar no cambia la respuesta y queda en el log', async () => {
+      pending({ stripeCheckoutSessionId: 'cs_1' });
+      checkout.cancelSession.mockRejectedValue(new Error('clave sk_test_secreta inválida'));
+
+      const cancelled = await service.cancel('renter', 'b1', DTO);
+      await flush();
+
+      expect(cancelled.status).toBe('CANCELLED');
+      const logged = warn.mock.calls.flat().join(' ');
+      expect(logged).toContain('cs_1');
+      expect(logged).not.toContain('sk_test_secreta');
+    });
+
+    it('no espera a Stripe para responder', async () => {
+      pending({ stripeCheckoutSessionId: 'cs_1' });
+      checkout.cancelSession.mockReturnValue(new Promise(() => undefined));
+
+      await expect(service.cancel('renter', 'b1', DTO)).resolves.toMatchObject({ status: 'CANCELLED' });
+    });
+
+    it('una pendiente sin sesión no llama al checkout', async () => {
+      pending();
+
+      await service.cancel('renter', 'b1', DTO);
+
+      expect(checkout.cancelSession).not.toHaveBeenCalled();
+    });
+
+    it('con un checkout sin cancelSession (el provisorio) cancela igual', async () => {
+      pending({ stripeCheckoutSessionId: 'cs_1' });
+      const { cancelSession } = checkout;
+      Reflect.deleteProperty(checkout, 'cancelSession');
+
+      try {
+        await expect(service.cancel('renter', 'b1', DTO)).resolves.toMatchObject({ status: 'CANCELLED' });
+      } finally {
+        checkout.cancelSession = cancelSession;
+      }
+    });
+
+    it('una confirmada con sesión no la expira: esa sesión ya se pagó', async () => {
+      stored('CONFIRMED', { stripeCheckoutSessionId: 'cs_1' });
+
+      await service.cancel('renter', 'b1', DTO);
+
+      expect(checkout.cancelSession).not.toHaveBeenCalled();
     });
   });
 });
@@ -285,6 +443,7 @@ describe('BookingsService (RE-02)', () => {
         { provide: AvailabilityService, useValue: availability },
         { provide: BookingExpiryService, useValue: expiry },
         { provide: CHECKOUT_GATEWAY, useValue: checkout },
+        { provide: PAYMENT_REFUNDER, useValue: {} },
       ],
     }).compile();
     service = module.get(BookingsService);

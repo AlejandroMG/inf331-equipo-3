@@ -84,7 +84,7 @@ export class BookingsController {
   @ApiOperation({
     summary: 'Cancela una reserva',
     description:
-      'La cancela su arrendatario o el dueño del espacio, desde `PENDING` o `CONFIRMED`, con un motivo que queda en el historial. Política (P-14): si cancela el propietario se reembolsa el total; si cancela el arrendatario, el total hasta 24 horas antes del inicio y nada después. El reembolso en Stripe llega con PA-03.',
+      'La cancela su arrendatario o el dueño del espacio, desde `PENDING` o `CONFIRMED`, con un motivo que queda en el historial. Política (P-14): si cancela el propietario se reembolsa el total; si cancela el arrendatario, el total hasta 24 horas antes del inicio y nada después. El reembolso se pide a Stripe antes de responder y `refundedAmount` trae lo devuelto. Si Stripe falla, la reserva queda cancelada igual, responde 200 y `refundedAmount` sigue en 0. Una `PENDING` con sesión de pago la expira.',
   })
   @ApiOkResponse({ type: BookingDto })
   @ApiBadRequestResponse({ description: 'Falta el motivo o no tiene entre 5 y 500 caracteres' })
