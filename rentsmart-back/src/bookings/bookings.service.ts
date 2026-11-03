@@ -1,27 +1,316 @@
-import { Injectable, NotImplementedException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  Inject,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
+import { MAX_RANGE_MS } from '../availability/availability-slots';
+import { AvailabilityService } from '../availability/availability.service';
+import { BookingStatus, BookingUnit, PaymentStatus, SpaceStatus } from '../generated/prisma/enums';
+import { CHECKOUT_GATEWAY, type CheckoutGateway } from '../payments/checkout-gateway';
+import { RefundNotRecordedError } from '../payments/payment-refund.service';
+import { PAYMENT_REFUNDER, type PaymentRefunder } from '../payments/payment-refunder';
+import { PrismaService } from '../prisma/prisma.service';
+import { BookingExpiryService } from './booking-expiry.service';
+import { BookingStateService } from './booking-state.service';
+import { BOOKING_VIEW, toBookingDto, type BookingWithSpace } from './booking-view';
+import { cancellationRefund, CancelledBy } from './cancellation-policy';
 import { BookingCheckoutDto, BookingDto, BookingsPageDto } from './dto/booking.dto';
+import { CancelBookingDto } from './dto/cancel-booking.dto';
 import { CreateBookingDto } from './dto/create-booking.dto';
 import { PageQueryDto } from './dto/page-query.dto';
+import { overlapAsConflict } from './overlap-error';
+import { bookingAmounts, priceFor } from './pricing';
+import { lockSpaceForBooking } from './space-booking-lock';
 
 /**
- * Contrato de F-05: los métodos quedan definidos y responden 501 hasta que exista su historia
- * (RE-02 reservar, PA-01 el pago, RE-05 cancelar).
+ * Cuánto retiene el horario una reserva `PENDING` mientras se paga (P-06, enmienda del 29-10-2026). La sesión de
+ * Stripe Checkout vence en el mismo instante; Stripe exige al menos 30 minutos desde que se crea la sesión, y el
+ * minuto de más deja un margen de unos 40 s o más después de lo que tarda la transacción en llegar a crearla.
  */
+export const HOLD_MINUTES = 31;
+
+/**
+ * Tiempo máximo de la transacción de `create`. El de Prisma por defecto (5 s) queda justo si el checkout de PA-01
+ * llama a Stripe dentro de ella.
+ */
+const CREATE_TX_TIMEOUT_MS = 15_000;
+
+/** El mayor `Int` de Postgres: `subtotal`, `fee` y `total` son columnas `Int` y un monto mayor no se puede guardar. */
+export const MAX_DB_INT = 2_147_483_647;
+
+/**
+ * El mayor monto que acepta Stripe en un pago: 8 dígitos en la unidad mínima de la moneda. CLP no tiene decimales,
+ * así que son 99 999 999 CLP. Es el límite general de la documentación de Stripe (docs.stripe.com/currencies); para
+ * tarjetas el límite es mayor (12 dígitos, 9 con American Express), pero Checkout puede ofrecer otros medios, así que
+ * se usa el de 8 como tope conservador (PA-01, #45).
+ */
+export const MAX_STRIPE_AMOUNT = 99_999_999;
+
+/** El total máximo de una reserva: el menor de los dos topes. Hoy es el de Stripe, que también cubre el de la base. */
+export const MAX_BOOKING_TOTAL = Math.min(MAX_DB_INT, MAX_STRIPE_AMOUNT);
+
+/** Desde qué estados cancela una persona (RE-05). `PAID` dura un instante y lo resuelve la validación automática. */
+const CANCELLABLE: BookingStatus[] = [BookingStatus.PENDING, BookingStatus.CONFIRMED];
+
+/** Motivo del reembolso en el log. Fijo: el que escribe la persona al cancelar puede traer datos personales. */
+const CANCELLATION_REFUND_REASON = 'Cancelación de la reserva (P-14)';
+
+/** Reservas del arrendatario: reservar y consultar (RE-02) y cancelar (RE-05). */
 @Injectable()
 export class BookingsService {
-  create(_userId: string, _dto: CreateBookingDto): Promise<BookingCheckoutDto> {
-    throw new NotImplementedException('Reservar todavía no está implementado (RE-02)');
+  private readonly logger = new Logger(BookingsService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly state: BookingStateService,
+    private readonly availability: AvailabilityService,
+    private readonly expiry: BookingExpiryService,
+    @Inject(CHECKOUT_GATEWAY) private readonly checkout: CheckoutGateway,
+    @Inject(PAYMENT_REFUNDER) private readonly refunder: PaymentRefunder,
+  ) {}
+
+  /**
+   * Reserva un horario (RE-02): crea la reserva `PENDING`, que retiene el horario 31 minutos (P-06), y pide al
+   * puerto de checkout a dónde ir a pagar; con Stripe, además registra el `Payment` pendiente (PA-01). Todo pasa en
+   * una sola transacción, así que si algo falla no queda nada.
+   *
+   * - 400 si el fin no es posterior al inicio, si el rango supera 31 días (el tope de la disponibilidad), si el
+   *   inicio ya pasó (un bloque ya pasó desde que empieza, como en DI-02), si el espacio no tiene precio en esa
+   *   unidad o si el total supera lo que acepta Stripe (`MAX_BOOKING_TOTAL`); 404 si el espacio no existe o no está
+   *   `ACTIVE`; 403 si quien reserva es el dueño del espacio; 409 si el horario está fuera del horario semanal o ya
+   *   está ocupado.
+   * - Antes de revisar la disponibilidad pasa a `EXPIRED` las `PENDING` vencidas del espacio: dejan de bloquear el
+   *   horario y no chocan con `booking_no_overlap` al insertar.
+   * - Los montos los calcula el servidor (`bookingAmounts`); el cliente nunca los manda.
+   * - `now` es la hora actual; se recibe para poder probar con un reloj fijo.
+   *
+   * **Reservas simultáneas (RE-03):** tres capas. Después de validar el espacio, `lockSpaceForBooking` pone en fila
+   * las reservas del mismo espacio hasta el COMMIT, así la segunda revisa `isAvailable` cuando la primera ya está
+   * guardada y recibe el 409 de arriba (sin el lock, con read committed pasaban las dos y la base podía abortar una
+   * con un deadlock). Si aun así llega a la base una reserva traslapada, `booking_no_overlap` la rechaza y
+   * `overlapAsConflict` lo traduce a 409 («Alguien acaba de reservar ese horario»); se atrapa afuera de la
+   * transacción completa, que ya quedó abortada. El lock dura hasta el COMMIT, que incluye la llamada al checkout:
+   * la segunda espera a que termine (como máximo `CREATE_TX_TIMEOUT_MS`).
+   */
+  async create(userId: string, dto: CreateBookingDto, now: Date = new Date()): Promise<BookingCheckoutDto> {
+    const startAt = new Date(dto.startAt);
+    const endAt = new Date(dto.endAt);
+    if (endAt <= startAt) throw new BadRequestException('El fin de la reserva debe ser posterior al inicio');
+    if (endAt.getTime() - startAt.getTime() > MAX_RANGE_MS) {
+      throw new BadRequestException('Una reserva no puede durar más de 31 días');
+    }
+    if (startAt <= now) throw new BadRequestException('Ese horario ya empezó o ya pasó; elige uno futuro');
+
+    // PA-01: si el checkout ya creó una sesión de pago y después falla el resto de la transacción, se anula.
+    let createdSessionId: string | undefined;
+    return this.prisma.$transaction(
+      async (tx) => {
+        const space = await tx.space.findUnique({
+          where: { id: dto.spaceId },
+          select: { id: true, name: true, ownerId: true, status: true, pricePerHour: true, pricePerDay: true },
+        });
+        if (!space || space.status !== SpaceStatus.ACTIVE) {
+          throw new NotFoundException('El espacio no existe o no está disponible para reservar');
+        }
+        if (space.ownerId === userId) throw new ForbiddenException('No puedes reservar un espacio tuyo');
+        if (priceFor(space, dto.unit) === null) {
+          throw new BadRequestException(
+            `Este espacio no se arrienda por ${dto.unit === BookingUnit.DAY ? 'día' : 'hora'}`,
+          );
+        }
+
+        const amounts = bookingAmounts(space, dto.unit, startAt, endAt);
+        // PA-01 (#45): el tope de Stripe (99 999 999 CLP) es menor que el `Int` de la base, así que cubre los dos.
+        // Va antes de revisar el horario: un total fuera de rango es un 400 aunque el horario esté ocupado.
+        if (amounts.total > MAX_BOOKING_TOTAL) {
+          throw new BadRequestException(
+            `El total de la reserva supera el máximo que se puede pagar en línea (${MAX_BOOKING_TOTAL} CLP); elige menos horas`,
+          );
+        }
+
+        // RE-03: pone en fila las reservas de este espacio hasta el COMMIT (ver lockSpaceForBooking).
+        await lockSpaceForBooking(tx, space.id);
+        await this.expiry.expireStalePending(tx, now, space.id);
+        const free = await this.availability.isAvailable(space.id, startAt, endAt, { tx, now, unit: dto.unit });
+        if (!free) {
+          throw new ConflictException(
+            'Ese horario no está disponible: está fuera del horario del espacio o alguien ya lo reservó',
+          );
+        }
+
+        const expiresAt = new Date(now.getTime() + HOLD_MINUTES * 60_000);
+        const booking = await tx.booking.create({
+          data: { spaceId: space.id, renterId: userId, startAt, endAt, unit: dto.unit, ...amounts, expiresAt },
+          select: { id: true },
+        });
+        await this.state.recordCreation(booking.id, { actorId: userId }, tx);
+
+        // Con Stripe (PA-01), esta llamada crea la Checkout Session. Va dentro de la transacción para que,
+        // si falla, no quede una reserva reteniendo el horario sin forma de pagarla.
+        const session = await this.checkout.createSession({ id: booking.id, spaceName: space.name, ...amounts, expiresAt });
+        createdSessionId = session.sessionId;
+        if (session.sessionId) {
+          await tx.booking.update({ where: { id: booking.id }, data: { stripeCheckoutSessionId: session.sessionId } });
+          // PA-01: registra el pago pendiente con el monto, la comisión y el id de la sesión. El PaymentIntent y el
+          // cambio de estado los completa el webhook (PA-02). Sin `sessionId` (checkout provisorio, sin Stripe) no
+          // hay pago que registrar.
+          await tx.payment.create({
+            data: {
+              bookingId: booking.id,
+              stripeSessionId: session.sessionId,
+              amount: amounts.total,
+              fee: amounts.fee,
+              status: PaymentStatus.PENDING,
+            },
+          });
+        }
+        return { bookingId: booking.id, checkoutUrl: session.url };
+      },
+      { timeout: CREATE_TX_TIMEOUT_MS },
+    ).catch((error: unknown) => {
+      if (createdSessionId) this.releaseOrphanSession(createdSessionId);
+      return overlapAsConflict(error);
+    });
   }
 
-  findMine(_userId: string, _query: PageQueryDto): Promise<BookingsPageDto> {
-    throw new NotImplementedException('Mis reservas todavía no está implementado (RE-02)');
+  /**
+   * Anula, sin esperar, una sesión de pago que quedó sin reserva porque la transacción de `create` falló después de
+   * crearla (un error al guardar, el COMMIT o el tiempo máximo). Si no se puede, queda en el log y la sesión vence
+   * sola en `expiresAt`; el webhook de PA-02 tolera una sesión sin reserva.
+   */
+  private releaseOrphanSession(sessionId: string): void {
+    if (!this.checkout.cancelSession) return;
+    void this.checkout.cancelSession(sessionId).then(
+      () => this.logger.log(`Sesión de pago ${sessionId} anulada: la reserva no se pudo guardar`),
+      (error: unknown) =>
+        this.logger.warn(
+          `No se pudo anular la sesión de pago ${sessionId}, que quedó sin reserva: ${error instanceof Error ? error.name : 'error'}`,
+        ),
+    );
   }
 
-  findOne(_userId: string, _id: string): Promise<BookingDto> {
-    throw new NotImplementedException('Ver una reserva todavía no está implementado (RE-02)');
+  /** Mis reservas como arrendatario, de cualquier estado, las creadas más recientemente primero. */
+  async findMine(userId: string, { page, pageSize }: PageQueryDto): Promise<BookingsPageDto> {
+    const where = { renterId: userId };
+    const [bookings, total] = await Promise.all([
+      this.prisma.booking.findMany({
+        where,
+        include: BOOKING_VIEW,
+        // El id desempata dos reservas creadas en el mismo milisegundo, así las páginas no se cruzan.
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+      this.prisma.booking.count({ where }),
+    ]);
+    return { items: bookings.map(toBookingDto), total, page, pageSize };
   }
 
-  cancel(_userId: string, _id: string): Promise<BookingDto> {
-    throw new NotImplementedException('Cancelar una reserva queda para después del 9 de octubre (RE-05)');
+  /** Una reserva mía. 404 si no existe y 403 si es de otro arrendatario. */
+  async findOne(userId: string, id: string): Promise<BookingDto> {
+    const booking = await this.prisma.booking.findUnique({ where: { id }, include: BOOKING_VIEW });
+    if (!booking) throw new NotFoundException('La reserva no existe');
+    if (booking.renterId !== userId) throw new ForbiddenException('Esta reserva no es tuya');
+    return toBookingDto(booking);
   }
+
+  /**
+   * Cancela una reserva `PENDING` o `CONFIRMED`. Puede hacerlo su arrendatario o el dueño del espacio, con un
+   * motivo que queda en el historial. El monto a reembolsar lo decide `cancellationRefund` (P-14) y lo ejecuta el
+   * puerto de reembolsos (PA-03); la respuesta trae en `refundedAmount` lo que quedó devuelto.
+   */
+  async cancel(userId: string, id: string, dto: CancelBookingDto): Promise<BookingDto> {
+    const booking = await this.prisma.booking.findUnique({ where: { id }, include: BOOKING_VIEW });
+    if (!booking) throw new NotFoundException('La reserva no existe');
+    const cancelledBy = roleOf(userId, booking.renterId, booking.space.ownerId);
+    if (!cancelledBy) throw new ForbiddenException('Esta reserva no es tuya ni de un espacio tuyo');
+
+    const now = new Date();
+    if (booking.status === BookingStatus.PENDING && booking.expiresAt && booking.expiresAt <= now) {
+      // Ya venció el plazo de pago: se deja como vencida, en su propia transacción, y no hay nada que cancelar.
+      await this.state.transition(id, BookingStatus.EXPIRED, { actorId: null, reason: 'Venció el plazo de pago' });
+      throw new ConflictException('La reserva venció sin pagarse; ya no se puede cancelar');
+    }
+    if (!CANCELLABLE.includes(booking.status)) {
+      throw new ConflictException(`Una reserva en estado ${booking.status} no se puede cancelar`);
+    }
+    if (booking.status === BookingStatus.CONFIRMED && booking.endAt <= now) {
+      // Ya se usó; el barrido de RE-06 la pasará a FINISHED. Cancelarla reembolsaría una reserva usada (P-14).
+      throw new ConflictException('La reserva ya terminó; no se puede cancelar');
+    }
+
+    const refund = cancellationRefund(booking, cancelledBy, now);
+    await this.prisma.$transaction(async (tx) => {
+      // Bloquea la fila en el estado que se revisó: si en el intertanto llegó el pago u otro cambio, no cancela.
+      const locked = await tx.booking.updateMany({
+        where: { id, status: booking.status },
+        data: { status: booking.status },
+      });
+      if (locked.count === 0) {
+        throw new ConflictException('La reserva cambió de estado mientras se procesaba; vuelve a intentarlo');
+      }
+      await this.state.transition(id, BookingStatus.CANCELLED, { actorId: userId, reason: dto.reason }, tx);
+    });
+
+    // PA-03: el dinero y la sesión se tocan después de la transacción, sin retener la fila mientras Stripe responde.
+    if (booking.status === BookingStatus.PENDING && booking.stripeCheckoutSessionId) {
+      this.expireCancelledSession(id, booking.stripeCheckoutSessionId);
+    }
+    const payment = refund > 0 ? await this.refundCancelled(id, refund, booking.payment) : booking.payment;
+
+    return toBookingDto({ ...booking, status: BookingStatus.CANCELLED, payment });
+  }
+
+  /**
+   * Reembolsa una reserva ya cancelada y devuelve cómo quedó su pago, sin volver a leerlo: el resultado se conoce y una
+   * relectura solo agregaría otra forma de fallar. Se espera porque la respuesta lo informa. Si falla, la cancelación
+   * vale igual: el pago sigue `SUCCEEDED` con `refundedAmount` en 0 y queda en el log para resolverlo a mano.
+   */
+  private async refundCancelled(
+    bookingId: string,
+    amount: number,
+    payment: BookingWithSpace['payment'],
+  ): Promise<BookingWithSpace['payment']> {
+    // Sin pago, o ya reembolsado, el puerto no hace nada y no hay nada que sumar.
+    const refunded =
+      payment && payment.status !== PaymentStatus.REFUNDED
+        ? { ...payment, refundedAmount: payment.refundedAmount + amount }
+        : payment;
+    try {
+      await this.refunder.refundBooking(bookingId, amount, CANCELLATION_REFUND_REASON);
+      return refunded;
+    } catch (error) {
+      // Stripe devolvió el dinero y falló la base: la respuesta dice la verdad, y PaymentRefundService ya dejó en el
+      // log cómo repararlo.
+      if (error instanceof RefundNotRecordedError) return refunded;
+      // Sin el mensaje del error: en uno de Stripe puede traer parte de la clave.
+      this.logger.error(
+        `Reserva ${bookingId} cancelada sin reembolso confirmado de ${amount} CLP (pago ${payment?.id ?? 'sin registro'}): ${error instanceof Error ? error.name : 'error'}`,
+      );
+      return payment;
+    }
+  }
+
+  /**
+   * Expira, sin esperar, la sesión de pago de una reserva `PENDING` recién cancelada, para que no se pueda pagar. Si
+   * falla, queda en el log y la sesión vence sola en `expiresAt`; si alguien paga antes, el webhook (PA-02) reembolsa.
+   */
+  private expireCancelledSession(bookingId: string, sessionId: string): void {
+    if (!this.checkout.cancelSession) return;
+    void this.checkout.cancelSession(sessionId).catch((error: unknown) =>
+      this.logger.warn(
+        `No se pudo expirar la sesión de pago ${sessionId} de la reserva cancelada ${bookingId}: ${error instanceof Error ? error.name : 'error'}`,
+      ),
+    );
+  }
+}
+
+function roleOf(userId: string, renterId: string, ownerId: string): CancelledBy | null {
+  if (userId === renterId) return 'RENTER';
+  if (userId === ownerId) return 'OWNER';
+  return null;
 }

@@ -141,6 +141,40 @@ describe('AuthService.login', () => {
     });
   });
 
+  describe('AuthService.enableHost', () => {
+    it('habilita el modo propietario y devuelve solo datos públicos', async () => {
+      const update = jest.fn().mockResolvedValue({
+        id: 'u1',
+        email: 'ana@rentsmart.test',
+        name: 'Ana',
+        role: 'USER',
+        isHost: true,
+        createdAt: new Date('2026-10-01T00:00:00Z'),
+      });
+      const service = new AuthService(
+        { user: { update } } as unknown as PrismaService,
+        {} as JwtService,
+      );
+
+      const user = await service.enableHost('u1');
+
+      expect(update).toHaveBeenCalledWith({
+        where: { id: 'u1' },
+        data: { isHost: true },
+        select: {
+          id: true,
+          email: true,
+          name: true,
+          role: true,
+          isHost: true,
+          createdAt: true,
+        },
+      });
+      expect(user.isHost).toBe(true);
+      expect(user).not.toHaveProperty('passwordHash');
+    });
+  });
+
   it('rechaza una contraseña incorrecta con 401', async () => {
     prisma.user.findUnique.mockResolvedValue(storedUser());
 

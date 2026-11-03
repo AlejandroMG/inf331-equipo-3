@@ -17,7 +17,9 @@ export class FullDayDto {
   @ApiProperty({ type: Date, example: '2026-10-13T00:00:00.000Z', description: 'Fin del horario del día, UTC' })
   endAt: Date;
 
-  @ApiProperty({ description: 'false si alguna hora del día ya está ocupada o ya pasó' })
+  @ApiProperty({
+    description: 'false si alguna hora del día ya está ocupada o ya pasó, o si una reserva cae en la pausa del día',
+  })
   available: boolean;
 }
 

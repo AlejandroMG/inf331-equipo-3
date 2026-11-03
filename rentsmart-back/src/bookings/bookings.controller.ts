@@ -1,5 +1,6 @@
 import { Body, Controller, Get, HttpCode, Param, Post, Query, UseGuards } from '@nestjs/common';
 import {
+  ApiBadGatewayResponse,
   ApiBadRequestResponse,
   ApiBearerAuth,
   ApiConflictResponse,
@@ -16,6 +17,7 @@ import type { AuthUser } from '../common/auth/auth-user';
 import { CurrentUser } from '../common/auth/current-user.decorator';
 import { BookingsService } from './bookings.service';
 import { BookingCheckoutDto, BookingDto, BookingsPageDto } from './dto/booking.dto';
+import { CancelBookingDto } from './dto/cancel-booking.dto';
 import { CreateBookingDto } from './dto/create-booking.dto';
 import { PageQueryDto } from './dto/page-query.dto';
 
@@ -31,16 +33,22 @@ export class BookingsController {
   @ApiOperation({
     summary: 'Reserva un horario y entrega el enlace de pago',
     description:
-      'Crea la reserva en `PENDING`, que retiene el horario 30 minutos, y una sesión de Stripe Checkout por el total. El front redirige a `checkoutUrl`.',
+      'Crea la reserva en `PENDING`, que retiene el horario 31 minutos, y entrega el enlace de pago. Con `STRIPE_SECRET_KEY` es una sesión de Stripe Checkout en modo test, que vence junto con la retención, y queda registrado un pago `PENDING`; sin la clave (desarrollo sin Stripe, CI), es la página de la reserva en el front y no hay pago. El front redirige a `checkoutUrl`.',
   })
   @ApiCreatedResponse({ type: BookingCheckoutDto })
   @ApiBadRequestResponse({
     description:
-      'Datos inválidos: fechas que no son horas cerradas en UTC, un fin que no es posterior al inicio, un horario que ya pasó, o un espacio que no se arrienda en esa unidad',
+      'Datos inválidos: fechas que no son horas cerradas en UTC, un fin que no es posterior al inicio, un rango de más de 31 días, un horario que ya pasó, un espacio que no se arrienda en esa unidad o un total que supera el máximo que acepta Stripe (99 999 999 CLP)',
   })
+  @ApiForbiddenResponse({ description: 'El espacio es tuyo: el propietario no puede reservar sus propios espacios' })
   @ApiNotFoundResponse({ description: 'El espacio no existe o no está activo' })
   @ApiConflictResponse({
-    description: 'El horario está fuera del horario semanal o ya tiene una reserva pendiente, pagada o confirmada',
+    description:
+      'El horario está fuera del horario semanal o ya tiene una reserva pendiente, pagada o confirmada, incluso si otra solicitud lo tomó al mismo tiempo',
+  })
+  @ApiBadGatewayResponse({
+    description:
+      'Stripe no pudo crear la sesión de pago (no responde, rechazó la clave o el monto, por ejemplo uno bajo su mínimo). La reserva no queda creada',
   })
   create(@CurrentUser() user: AuthUser, @Body() dto: CreateBookingDto): Promise<BookingCheckoutDto> {
     return this.service.create(user.id, dto);
@@ -74,15 +82,23 @@ export class BookingsController {
   @Post(':id/cancel')
   @HttpCode(200)
   @ApiOperation({
-    summary: 'Cancela una reserva mía',
+    summary: 'Cancela una reserva',
     description:
-      'Fuera del MVP del 9 de octubre (RE-05): la política de cancelación y reembolso sigue abierta (P-14). Queda en el contrato para no cambiar la forma después.',
+      'La cancela su arrendatario o el dueño del espacio, desde `PENDING` o `CONFIRMED`, con un motivo que queda en el historial. Política (P-14): si cancela el propietario se reembolsa el total; si cancela el arrendatario, el total hasta 24 horas antes del inicio y nada después. El reembolso se pide a Stripe antes de responder y `refundedAmount` trae lo devuelto. Si Stripe falla, la reserva queda cancelada igual, responde 200 y `refundedAmount` sigue en 0. Una `PENDING` con sesión de pago la expira.',
   })
   @ApiOkResponse({ type: BookingDto })
-  @ApiForbiddenResponse({ description: 'La reserva es de otro usuario' })
+  @ApiBadRequestResponse({ description: 'Falta el motivo o no tiene entre 5 y 500 caracteres' })
+  @ApiForbiddenResponse({ description: 'La reserva no es tuya ni de un espacio tuyo' })
   @ApiNotFoundResponse({ description: 'La reserva no existe' })
-  @ApiConflictResponse({ description: 'La reserva ya no se puede cancelar (finalizada, cancelada o expirada)' })
-  cancel(@CurrentUser() user: AuthUser, @Param('id') id: string): Promise<BookingDto> {
-    return this.service.cancel(user.id, id);
+  @ApiConflictResponse({
+    description:
+      'La reserva no se puede cancelar: está pagada sin confirmar, finalizada, cancelada, expirada, venció su plazo de pago o su horario ya terminó',
+  })
+  cancel(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Body() dto: CancelBookingDto,
+  ): Promise<BookingDto> {
+    return this.service.cancel(user.id, id, dto);
   }
 }

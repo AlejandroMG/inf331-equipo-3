@@ -11,12 +11,14 @@ Cada decisión del producto tiene un ID `P-xx` que coincide con su issue en GitH
 | [P-03](#p-03--postgresql--prisma) | PostgreSQL + Prisma | Decidida | 25-09-2026 |
 | [P-04](#p-04--front-en-typescript) | Front en TypeScript | Decidida | 25-09-2026 |
 | [P-05](#p-05--reserva-inmediata) | Reserva inmediata | Decidida | 25-09-2026 |
-| [P-06](#p-06--pendiente--pagada--confirmada) | Pendiente → Pagada → Confirmada | Decidida | 25-09-2026 |
+| [P-06](#p-06--pendiente--pagada--confirmada) | Pendiente → Pagada → Confirmada (retención de 31 min desde la enmienda) | Decidida, enmendada | 25-09-2026 · 29-10-2026 |
 | [P-07](#p-07--por-hora-yo-por-día-en-bloques-de-1-hora) | Por hora y/o por día, bloques de 1 hora | Decidida | 25-09-2026 |
 | [P-08](#p-08--lista-cerrada-de-8-tipos-de-espacio) | Lista cerrada de 8 tipos de espacio | Decidida | 25-09-2026 |
 | [P-09](#p-09--ubicación-pública-con-detalle-privado) | Ubicación pública con detalle privado | Decidida | 25-09-2026 |
 | [P-10](#p-10--fotos-en-supabase-storage) | Fotos en Supabase Storage | Decidida | 25-09-2026 |
 | [P-11](#p-11--meta-de-pruebas) | Meta de pruebas | En espera del profesor | — |
+| [P-13](#p-13--comisión-del-10--sumada-al-arrendatario) | Comisión del 10 % sumada al arrendatario | Decidida | 27-10-2026 |
+| [P-14](#p-14--cancelación-gratis-hasta-24-horas-antes) | Cancelación gratis hasta 24 horas antes | Decidida | 08-10-2026 |
 | [P-18](#p-18--tipo-y-comuna-también-son-obligatorios-para-publicar) | Tipo y comuna también son obligatorios para publicar | Decidida | 05-10-2026 |
 | [P-19](#p-19--ubicación-en-el-mapa-el-propietario-marca-el-punto-y-el-público-ve-una-zona-aproximada) | Ubicación en el mapa con zona aproximada | Decidida | 06-10-2026 |
 | [P-20](#p-20--un-espacio-con-reservas-no-se-elimina-se-desactiva) | Un espacio con reservas no se elimina, se desactiva | Decidida | 07-10-2026 |
@@ -72,15 +74,26 @@ Decisiones abiertas: ver [al final](#decisiones-abiertas).
 
 ## P-06 · Pendiente → Pagada → Confirmada
 
-- **Estado:** Decidida, 25-09-2026 · Issue [#73](https://github.com/AlejandroMG/inf331-equipo-3/issues/73)
+- **Estado:** Decidida, 25-09-2026; enmendada el 29-10-2026 (retención de 31 minutos, [ver abajo](#enmienda-del-29-10-2026-retención-de-31-minutos)) · Issue [#73](https://github.com/AlejandroMG/inf331-equipo-3/issues/73)
 - **Contexto:** con reserva inmediata había que definir los estados y qué pasa con el horario mientras la persona paga.
 - **Decisión:**
-  - La reserva nace en **Pendiente** y retiene el horario **30 minutos**, el mínimo que permite Stripe Checkout para expirar una sesión.
+  - La reserva nace en **Pendiente** y retiene el horario **31 minutos** (eran 30 hasta la enmienda), y la sesión de Stripe Checkout vence en el mismo instante.
   - El webhook de Stripe la pasa a **Pagada**.
   - Una validación automática (espacio activo y horario libre) la pasa a **Confirmada** y avisa a ambas partes. Si falla, la pasa a **Cancelada** con reembolso total.
-  - Además existen **Finalizada** (terminó el horario), **Cancelada** y **Expirada** (no pagó en 30 minutos).
+  - Además existen **Finalizada** (terminó el horario), **Cancelada** y **Expirada** (no pagó en 31 minutos).
 - **Alternativas descartadas:** Pendiente → Confirmada al pagar, sin un estado Pagada separado; que el propietario confirme después del pago.
 - **Consecuencias:** se mantienen los estados del enunciado. Pagada y Confirmada se distinguen por la validación posterior al pago. Bloquean el horario: Pendiente no vencida, Pagada y Confirmada. Diagrama en [arquitectura.md](arquitectura.md#ciclo-de-vida-de-una-reserva).
+
+### Enmienda del 29-10-2026: retención de 31 minutos
+
+- **Estado:** Decidida, 29-10-2026 (aprobada por C) · PA-01 ([#45](https://github.com/AlejandroMG/inf331-equipo-3/issues/45))
+- **Contexto:** Stripe exige que el `expires_at` de una Checkout Session quede entre 30 minutos y 24 horas después de **crear la sesión**. La reserva se crea antes que la sesión, dentro de la misma transacción, así que con una retención de 30 minutos el `expires_at` igual a `expiresAt` quedaría unos milisegundos por debajo del mínimo y Stripe rechazaría la llamada. Con 30 minutos y la sesión venciendo después, la reserva podía pasar a Expirada mientras la sesión seguía aceptando el pago.
+- **Decisión:**
+  - La retención pasa a **31 minutos** (`HOLD_MINUTES = 31` en `rentsmart-back/src/bookings/bookings.service.ts`).
+  - La sesión de Stripe vence **en el mismo instante** que la retención: `expires_at = floor(expiresAt / 1000)`. El minuto de más cubre lo que tarda la transacción hasta crear la sesión: la transacción dura a lo más 15 s y la llamada a Stripe, con su reintento, termina antes, así que el `expires_at` queda unos 40 s o más por sobre el mínimo de Stripe. Solo una diferencia de reloj grande entre la API y Stripe podría comerse ese margen; en ese caso Stripe rechaza la sesión, la API responde 502 y la reserva no queda creada.
+  - Si igual llega un `checkout.session.completed` para una reserva **Expirada** (por ejemplo, un webhook atrasado o un pago que se completó en el último segundo), se **reembolsa el total automáticamente** y la reserva **no revive** (`EXPIRED → PAID` sigue sin ser una transición válida). Lo implementan PA-02 (#46, el webhook) y PA-03 (#47, el reembolso).
+- **Alternativas descartadas:** mantener 30 minutos con un margen de gracia en el barrido de vencimientos (RE-06): la sesión seguiría venciendo después de la reserva y el barrido tendría que esperar sin una regla clara; además el horario quedaría retenido más de lo que dice la regla.
+- **Consecuencias:** la reserva y la sesión vencen juntas, salvo por una diferencia de reloj con Stripe. Cambian `HOLD_MINUTES`, los textos que decían «30 minutos» (producto, arquitectura, `AGENTS.md`, el detalle del espacio en el front, Swagger) y el mock de MSW. El webhook de PA-02 tiene que manejar el `completed` sobre una `EXPIRED` como se describe arriba.
 
 ## P-07 · Por hora y/o por día, en bloques de 1 hora
 
@@ -115,6 +128,27 @@ Decisiones abiertas: ver [al final](#decisiones-abiertas).
 - **Estado:** En espera del profesor · Issue [#78](https://github.com/AlejandroMG/inf331-equipo-3/issues/78)
 - **Contexto:** el ramo puede exigir una cobertura mínima, ciertos tipos de prueba o informes.
 - **Decisión provisoria:** no se fija una meta de cobertura hasta tener la respuesta. Mientras tanto, cada historia exige tests según la [definición de terminado](flujo-de-trabajo.md#definición-de-terminado). F-10 (plan de pruebas y Playwright) quedó para después del 9 de octubre.
+
+## P-13 · Comisión del 10 % sumada al arrendatario
+
+- **Estado:** Decidida, 27-10-2026 (aprobada por C) · Issue [#80](https://github.com/AlejandroMG/inf331-equipo-3/issues/80)
+- **Contexto:** RE-02 (reservar) calcula el desglose de cada reserva (`subtotal`, `fee`, `total`) y necesitaba saber de cuánto es la comisión de la plataforma y quién la paga. Hasta ahora el contrato de F-05 y el mock del front asumían la recomendación del issue.
+- **Decisión:** la comisión es el **10 % del subtotal**, se **suma a lo que paga el arrendatario** (`total = subtotal + fee`) y se muestra en el desglose antes de reservar. Se redondea al peso con `Math.round`. Está en un solo lugar del back: `FEE_PERCENT` en `src/bookings/pricing.ts`.
+- **Alternativas descartadas:** una comisión a cargo del propietario, descontada de lo que recibe (no hay traspaso al propietario mientras no se use Stripe Connect, P-12, así que no habría de dónde descontarla, y el arrendatario no vería el costo real); no cobrar comisión (la plataforma no tendría ingreso y el desglose quedaría sin sentido).
+- **Consecuencias:** un reembolso total devuelve también la comisión ([P-14](#p-14--cancelación-gratis-hasta-24-horas-antes)). El mock del front (`src/mocks/bookings-handlers.ts`) ya usaba el 10 % y el front muestra el mismo cálculo en el widget de reserva (`FEE_PERCENT` en `src/features/bookings/booking-selection.ts`, solo para mostrar: el monto que vale es el del back). Son tres constantes que hay que cambiar juntas: `FEE_PERCENT` del back (`src/bookings/pricing.ts`), la del front (`src/features/bookings/booking-selection.ts`) y la del mock (`src/mocks/bookings-handlers.ts`).
+
+## P-14 · Cancelación gratis hasta 24 horas antes
+
+- **Estado:** Decidida, 08-10-2026 · Issue [#81](https://github.com/AlejandroMG/inf331-equipo-3/issues/81)
+- **Contexto:** RE-05 (cancelar una reserva) y PA-03 (reembolsos) necesitan saber cuánto se devuelve según quién cancela y cuándo. La recomendación del issue no decía qué pasa con la comisión.
+- **Decisión:**
+  - Si cancela el **arrendatario** hasta **24 horas antes** del inicio (inclusive), se le reembolsa el **total**. Con menos de 24 horas puede cancelar igual, pero **sin reembolso**.
+  - Si cancela el **propietario**, siempre se reembolsa el **total**, falte lo que falte.
+  - El total incluye la **comisión**: en un reembolso se devuelve el subtotal y la comisión.
+  - Se cancela con un **motivo** obligatorio, de 5 a 500 caracteres, que queda en el historial de la reserva.
+  - Una reserva `Pendiente` no tiene pago: cancelarla solo libera el horario.
+- **Alternativas descartadas:** reembolso parcial del 50 % con menos de 24 horas; impedir que el arrendatario cancele con menos de 24 horas; que la plataforma conserve la comisión.
+- **Consecuencias:** `POST /api/bookings/:id/cancel` recibe `{ reason }` y acepta al arrendatario o al dueño del espacio (cambio del contrato de F-05). La política es la función pura `cancellationRefund` (`src/bookings/cancellation-policy.ts`). El reembolso en Stripe lo ejecuta PA-03 con ese monto. Falta mostrar la política en el detalle del espacio y al reservar.
 
 ## P-18 · Tipo y comuna también son obligatorios para publicar
 
@@ -180,10 +214,8 @@ Decisiones abiertas: ver [al final](#decisiones-abiertas).
 | ID | Pregunta | Recomendación | Necesaria antes de |
 |---|---|---|---|
 | [P-12](https://github.com/AlejandroMG/inf331-equipo-3/issues/79) | ¿Stripe con o sin Connect? | Checkout en modo test, sin Connect; la plataforma cobra el total y registra la comisión | 3 de octubre (PA-01) |
-| [P-13](https://github.com/AlejandroMG/inf331-equipo-3/issues/80) | ¿De cuánto es la comisión y quién la paga? | 10 % sumado al arrendatario, visible en el desglose | 3 de octubre (RE-02) |
 | [P-15](https://github.com/AlejandroMG/inf331-equipo-3/issues/82) | ¿Qué proveedor de IA y quién paga la API? | Un modelo pequeño con visión; preguntar si el ramo da créditos | 3 de octubre (IA-01) |
 | [P-17](https://github.com/AlejandroMG/inf331-equipo-3/issues/84) | ¿Dónde desplegamos? | Vercel (front), Render o Railway (back), Neon o Supabase (BD) | 3 de octubre (QA-03) |
-| [P-14](https://github.com/AlejandroMG/inf331-equipo-3/issues/81) | ¿Política de cancelación y reembolso? | Gratis hasta 24 h antes; si cancela el propietario, reembolso total | Después del 9 de octubre |
 | [P-16](https://github.com/AlejandroMG/inf331-equipo-3/issues/83) | ¿Reseñas en una o ambas direcciones? | Solo al espacio en el MVP | Después del 9 de octubre |
 
 ## Plantilla para una decisión nueva

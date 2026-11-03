@@ -1,6 +1,6 @@
 import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
-import { defineConfig } from 'vitest/config'
+import { configDefaults, defineConfig } from 'vitest/config'
 
 // https://vite.dev/config/
 export default defineConfig({
@@ -15,6 +15,8 @@ export default defineConfig({
     setupFiles: './src/test/setup.ts',
     // Los estilos no importan en los tests y evitan procesar Tailwind.
     css: false,
+    // e2e/ son los tests de Playwright (npm run test:e2e): corren en un navegador real, no en Vitest.
+    exclude: [...configDefaults.exclude, 'e2e/**'],
     // Los tests del formulario por pasos escriben y navegan con userEvent; en un runner lento superan los 5 s por defecto.
     testTimeout: 15000,
   },

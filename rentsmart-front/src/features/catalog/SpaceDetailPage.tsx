@@ -7,7 +7,7 @@ import { usePageTitle } from '../../lib/page-title'
 import { paths } from '../../lib/paths'
 import { FavoriteButton } from '../favorites/FavoriteButton'
 import { LazyLocationMap } from '../map/LazyMaps'
-import { BookingSlot } from './BookingSlot'
+import { BookingWidget } from '../bookings/BookingWidget'
 import { Gallery } from './Gallery'
 import { groupSchedule } from './schedule'
 import { useSpace } from './useSpace'
@@ -94,6 +94,19 @@ export function SpaceDetailPage() {
                 </Section>
               )}
 
+              <Section title="Anfitrión">
+                <Link to={paths.publicProfile(space.host.id)} className="inline-flex items-center gap-3 rounded-control text-ink hover:text-primary-dark">
+                  {space.host.profilePhotoUrl ? (
+                    <img src={space.host.profilePhotoUrl} alt="" className="size-12 rounded-full object-cover" />
+                  ) : (
+                    <span aria-hidden="true" className="inline-flex size-12 items-center justify-center rounded-full bg-primary-soft font-bold text-primary-dark">
+                      {space.host.name.charAt(0).toLocaleUpperCase()}
+                    </span>
+                  )}
+                  <span className="font-semibold underline">{space.host.name}</span>
+                </Link>
+              </Section>
+
               {space.amenities.length > 0 && (
                 <Section title="Qué incluye">
                   <ul className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-3">
@@ -177,9 +190,9 @@ export function SpaceDetailPage() {
                   </span>
                 )}
               </div>
-              <BookingSlot />
+              <BookingWidget spaceId={space.id} pricePerHour={space.pricePerHour} pricePerDay={space.pricePerDay} />
               <p className="text-sm leading-relaxed text-muted">
-                Reserva inmediata: no necesitas esperar la aprobación del propietario. El horario queda retenido 30 minutos mientras pagas.
+                Reserva inmediata: no necesitas esperar la aprobación del propietario. El horario queda retenido 31 minutos mientras pagas.
               </p>
             </aside>
           </div>

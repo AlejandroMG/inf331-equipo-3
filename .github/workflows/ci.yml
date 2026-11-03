@@ -4,7 +4,8 @@ on:
   push:
     branches: [ main, develop ]
   pull_request:
-    branches: [ main, develop ]
+    # release/** cubre los ajustes de una entrega que llegan por PR a su rama de release (GitFlow, T-05).
+    branches: [ main, develop, 'release/**' ]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -64,8 +65,9 @@ jobs:
       - name: Lint (oxlint)
         run: npm run lint
 
+      # Jest no genera coverage-summary.json por defecto; sin json-summary el resumen de abajo no muestra la tabla.
       - name: Unit tests y reporte de cobertura
-        run: npm run test:cov
+        run: npm run test:cov -- --coverageReporters=text --coverageReporters=lcov --coverageReporters=json-summary
 
       - name: Tests e2e (API con la BD de test)
         run: npm run test:e2e
@@ -129,3 +131,42 @@ jobs:
 
       - name: Build de producción
         run: npm run build
+
+  # Smoke test con navegador (F-10). Corre contra Vite con la API simulada por MSW (VITE_USE_MOCKS=true, ver
+  # rentsmart-front/playwright.config.ts), así que no necesita el back ni la base de datos.
+  e2e:
+    name: E2E (Playwright)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: rentsmart-front
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: rentsmart-front/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Instalar Chromium para Playwright
+        run: npx playwright install --with-deps chromium
+
+      - name: Smoke test E2E (Playwright)
+        run: npm run test:e2e
+
+      - name: Subir reporte de Playwright
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            rentsmart-front/playwright-report/
+            rentsmart-front/test-results/
+          retention-days: 7

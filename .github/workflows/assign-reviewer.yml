@@ -4,7 +4,7 @@ name: Asignar revisor
 # la rotación (A → B → C → A) y, además, el dueño de cada módulo ajeno que el PR toca.
 on:
   pull_request:
-    branches: [ main ]
+    branches: [ main, develop, 'release/**' ]
     types: [ opened, reopened, ready_for_review ]
 
 permissions:

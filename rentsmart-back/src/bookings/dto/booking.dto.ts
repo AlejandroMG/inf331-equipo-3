@@ -56,12 +56,19 @@ export class BookingDto {
   @ApiProperty({
     type: Date,
     nullable: true,
-    description: 'Hasta cuándo se retiene el horario mientras se paga (30 min). Solo importa en `PENDING`',
+    description: 'Hasta cuándo se retiene el horario mientras se paga (31 min); la sesión de Stripe vence en el mismo instante. Solo importa en `PENDING`',
   })
   expiresAt: Date | null;
 
   @ApiProperty({ type: Date })
   createdAt: Date;
+
+  @ApiProperty({
+    example: 0,
+    description:
+      'CLP enteros: cuánto se le ha devuelto al arrendatario; 0 si no hay pago o no se ha devuelto nada. En una reserva `CANCELLED`, 0 por sí solo no dice si no tenía derecho a reembolso o si el reembolso falló',
+  })
+  refundedAmount: number;
 
   @ApiProperty({ type: BookingSpaceDto })
   space: BookingSpaceDto;
@@ -88,7 +95,8 @@ export class BookingCheckoutDto {
 
   @ApiProperty({
     example: 'https://checkout.stripe.com/c/pay/cs_test_...',
-    description: 'Stripe Checkout: el front redirige aquí. Vence junto con la retención del horario',
+    description:
+      'El enlace de pago, donde el front redirige: la sesión de Stripe Checkout (vuelve a `/bookings/<id>?pago=ok` o `?pago=cancelado`) o, sin `STRIPE_SECRET_KEY`, la página de la reserva en el front (`/bookings/<id>`)',
   })
   checkoutUrl: string;
 }

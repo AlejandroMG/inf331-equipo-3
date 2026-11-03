@@ -9,6 +9,7 @@ import type {
   Payment,
   Schedule,
 } from '../features/bookings/types'
+import { canCancel, MAX_CANCEL_REASON, MIN_CANCEL_REASON, refundsOnCancel } from '../features/bookings/cancellation'
 import type { ScheduleRule } from '../features/catalog/types'
 import { catalogData } from './catalog-data'
 
@@ -23,7 +24,7 @@ const HOUR_UTC_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:00:00(\.0{1,3})?Z$/
 const START_TIME_PATTERN = /^([01]\d|2[0-3]):00$/
 const END_TIME_PATTERN = /^(0[1-9]|1\d|2[0-4]):00$/
 const MAX_DAYS = 31
-/** Comisión supuesta mientras P-13 siga abierta: 10 % sumado al arrendatario. */
+/** Comisión de la plataforma (P-13): 10 % sumado al arrendatario, igual que `FEE_PERCENT` del back. */
 const FEE_PERCENT = 10
 /** Los estados que ocupan el horario (P-06). */
 const BLOCKING: BookingStatus[] = ['PENDING', 'PAID', 'CONFIRMED']
@@ -83,6 +84,8 @@ const calendarDay = (date: string) => {
   const [year, month, day] = date.split('-').map(Number)
   return new Date(Date.UTC(year, month - 1, day))
 }
+/** Si el día existe: `2026-02-30` tiene el formato, pero no existe (el back responde 400). */
+const dateExists = (date: string) => calendarDay(date).toISOString().slice(0, 10) === date
 const hourOf = (time: string) => Number(time.slice(0, 2))
 
 function rulesOf(spaceId: string): ScheduleRule[] {
@@ -150,8 +153,8 @@ const sortRules = (rules: ScheduleRule[]) =>
 
 /** La reserva como la entrega la API: el detalle de la dirección solo si está confirmada (P-09). */
 function toBooking(mock: MockBooking): Booking {
-  const { id, status, unit, startAt, endAt, subtotal, fee, total, expiresAt, createdAt } = mock
-  const booking = { id, status, unit, startAt, endAt, subtotal, fee, total, expiresAt, createdAt, space: mock.space }
+  const { id, status, unit, startAt, endAt, subtotal, fee, total, expiresAt, createdAt, refundedAmount } = mock
+  const booking = { id, status, unit, startAt, endAt, subtotal, fee, total, expiresAt, createdAt, refundedAmount, space: mock.space }
   return {
     ...booking,
     space: { ...booking.space, addressDetail: booking.status === 'CONFIRMED' ? 'Oficina 502. Citófono 12, preguntar por recepción.' : null },
@@ -159,15 +162,15 @@ function toBooking(mock: MockBooking): Booking {
 }
 
 function paymentOf(booking: MockBooking): Payment {
-  const refunded = booking.status === 'CANCELLED'
+  const { refundedAmount } = booking
   return {
     id: `payment-${booking.id}`,
     bookingId: booking.id,
     spaceName: booking.space.name,
     amount: booking.total,
     fee: booking.fee,
-    refundedAmount: refunded ? booking.total : 0,
-    status: refunded ? 'REFUNDED' : 'SUCCEEDED',
+    refundedAmount,
+    status: refundedAmount > 0 ? 'REFUNDED' : 'SUCCEEDED',
     createdAt: booking.createdAt,
   }
 }
@@ -188,6 +191,7 @@ export const bookingHandlers = [
     const from = url.searchParams.get('from') ?? ''
     const to = url.searchParams.get('to') ?? ''
     if (!DATE_PATTERN.test(from) || !DATE_PATTERN.test(to)) return badRequest('from y to deben ser fechas AAAA-MM-DD')
+    if (!dateExists(from) || !dateExists(to)) return badRequest('from y to deben ser fechas que existan')
     const count = (calendarDay(to).getTime() - calendarDay(from).getTime()) / (24 * HOUR) + 1
     if (count < 1) return badRequest('from no puede ser posterior a to')
     if (count > MAX_DAYS) return badRequest(`Se pueden pedir hasta ${MAX_DAYS} días`)
@@ -214,7 +218,8 @@ export const bookingHandlers = [
     return HttpResponse.json({ rules: sorted } satisfies Schedule)
   }),
 
-  // RE-02 y PA-01: reservar. Queda PENDING y entrega a dónde ir a pagar; aquí, directo a la pantalla de retorno.
+  // RE-02: reservar. Queda PENDING y entrega a dónde ir a pagar. Como el back mientras no exista Stripe (PA-01),
+  // lleva a la página de la reserva en el front.
   http.post('*/api/bookings', async ({ request }) => {
     if (!hasSession(request)) return unauthorized()
     const payload = (await request.json()) as CreateBookingPayload
@@ -235,7 +240,8 @@ export const bookingHandlers = [
     if (payload.unit === 'DAY') {
       // El día completo puede tener pausas (09:00 a 13:00 y 15:00 a 19:00): va del primer inicio al último fin.
       const isFullDay = hours.length > 0 && +hours[0].startAt === +start && +hours[hours.length - 1].endAt === +end
-      if (!isFullDay) return badRequest('Una reserva por día toma el horario completo de ese día')
+      // Como el back: isAvailable con unit DAY es falso si el rango no es exactamente el día completo, y eso es un 409.
+      if (!isFullDay) return conflict('Una reserva por día toma el horario completo de ese día')
     } else if (wanted.length !== (end.getTime() - start.getTime()) / HOUR) {
       return conflict('El horario está fuera del horario del espacio')
     }
@@ -253,8 +259,10 @@ export const bookingHandlers = [
       subtotal,
       fee,
       total: subtotal + fee,
-      expiresAt: new Date(now + 30 * 60_000).toISOString(),
+      // Retiene el horario 31 minutos, como el back (P-06).
+      expiresAt: new Date(now + 31 * 60_000).toISOString(),
       createdAt: new Date(now).toISOString(),
+      refundedAmount: 0,
       space: { id: space.id, name: space.name, communeName: space.communeName, address: 'Av. Libertador Bernardo O’Higgins 1234', addressDetail: null, coverUrl: space.coverUrl },
       polls: 0,
       paid: false,
@@ -262,7 +270,9 @@ export const bookingHandlers = [
     bookings.push(booking)
     const origin = typeof location === 'undefined' ? '' : location.origin
     return HttpResponse.json(
-      { bookingId: booking.id, checkoutUrl: `${origin}/bookings/${booking.id}/success` } satisfies BookingCheckout,
+      // Como el success_url de Stripe Checkout (PA-01): vuelve a la reserva con ?pago=ok, así en modo mock se ve el
+      // flujo completo (el aviso de pago recibido y la consulta hasta CONFIRMED).
+      { bookingId: booking.id, checkoutUrl: `${origin}/bookings/${booking.id}?pago=ok` } satisfies BookingCheckout,
       { status: 201 },
     )
   }),
@@ -288,12 +298,19 @@ export const bookingHandlers = [
     return HttpResponse.json(toBooking(booking))
   }),
 
-  // RE-05 (fuera del MVP): cancelar. Libera el horario; si ya estaba pagada, el pago queda reembolsado.
-  http.post('*/api/bookings/:id/cancel', ({ params, request }) => {
+  // RE-05 y PA-03: cancelar con motivo. Libera el horario y aplica P-14 con la misma regla del front. Estas reservas
+  // son siempre de quien tiene la sesión, así que cancela como arrendatario: el total hasta 24 horas antes, si no, nada.
+  http.post('*/api/bookings/:id/cancel', async ({ params, request }) => {
     if (!hasSession(request)) return unauthorized()
+    const body = (await request.json().catch(() => null)) as { reason?: unknown } | null
+    const reason = typeof body?.reason === 'string' ? body.reason.trim() : ''
+    if (reason.length < MIN_CANCEL_REASON || reason.length > MAX_CANCEL_REASON) {
+      return badRequest(`reason debe tener entre ${MIN_CANCEL_REASON} y ${MAX_CANCEL_REASON} caracteres`)
+    }
     const booking = bookings.find((item) => item.id === params.id)
     if (!booking) return notFound('La reserva no existe')
-    if (!BLOCKING.includes(booking.status)) return conflict('La reserva ya no se puede cancelar')
+    if (!canCancel(booking.status)) return conflict(`Una reserva en estado ${booking.status} no se puede cancelar`)
+    booking.refundedAmount = refundsOnCancel(booking, 'RENTER', new Date()) ? booking.total : 0
     booking.status = 'CANCELLED'
     return HttpResponse.json(toBooking(booking))
   }),

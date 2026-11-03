@@ -18,7 +18,7 @@ export interface AvailabilitySlot {
 export interface FullDay {
   startAt: string
   endAt: string
-  /** false si alguna hora del día ya está ocupada o ya pasó. */
+  /** false si alguna hora del día ya está ocupada o ya pasó, o si una reserva cae en la pausa del día. */
   available: boolean
 }
 
@@ -57,6 +57,11 @@ export interface BookingCheckout {
   checkoutUrl: string
 }
 
+/** POST /api/bookings/:id/cancel: el motivo, de 5 a 500 caracteres. Cancela el arrendatario o el dueño del espacio. */
+export interface CancelBookingPayload {
+  reason: string
+}
+
 /** El espacio de una reserva, como lo ve el arrendatario. */
 export interface BookingSpace {
   id: string
@@ -83,9 +88,14 @@ export interface Booking {
   fee: number
   /** CLP enteros: lo que paga el arrendatario (subtotal + fee). */
   total: number
-  /** Hasta cuándo se retiene el horario mientras se paga (30 min). Solo importa en `PENDING`. */
+  /** Hasta cuándo se retiene el horario mientras se paga (31 min); la sesión de Stripe vence en el mismo instante. Solo importa en `PENDING`. */
   expiresAt: string | null
   createdAt: string
+  /**
+   * CLP enteros: cuánto se le ha devuelto al arrendatario (PA-03); 0 si no hay pago o no se ha devuelto nada. En una
+   * reserva cancelada, 0 por sí solo no dice si tenía derecho a reembolso o si el reembolso falló.
+   */
+  refundedAmount: number
   space: BookingSpace
 }
 

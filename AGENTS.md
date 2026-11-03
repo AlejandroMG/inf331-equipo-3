@@ -53,6 +53,7 @@ inf331-equipo-3/
 | `rentsmart-back` | `npm run lint` · `npm run build` | oxlint · compilación |
 | `rentsmart-front` | `npm run dev` | App en http://localhost:5173 |
 | `rentsmart-front` | `npm run build` · `npm run lint` | Build de producción · ESLint |
+| `rentsmart-front` | `npm test` · `npm run test:e2e` | Tests con Vitest · smoke E2E con Playwright y MSW (la primera vez: `npx playwright install chromium`) |
 
 Antes de proponer un commit, corre build, lint y tests de la app que tocaste.
 
@@ -71,7 +72,7 @@ El detalle está en [`docs/producto.md`](docs/producto.md) y [`docs/decisiones.m
 
 - Una cuenta puede publicar y reservar; se habilita como propietario al publicar su primer espacio. El rol `ADMIN` va aparte.
 - Reserva **inmediata**, sin aprobación del propietario: `Pendiente → Pagada → Confirmada`, luego `Finalizada`. Además existen `Cancelada` y `Expirada`.
-- `Pendiente` retiene el horario **30 minutos** mientras se paga en Stripe Checkout. Al pagar, el webhook la pasa a `Pagada` y una validación automática la pasa a `Confirmada`, o la cancela con reembolso total si falla.
+- `Pendiente` retiene el horario **31 minutos** mientras se paga en Stripe Checkout, y la sesión de Stripe vence en el mismo instante (enmienda a P-06). Si un pago llega sobre una reserva `Expirada`, se reembolsa el total y la reserva no revive. Al pagar, el webhook la pasa a `Pagada` y una validación automática la pasa a `Confirmada`, o la cancela con reembolso total si falla.
 - Se arrienda por hora y/o por día según el espacio. Bloques de 1 hora, con mínimo de 1 hora.
 - 8 tipos de espacio en una lista cerrada que el admin puede ampliar. No se permite alojamiento.
 - Región y comuna salen de una lista cerrada. La dirección es pública; el detalle (depto, oficina, indicaciones) solo lo ve quien tiene una reserva `Confirmada`.
@@ -96,4 +97,5 @@ El detalle está en [`docs/producto.md`](docs/producto.md) y [`docs/decisiones.m
 | [`docs/decisiones.md`](docs/decisiones.md) | Registro de decisiones y las que siguen abiertas |
 | [`docs/plan.md`](docs/plan.md) | Sprints, responsables y entregas entre integrantes |
 | [`docs/flujo-de-trabajo.md`](docs/flujo-de-trabajo.md) | Ramas, commits, PRs, revisiones y definición de terminado |
+| [`docs/plan-de-pruebas.md`](docs/plan-de-pruebas.md) | Niveles de prueba, herramientas, qué corre el CI y meta de cobertura |
 | [`docs/memory.md`](docs/memory.md) | Bitácora de sesiones de trabajo (obligatoria) |

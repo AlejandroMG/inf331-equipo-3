@@ -17,6 +17,9 @@ import { OwnerMetricsPage } from './features/owner/OwnerMetricsPage'
 import { FavoritesPage } from './features/favorites/FavoritesPage'
 import { OwnerSpacesPage } from './features/owner/OwnerSpacesPage'
 import { PublishSpacePage } from './features/spaces/PublishSpacePage'
+import { BookingPage } from './features/bookings/BookingPage'
+import { ProfilePage } from './features/users/ProfilePage'
+import { PublicProfilePage } from './features/users/PublicProfilePage'
 
 /**
  * Rutas de la app. Cada dominio agrega las suyas aquí y reemplaza el placeholder por su pantalla.
@@ -28,16 +31,19 @@ export const routes: RouteObject[] = [
     children: [
       { index: true, element: <CatalogPage /> },
       { path: 'spaces/:spaceId', element: <SpaceDetailPage /> },
+      { path: 'users/:userId', element: <PublicProfilePage /> },
       { path: 'login', element: <LoginPage />, handle: { title: 'Iniciar sesión' } },
       { path: 'register', element: <RegisterPage />, handle: { title: 'Crear cuenta' } },
       {
         element: <RequireAuth />,
         children: [
+          { path: 'profile', element: <ProfilePage />, handle: { title: 'Mi perfil' } },
           { path: 'publish/:spaceId?', element: <PublishSpacePage /> },
           { path: 'owner/spaces', element: <OwnerSpacesPage /> },
           { path: 'owner/bookings', element: <OwnerBookingsPage />, handle: { title: 'Reservas de mis espacios' } },
           { path: 'owner/metrics', element: <OwnerMetricsPage />, handle: { title: 'Métricas' } },
           { path: 'favorites', element: <FavoritesPage />, handle: { title: 'Mis favoritos' } },
+          { path: 'bookings/:bookingId', element: <BookingPage /> },
         ],
       },
       {
