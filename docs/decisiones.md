@@ -19,6 +19,7 @@ Cada decisión del producto tiene un ID `P-xx` que coincide con su issue en GitH
 | [P-11](#p-11--meta-de-pruebas) | Meta de pruebas | En espera del profesor | — |
 | [P-13](#p-13--comisión-del-10--sumada-al-arrendatario) | Comisión del 10 % sumada al arrendatario | Decidida | 27-10-2026 |
 | [P-14](#p-14--cancelación-gratis-hasta-24-horas-antes) | Cancelación gratis hasta 24 horas antes | Decidida | 08-10-2026 |
+| [P-15](https://github.com/AlejandroMG/inf331-equipo-3/issues/82) | Gemini como proveedor| Parcial | 16-11-2026 |
 | [P-18](#p-18--tipo-y-comuna-también-son-obligatorios-para-publicar) | Tipo y comuna también son obligatorios para publicar | Decidida | 05-10-2026 |
 | [P-19](#p-19--ubicación-en-el-mapa-el-propietario-marca-el-punto-y-el-público-ve-una-zona-aproximada) | Ubicación en el mapa con zona aproximada | Decidida | 06-10-2026 |
 | [P-20](#p-20--un-espacio-con-reservas-no-se-elimina-se-desactiva) | Un espacio con reservas no se elimina, se desactiva | Decidida | 07-10-2026 |
@@ -150,6 +151,15 @@ Decisiones abiertas: ver [al final](#decisiones-abiertas).
 - **Alternativas descartadas:** reembolso parcial del 50 % con menos de 24 horas; impedir que el arrendatario cancele con menos de 24 horas; que la plataforma conserve la comisión.
 - **Consecuencias:** `POST /api/bookings/:id/cancel` recibe `{ reason }` y acepta al arrendatario o al dueño del espacio (cambio del contrato de F-05). La política es la función pura `cancellationRefund` (`src/bookings/cancellation-policy.ts`). El reembolso en Stripe lo ejecuta PA-03 con ese monto. Falta mostrar la política en el detalle del espacio y al reservar.
 
+## P-15 · Gemini como proveedor de IA
+
+- **Estado:** Decidida parcialmente, 16-11-2026 · Issue [#82](https://github.com/AlejandroMG/inf331-equipo-3/issues/82)
+- **Contexto:** IA-01 necesita una implementación real intercambiable y una decisión para conectar el flujo futuro de IA-02.
+- **Decisión:** usar Google Gemini con un modelo pequeño con visión (`gemini-2.5-flash`). Se permiten hasta 5 generaciones por publicación y 15 intentos por usuario en una ventana móvil de 24 horas. Un intento que devuelve fallback consume ambos límites, pero permite reintentar la publicación.
+- **Pendiente:** acordar qué cuenta o créditos pagarán las llamadas antes de habilitar Gemini en un entorno compartido o productivo.
+- **Alternativas descartadas:** acoplar la lógica de negocio al SDK de un único proveedor; `AiProvider` aísla el proveedor y permite sustituirlo.
+- **Consecuencias:** la clave se configura como `AI_API_KEY` solo en el backend. `AI_PROVIDER=mock` mantiene local y CI sin llamadas externas. La cuota se guarda en PostgreSQL.
+
 ## P-18 · Tipo y comuna también son obligatorios para publicar
 
 - **Estado:** Decidida, 05-10-2026 · Sin issue todavía
@@ -214,7 +224,7 @@ Decisiones abiertas: ver [al final](#decisiones-abiertas).
 | ID | Pregunta | Recomendación | Necesaria antes de |
 |---|---|---|---|
 | [P-12](https://github.com/AlejandroMG/inf331-equipo-3/issues/79) | ¿Stripe con o sin Connect? | Checkout en modo test, sin Connect; la plataforma cobra el total y registra la comisión | 3 de octubre (PA-01) |
-| [P-15](https://github.com/AlejandroMG/inf331-equipo-3/issues/82) | ¿Qué proveedor de IA y quién paga la API? | Un modelo pequeño con visión; preguntar si el ramo da créditos | 3 de octubre (IA-01) |
+| [P-15](https://github.com/AlejandroMG/inf331-equipo-3/issues/82) | ¿Quién paga el consumo de la API de Gemini? | Usar créditos educativos si están disponibles; no configurar una clave compartida hasta acordarlo | Antes de habilitar IA-02 |
 | [P-17](https://github.com/AlejandroMG/inf331-equipo-3/issues/84) | ¿Dónde desplegamos? | Vercel (front), Render o Railway (back), Neon o Supabase (BD) | 3 de octubre (QA-03) |
 | [P-16](https://github.com/AlejandroMG/inf331-equipo-3/issues/83) | ¿Reseñas en una o ambas direcciones? | Solo al espacio en el MVP | Después del 9 de octubre |
 
