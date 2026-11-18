@@ -3274,3 +3274,54 @@ Que cancelar devuelva de verdad el dinero en Stripe, según lo que decide P-14, 
 - No se tocaron `schema.prisma` ni las migraciones.
 
 ---
+
+### 2026-11-17 · B (xReNatS) · Entrega 3: pruebas E2E/UI con Selenium integradas al CI
+
+**Issues:** #150 (QA-05), #151 (QA-06), #152 (QA-07), #153 (QA-08); aporta a #64 (QA-01)
+**Rama / PR:** `feature/QA-01-e2e-selenium` · sin PR todavía
+**Duración aproximada:** 5 h
+**Herramientas:** Claude Code
+
+#### Objetivo
+Cumplir la Entrega 3 (viernes 20 de noviembre): un set de pruebas E2E/UI con Selenium, integrado al pipeline con evidencia y aviso del resultado, y su documentación.
+
+#### Qué se hizo
+- Se creó el milestone «Entrega 3» y los issues QA-05 a QA-08 con su estimación en horas.
+- Proyecto nuevo `e2e-selenium/` (Selenium WebDriver + Mocha, Chrome headless): 23 pruebas en 5 archivos (catálogo, cuentas y permisos, panel del propietario, reservas, favoritos y perfil), contra PostgreSQL con seed, la API real y el front compilado. `BASE_URL`, `API_URL`, `HEADLESS` y `WAIT_MS` salen del entorno.
+- Al fallar una prueba se guardan screenshot, HTML y log de la consola; los reportes salen en HTML (Mochawesome), JSON y JUnit.
+- Job `e2e-selenium` en `.github/workflows/ci.yml`: PostgreSQL como servicio, migra, siembra, compila y levanta API y front, corre las pruebas, resume en el job y sube `selenium-report` y `selenium-screenshots`. Job `notify` que avisa a Discord si existe el secreto `DISCORD_WEBHOOK_URL`.
+- Documentación: `docs/entrega-3.md` (sigue el Anexo B), `e2e-selenium/README.md`, sección 5 y tabla del CI en `docs/plan-de-pruebas.md`, variables en `.env.example` y `docs/arquitectura.md`.
+
+#### Decisiones y por qué
+| Decisión | Alternativas consideradas | Por qué se eligió |
+|---|---|---|
+| Selenium y no Playwright para la entrega | Seguir con Playwright | La pauta solo permite otra herramienta si no se usó antes y Playwright ya está en la Entrega 2. Playwright queda como smoke |
+| Stack real sin Stripe (`STRIPE_SECRET_KEY` vacía) | Recorrer Stripe Checkout en modo test | Evita depender de la red y de claves en el CI; la reserva queda pendiente de pago. El pago sigue en QA-01 |
+| Reutilizar el token de cada usuario entre pruebas | Iniciar sesión por API en cada prueba | El login de la API limita 10 intentos por IP cada 15 minutos (CU-05); una corrida usa 7 |
+| GitHub Actions y Discord, no Jenkins y Slack | Instalar Jenkins | Se mantiene lo declarado en la Entrega 2 |
+| Un paquete aparte, `e2e-selenium/`, con su `package-lock.json` | Meterlo en `rentsmart-front` | No mezcla dependencias de Selenium con el front y el CI lo instala con `npm ci` |
+
+#### Archivos principales
+- `e2e-selenium/`: proyecto completo (`lib/` con driver, helpers y hooks de evidencia; `test/*.test.js`).
+- `.github/workflows/ci.yml`: jobs `e2e-selenium` y `notify` (**archivo de C, dueño del CI**).
+- `docs/entrega-3.md`, `docs/plan-de-pruebas.md`, `docs/arquitectura.md`, `.env.example`, `AGENTS.md`, `docs/README.md`.
+
+#### Cómo probarlo
+- Pasos en `e2e-selenium/README.md`. En resumen: base de datos migrada y sembrada, API en 3000, front compilado con `VITE_API_URL=http://localhost:4173` y `vite preview` en 4173, y `npm test` en `e2e-selenium`.
+
+#### Estado de verificación
+- Build: no aplica al código de la app; el back y el front compilan.
+- Lint: no aplica (el paquete nuevo no tiene linter).
+- Tests: ✅ 23 de 23 en local con Node 24, Chrome headless y el stack real. La segunda corrida seguida falla por el límite de login (hay que reiniciar la API). El job del CI todavía no corrió en GitHub: se verifica con el PR.
+
+#### Pendientes y bloqueos
+- Enlaces a una ejecución verde y a una roja en `docs/entrega-3.md` (marcador `PENDIENTE_`) y la página «Entrega 3» de la Wiki.
+- Confirmar con C que el aviso a Discord no duplica uno que ya exista (la Wiki habla de un webhook, pero no hay un paso en el workflow) y que el secreto `DISCORD_WEBHOOK_URL` esté creado.
+- Pago con Stripe y confirmación de la reserva en el E2E (QA-01), y el video.
+
+#### Para el resto del equipo
+- C (@gonzzza-lol): toqué `ci.yml` solo para agregar dos jobs al final; no cambié los existentes. Revisa los puertos y el aviso a Discord.
+- A (@AlejandroMG): el límite de login (`ThrottlerModule`, 10 por 15 min) obliga a la suite a reutilizar tokens. Una variable de entorno para el límite en pruebas lo simplificaría.
+- Antes de repetir la suite en local, reinicia la API.
+
+---
