@@ -46,6 +46,8 @@ const link = (text) => By.xpath(`//a[normalize-space(.)=${literal(text)}]`);
 const heading = (level, text) => By.xpath(`//h${level}[normalize-space(.)=${literal(text)}]`);
 const textOf = (text) => By.xpath(`//*[contains(normalize-space(text()), ${literal(text)})]`);
 const ariaLabel = (label) => By.xpath(`//*[@aria-label=${literal(label)}]`);
+/** Campo asociado a una etiqueta visible (`<label for>`), para los campos que no tienen `name`. */
+const field = (label) => By.xpath(`//*[@id=//label[starts-with(normalize-space(.), ${literal(label)})]/@for]`);
 
 /** Ruta de la app, sin hardcodear el host. */
 const open = (driver, route = '/') => driver.get(`${BASE_URL}${route}`);
@@ -78,6 +80,6 @@ async function loginViaApi(driver, email, password = SEED_PASSWORD) {
 }
 
 module.exports = {
-  By, until, Key, literal, visible, click, type, byName, button, link, heading, textOf, ariaLabel,
+  By, until, Key, literal, visible, click, type, byName, button, link, heading, textOf, ariaLabel, field,
   open, currentPath, waitForPath, loginViaUi, loginViaApi, api,
 };

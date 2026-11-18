@@ -93,6 +93,7 @@ Líder de equipo: Renato Ramírez ([@xReNatS](https://github.com/xReNatS)).
 | front | `npm run dev` | Servidor de desarrollo de Vite |
 | front | `npm run build` | Build de producción en `dist/` |
 | front | `npm run lint` | Lint con ESLint |
+| e2e-selenium | `npm test` | Pruebas E2E/UI con Selenium en Chrome headless contra el stack real (ver [`e2e-selenium/README.md`](e2e-selenium/README.md)) |
 | raíz | `docker compose up -d` | Levanta PostgreSQL de desarrollo (5432) y de test (5433) |
 | back | `npx prisma migrate dev` | Aplica migraciones y regenera el cliente de Prisma |
 | back | `npm run seed` | Carga datos de prueba (se puede repetir) |
@@ -105,7 +106,8 @@ Líder de equipo: Renato Ramírez ([@xReNatS](https://github.com/xReNatS)).
 | Unitarias del back | Jest | `npm test` | `rentsmart-back/src/**/*.spec.ts` |
 | Integración de la API | Jest + Supertest + PostgreSQL de test | `npm run test:e2e` | `rentsmart-back/test/*.e2e-spec.ts` |
 | Front (componentes y lógica) | Vitest + React Testing Library + MSW | `npm test` | `rentsmart-front/src/**/*.test.ts(x)` |
-| E2E con navegador | Playwright (Chromium) + MSW | `npm run test:e2e` | `rentsmart-front/e2e/*.spec.ts` |
+| E2E con navegador (smoke) | Playwright (Chromium) + MSW | `npm run test:e2e` | `rentsmart-front/e2e/*.spec.ts` |
+| E2E/UI del stack real (Entrega 3) | Selenium WebDriver + Mocha (Chrome headless) | `npm test` en `e2e-selenium` | `e2e-selenium/test/*.test.js` |
 
 Los tests de integración usan la base de test del `docker compose` (puerto 5433) y necesitan `DATABASE_TEST_URL` en `rentsmart-back/.env`. Antes de la primera ejecución hay que migrarla:
 
@@ -117,7 +119,7 @@ npm run test:e2e
 
 **Resultados de la Entrega 1:** 1438 pruebas en verde (343 unitarias y 454 de integración del back, 641 del front). Cobertura de líneas de las unitarias del back: 45,6 %.
 
-El CI (`.github/workflows/ci.yml`) corre lint, tests unitarios con cobertura, tests de integración y build del back y del front, y el smoke test de Playwright, en cada pull request. El detalle por nivel está en el [plan de pruebas](docs/plan-de-pruebas.md) y la estrategia para el ramo en la [Wiki](https://github.com/AlejandroMG/inf331-equipo-3/wiki/Proyecto-Estrategia-de-pruebas).
+El CI (`.github/workflows/ci.yml`) corre lint, tests unitarios con cobertura, tests de integración y build del back y del front, el smoke test de Playwright y las 25 pruebas E2E/UI con Selenium contra el stack real (PostgreSQL, API y front), en cada pull request. Las pruebas de Selenium, su ejecución y su evidencia se explican en [`docs/entrega-3.md`](docs/entrega-3.md). El detalle por nivel está en el [plan de pruebas](docs/plan-de-pruebas.md) y la estrategia para el ramo en la [Wiki](https://github.com/AlejandroMG/inf331-equipo-3/wiki/Proyecto-Estrategia-de-pruebas).
 
 ## Documentación
 

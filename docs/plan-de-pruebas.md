@@ -75,10 +75,10 @@ Además, el CI corre la calidad estática antes de las pruebas: oxlint con tipos
 
 ## 5. E2E/UI con Selenium (Entrega 3)
 
-- **Qué se prueba:** 23 flujos críticos con Chrome headless contra el stack real (PostgreSQL con seed, API de NestJS y front compilado, sin mocks): catálogo y búsqueda, registro y login con sus validaciones, rutas protegidas y permisos de administrador, panel del propietario, reserva y perfil. El listado caso por caso está en [`entrega-3.md`](entrega-3.md#set-de-pruebas).
+- **Qué se prueba:** 25 flujos críticos con Chrome headless contra el stack real (PostgreSQL con seed, API de NestJS y front compilado, sin mocks): catálogo y búsqueda, registro y login con sus validaciones, rutas protegidas y permisos de administrador, panel del propietario (publicar, editar, activar y desactivar, eliminar), reserva, favoritos y perfil. El listado caso por caso está en [`entrega-3.md`](entrega-3.md#set-de-pruebas).
 - **Por qué Selenium además de Playwright:** la pauta de la Entrega 3 pide Selenium y solo deja usar otra herramienta si no se usó antes; Playwright ya estaba en la Entrega 2. El smoke de Playwright se mantiene: es rápido, no necesita base de datos y detecta que la app arranca. Selenium cubre los flujos completos.
 - **Cómo se buscan los elementos:** Selenium no tiene `getByRole`, así que se localiza por lo que ve la persona: el `name` de un campo, el texto de un botón o encabezado y los `aria-label`. No se usan clases CSS ni `data-testid`.
-- **Datos:** cada prueba crea sus cuentas con un email único por API y las reservas eligen un horario al azar; las cuentas del seed solo se leen o se dejan como estaban.
+- **Datos:** cada prueba crea por API sus cuentas (con email único) y sus espacios, y las reservas eligen un horario al azar; las cuentas y los espacios del seed solo se leen.
 - **Evidencia:** al fallar una prueba se guarda un screenshot, el HTML y el log de la consola del navegador. El CI sube además el reporte HTML (Mochawesome), el JUnit y los logs de la API y del front.
 - **Dónde y cómo se corre:** [`e2e-selenium/README.md`](../e2e-selenium/README.md).
 
@@ -106,7 +106,7 @@ Archivos de test en el repo al 24-10-2026, contados con `git ls-files` (son arch
 | Integración de la API (`rentsmart-back/test/*.e2e-spec.ts`) | 22 |
 | Front (`rentsmart-front/src/**/*.test.ts(x)`) | 50 |
 | E2E con navegador, Playwright (`rentsmart-front/e2e/*.spec.ts`) | 1 |
-| E2E/UI con Selenium (`e2e-selenium/test/*.test.js`) | 5 (23 casos) |
+| E2E/UI con Selenium (`e2e-selenium/test/*.test.js`) | 5 (25 casos) |
 
 **Cobertura del back.** La cobertura que mide el CI es la de las unitarias (`npm run test:cov` en el job Backend); los tests de integración todavía no suman a ese informe. El valor de cada ejecución se ve en el resumen del job Backend («Cobertura del Backend») y en el artefacto `backend-coverage-report`, que trae el informe HTML por archivo. En la Entrega 1 fue de 45,6 % de líneas ([Wiki](https://github.com/AlejandroMG/inf331-equipo-3/wiki/Proyecto-Estrategia-de-pruebas#resultados-entrega-1)). El front no mide cobertura todavía.
 

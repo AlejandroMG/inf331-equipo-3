@@ -2,7 +2,7 @@ const assert = require('node:assert/strict');
 const { By, until, visible, click, type, button, heading, open, currentPath, waitForPath } = require('../lib/helpers');
 const { useBrowser } = require('../lib/session');
 
-// Catálogo público (BU-01 a BU-04): lo ve cualquier persona, sin sesión. El seed deja 10 espacios activos.
+// Catálogo público (BU-01 a BU-04): lo ve cualquier persona, sin sesión. El seed deja al menos 10 espacios activos.
 
 describe('Catálogo y búsqueda', function () {
   const browser = useBrowser();
@@ -42,8 +42,9 @@ describe('Catálogo y búsqueda', function () {
       const titles = await cardTitles();
       return titles.length > 0 && titles.length < all.length;
     }, 10000, 'El catálogo no se acotó con la búsqueda');
-    const filtered = await cardTitles();
-    assert.ok(filtered.every((title) => title.includes('Las Condes')), `Resultados fuera de la búsqueda: ${filtered.join(', ')}`);
+    // La búsqueda mira el nombre, el tipo y la comuna: cada tarjeta debe mencionar «Las Condes» en alguno de ellos.
+    const cards = await Promise.all((await driver.findElements(By.css('a[href^="/spaces/"]'))).map((card) => card.getText()));
+    assert.ok(cards.every((text) => text.includes('Las Condes')), `Resultados fuera de la búsqueda: ${cards.join(' | ')}`);
   });
 
   it('CAT-03 una búsqueda sin coincidencias avisa que no hay resultados', async function () {
@@ -85,8 +86,16 @@ describe('Catálogo y búsqueda', function () {
     await select.sendKeys('Precio por hora: menor a mayor');
 
     await waitForPath(driver, /[?&]sort=price_asc/);
-    // El seed fija el precio por hora en 5.000 + 1.000 × n, así que el más barato es el espacio 1.
-    await driver.wait(async () => (await cardTitles())[0]?.endsWith(' 1'), 10000, 'El espacio más barato no quedó primero');
+    // Lee el precio por hora de cada tarjeta, en el orden en que aparecen, y comprueba que no baja: no depende de los
+    // precios que tenga el seed.
+    const hourlyPrices = async () => {
+      const texts = await Promise.all((await driver.findElements(By.css('a[href^="/spaces/"]'))).map((card) => card.getText()));
+      return texts.map((text) => text.match(/\$\s?([\d.]+)\s*\/\s*hora/)).filter(Boolean).map((match) => Number(match[1].replace(/\./g, '')));
+    };
+    await driver.wait(async () => {
+      const prices = await hourlyPrices();
+      return prices.length >= 2 && prices.every((price, index) => index === 0 || prices[index - 1] <= price);
+    }, 10000, 'Los precios por hora no quedaron de menor a mayor');
   });
 
   it('CAT-06 desde el catálogo se abre el detalle de un espacio con su reserva', async function () {

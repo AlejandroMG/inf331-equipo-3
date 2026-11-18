@@ -1,5 +1,5 @@
 {
-  "reporterEnabled": "spec, mocha-junit-reporter, mochawesome",
+  "reporterEnabled": "mochawesome, mocha-junit-reporter",
   "mochaJunitReporterReporterOptions": {
     "mochaFile": "./reports/junit.xml",
     "testsuitesTitle": "RentSmart E2E (Selenium)"

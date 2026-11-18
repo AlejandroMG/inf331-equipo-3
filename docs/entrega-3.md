@@ -6,7 +6,7 @@ Documento de la Entrega 3 del ramo INF331 (equipo 3). Sigue el orden del Anexo B
 
 Sumar pruebas de interfaz (E2E/UI) a RentSmart, que corran solas dentro del pipeline de la Entrega 2 y dejen evidencia clara de cada ejecución. Queda así:
 
-- 23 pruebas E2E/UI con **Selenium WebDriver**, sobre el stack real (base de datos, API y front), en Chrome headless.
+- 25 pruebas E2E/UI con **Selenium WebDriver**, sobre el stack real (base de datos, API y front), en Chrome headless.
 - Un job nuevo, «E2E (Selenium)», en el workflow de GitHub Actions que levanta ese stack, corre las pruebas y falla el pipeline si una prueba falla.
 - Reportes, logs y screenshots de las fallas como artefactos descargables, y un resumen en cada ejecución.
 - Aviso del resultado al canal de Discord del equipo.
@@ -23,7 +23,7 @@ El proyecto está en [`e2e-selenium/`](../e2e-selenium/README.md) y tiene su pro
 
 ## Set de pruebas
 
-Hay 23 pruebas en 5 archivos. Cada una es un flujo de usuario, no una prueba unitaria.
+Hay 25 pruebas en 5 archivos. Cada una es un flujo de usuario, no una prueba unitaria.
 
 | ID | Qué valida |
 |---|---|
@@ -31,7 +31,7 @@ Hay 23 pruebas en 5 archivos. Cada una es un flujo de usuario, no una prueba uni
 | **CAT-02** | Buscar por texto deja solo los espacios que coinciden |
 | **CAT-03** | Una búsqueda sin coincidencias avisa que no hay resultados |
 | **CAT-04** | Filtrar por tipo de espacio reduce el listado y queda en la URL |
-| **CAT-05** | Ordenar por precio de menor a mayor cambia el orden |
+| **CAT-05** | Ordenar por precio de menor a mayor deja los precios por hora en orden creciente |
 | **CAT-06** | Desde el catálogo se abre el detalle de un espacio, con su panel de reserva |
 | **CAT-07** | Una ruta que no existe muestra la página de error 404 |
 | **AUT-01** | Registrarse con campos vacíos muestra los errores y no envía nada |
@@ -43,8 +43,10 @@ Hay 23 pruebas en 5 archivos. Cada una es un flujo de usuario, no una prueba uni
 | **AUT-07** | Una cuenta sin rol de administrador recibe el 403 en el panel de administración |
 | **AUT-08** | La cuenta administradora sí accede a la moderación de espacios |
 | **OWN-01** | «Mis espacios» lista los espacios del propietario y su resumen |
-| **OWN-02** | Desactivar un espacio lo saca del catálogo público; activarlo lo devuelve |
-| **OWN-03** | Un borrador aparece en «Mis espacios» y se elimina con confirmación |
+| **OWN-02** | Publicar desde el formulario: se completa un borrador subiendo la foto, se publica y aparece en el catálogo |
+| **OWN-03** | Editar un espacio publicado cambia su nombre en el detalle público |
+| **OWN-04** | Desactivar un espacio lo saca del catálogo público; activarlo lo devuelve |
+| **OWN-05** | Un borrador aparece en «Mis espacios» y se elimina con confirmación |
 | **BOK-01** | Sin sesión, elegir horas y reservar lleva al login |
 | **BOK-02** | El arrendatario reserva un bloque y ve su reserva pendiente de pago con el desglose |
 | **BOK-03** | Una reserva no se puede ver sin sesión |
@@ -55,13 +57,13 @@ Hay 23 pruebas en 5 archivos. Cada una es un flujo de usuario, no una prueba uni
 
 | Escenario de la pauta | Pruebas |
 |---|---|
-| CRUD happy path | OWN-02 y OWN-03 (actualizar estado y eliminar), BOK-02 (crear una reserva), PRF-01 (editar), FAV-01 (crear y quitar) |
+| CRUD happy path | Espacio: OWN-02 (crear y publicar), OWN-01 (listar), CAT-06 (ver detalle), OWN-03 y OWN-04 (editar), OWN-05 (eliminar). Además BOK-02 (crear una reserva), PRF-01 (editar el perfil) y FAV-01 (crear y quitar un favorito) |
 | Validaciones y errores | AUT-01, AUT-03, AUT-04, CAT-03, CAT-07 |
 | Búsqueda y filtro | CAT-02, CAT-03, CAT-04, CAT-05 |
 | Login y permisos | AUT-04 a AUT-08, BOK-01, BOK-03 |
 | Navegación clave | CAT-01, CAT-06, OWN-01 |
 
-**Flujo que sustituimos y por qué.** La pauta sugiere «crear → listar → ver detalle → editar → eliminar» sobre una sola entidad. En RentSmart publicar un espacio es un formulario de varios pasos con fotos y ubicación, que ya prueban los tests de Vitest y de integración. Para el E2E se reparte el CRUD en lo que la persona hace de punta a punta: crear un borrador (por API, como dato de partida), verlo en «Mis espacios», cambiarle el estado y eliminarlo, más crear una reserva y editar el perfil.
+**Cómo se arma el CRUD.** La entidad central es el espacio. Publicar es un formulario de cinco pasos; la prueba OWN-02 parte de un borrador con los datos y el horario ya cargados por API y recorre en la interfaz la parte que la persona completa: sube la foto, revisa y publica, y abre el espacio en el catálogo. OWN-03 lo edita desde «Mis espacios», OWN-04 lo desactiva y lo reactiva, y OWN-05 elimina un borrador. Cada prueba crea su propio espacio, así que no se toca ninguno del seed.
 
 **Qué no cubre.** El pago con Stripe Checkout y la confirmación automática de la reserva (el back del E2E corre sin `STRIPE_SECRET_KEY`, así que la reserva queda pendiente de pago). Sigue pendiente en [QA-01](https://github.com/AlejandroMG/inf331-equipo-3/issues/64).
 
@@ -86,7 +88,7 @@ HEADLESS=false npm test  # con el navegador visible
 | `HEADLESS` | `true` | `false` abre el navegador |
 | `WAIT_MS` | `10000` | Espera máxima de un elemento |
 
-**Datos de prueba.** El seed del back deja tres usuarios (`admin@`, `propietario@` y `arrendatario@rentsmart.test`, contraseña `Password123`) y 10 espacios activos. Las pruebas crean sus propias cuentas con emails únicos y eligen horarios al azar, así que no dependen del orden ni de corridas anteriores.
+**Datos de prueba.** El seed del back deja tres usuarios (`admin@`, `propietario@` y `arrendatario@rentsmart.test`, contraseña `Password123`) y 10 espacios activos. Las pruebas crean por API sus propias cuentas (con emails únicos) y sus espacios (con la foto de `e2e-selenium/fixtures/espacio.png`), y las reservas eligen horarios al azar, así que no dependen del orden ni de corridas anteriores. Los datos del seed solo se leen; la excepción es BOK-02, que crea una reserva del arrendatario del seed.
 
 ## Integración con CI/CD
 
@@ -128,13 +130,16 @@ HEADLESS=false npm test  # con el navegador visible
 | El catálogo vacío y las tarjetas comparten la etiqueta `h3`, y la prueba contaba el aviso como si fuera un espacio | Las tarjetas se identifican como `a[href^="/spaces/"] h3` |
 | Después de integrar `develop`, el back no compilaba: faltaba el paquete `stripe` y el cliente de Prisma estaba viejo | `npm ci` y `npx prisma generate` antes de compilar; el job de CI ya lo hace en ese orden |
 | Mocha no generaba los reportes JUnit y HTML cuando las opciones del multi-reporter iban dentro de `.mocharc.cjs` | Se pasaron en un archivo aparte, `reporter-config.json` |
+| OWN-02 desactivaba un espacio del seed y FAV-01 cambiaba los favoritos del arrendatario del seed; si el paso que los restauraba fallaba, otras pruebas dependían del resultado (observación de la revisión de C) | Las dos pruebas crean sus datos por API: un espacio publicado propio y una cuenta propia |
+| CAT-05 comprobaba que el espacio más barato fuera el «1», que depende de cómo el seed calcula los precios | La prueba lee el precio por hora de cada tarjeta y comprueba que vayan en orden creciente |
+| Los campos del formulario de publicar no tienen atributo `name` | Se localizan por su etiqueta visible: el `id` del campo es el `for` del `<label>` |
 | Selenium no tiene `getByRole` como Playwright | Se localiza por el `name` del campo, el texto del botón o encabezado y los `aria-label`, que la interfaz ya trae por accesibilidad |
 
 ## Pendientes y mejoras futuras
 
 - Pago con Stripe Checkout y confirmación automática de la reserva en el E2E (QA-01).
 - Una variable de entorno para subir el límite de login en el entorno de pruebas, así la suite podría repetirse sin reiniciar la API. Es un cambio en `auth` (módulo de A), por eso no se hizo.
-- Publicar un espacio con el formulario completo, con fotos y ubicación.
+- Recorrer en la interfaz los pasos 1 a 3 del formulario de publicar (datos, ubicación con el mapa y horario semanal); hoy se cargan por API y la prueba completa la foto y la publicación.
 - Ejecutar las pruebas a 375 px y en otros navegadores.
 - Hacer obligatorio «E2E (Selenium)» en el ruleset de `main` cuando lleve unas semanas estable.
-- Cancelar una reserva desde la interfaz, cuando exista (PN-03).
+- Cancelar una reserva desde la interfaz (BOK-04): C monta el diálogo de cancelación en la página de la reserva y agrega la prueba en un PR aparte.

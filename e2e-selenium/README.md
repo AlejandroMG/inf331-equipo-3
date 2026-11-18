@@ -56,16 +56,16 @@ Para ver el navegador: `HEADLESS=false npm test`. Una sola prueba o archivo: `np
 |---|---|---|
 | `test/catalog.test.js` | CAT-01 a CAT-07 | Catálogo, búsqueda, sin resultados, filtro por tipo, orden por precio, detalle, página 404 |
 | `test/auth.test.js` | AUT-01 a AUT-08 | Registro (validaciones, éxito, email repetido), login (error, éxito, logout), ruta protegida, permisos de administrador |
-| `test/owner.test.js` | OWN-01 a OWN-03 | Panel «Mis espacios», activar y desactivar, eliminar un borrador |
+| `test/owner.test.js` | OWN-01 a OWN-05 | Panel «Mis espacios», publicar un borrador desde el formulario (con la foto), editar un espacio publicado, activar y desactivar, eliminar un borrador |
 | `test/booking.test.js` | BOK-01 a BOK-03 | Reservar sin sesión, reservar con sesión y ver la reserva pendiente, reserva ajena sin sesión |
 | `test/account.test.js` | FAV-01, PRF-01 | Favoritos y edición del perfil |
 
-Hay 23 pruebas. La explicación de cada una está en [`docs/entrega-3.md`](../docs/entrega-3.md#set-de-pruebas).
+Hay 25 pruebas. La explicación de cada una está en [`docs/entrega-3.md`](../docs/entrega-3.md#set-de-pruebas).
 
 ## Cómo están escritas
 
 - **Un archivo por dominio, un Chrome por archivo.** `lib/session.js` abre el navegador una vez y borra la sesión (`localStorage`) antes de cada prueba.
-- **Cada prueba prepara sus datos.** Las cuentas nuevas llevan un email único y las reservas eligen un horario al azar, así que no dependen del orden ni de corridas anteriores. Los usuarios del seed (`arrendatario@`, `propietario@`, `admin@rentsmart.test`, contraseña `Password123`) solo se leen o se dejan como estaban.
+- **Cada prueba prepara sus datos.** Las cuentas nuevas llevan un email único, los espacios que se publican, editan o desactivan se crean por API (`lib/api.js`, con la foto de `fixtures/espacio.png`) y las reservas eligen un horario al azar, así que no dependen del orden ni de corridas anteriores. Los usuarios y espacios del seed (`arrendatario@`, `propietario@`, `admin@rentsmart.test`, contraseña `Password123`) solo se leen; la única excepción es BOK-02, que crea una reserva del arrendatario del seed.
 - **Selectores estables.** Se busca por lo que ve la persona: el `name` de un campo, el texto de un botón o encabezado y los `aria-label`. No por clases CSS.
 - **Evidencia al fallar.** Si una prueba falla, `lib/hooks.js` guarda en `screenshots/` el screenshot, el HTML de la página y el log de la consola del navegador.
 - **Reportes.** `reports/index.html` (Mochawesome, abrir en el navegador), `reports/index.json` y `reports/junit.xml`. `screenshots/` y `reports/` están en el `.gitignore`.
