@@ -115,9 +115,16 @@ HEADLESS=false npm test  # con el navegador visible
 | Screenshots de fallas | Artefacto `selenium-screenshots`: por cada prueba que falla, un `.png`, el `.html` de la página y el `.log` de la consola |
 | Aviso en Discord | Canal del equipo |
 
-**Evidencia de una falla.** En el desarrollo de la suite hubo corridas en rojo que dejaron el screenshot, el HTML y el log del navegador de cada prueba que falló; por ejemplo, cuando se agotó el límite de login de la API (ver el problema 1).
+**Ejecuciones de ejemplo** (PR [#154](https://github.com/AlejandroMG/inf331-equipo-3/pull/154)):
 
-**Enlaces a las ejecuciones:** PENDIENTE_ completar con el enlace a una ejecución en verde y a una en rojo hecha a propósito, una vez que el PR de la Entrega 3 corra en GitHub Actions.
+| Ejecución | Resultado | Qué muestra |
+|---|---|---|
+| [En verde](https://github.com/AlejandroMG/inf331-equipo-3/actions/runs/44400210124) (commit `d1558b1`) | ✅ 25 de 25 | El pipeline completo en verde, con el resumen de Selenium y el artefacto `selenium-report` |
+| [En rojo, a propósito](https://github.com/AlejandroMG/inf331-equipo-3/actions/runs/44400582392) (commit `11c7530`) | ❌ 24 de 25 | CAT-07 espera un título que no existe. El job «E2E (Selenium)» falla y marca el pipeline en rojo. El log dice qué prueba falló y dónde quedó su evidencia, y el artefacto `selenium-screenshots` trae el `.png`, el `.html` y el `.log` de la consola |
+
+El commit que hace fallar CAT-07 se revirtió en el siguiente, que vuelve a dejar el pipeline en verde. En el desarrollo de la suite también hubo corridas locales en rojo que dejaron su evidencia; por ejemplo, cuando se agotó el límite de login de la API (problema 1).
+
+**Aviso en Discord:** el job `notify` corrió en las dos ejecuciones, pero omitió el envío porque el secreto `DISCORD_WEBHOOK_URL` todavía no existe en el repositorio. Cuando se cree, hay que relanzar una ejecución para tener esta evidencia.
 
 ## Problemas encontrados y soluciones
 

@@ -3325,3 +3325,55 @@ Cumplir la Entrega 3 (viernes 20 de noviembre): un set de pruebas E2E/UI con Sel
 - Antes de repetir la suite en local, reinicia la API.
 
 ---
+
+### 2026-11-18 · B (xReNatS) · Entrega 3: revisión de C, evidencia del CI, Wiki e issues
+
+**Issues:** #151 (QA-06), #152 (QA-07), #153 (QA-08); además #26, #30, #32, #64 y #150 actualizados
+**Rama / PR:** `feature/QA-01-e2e-selenium` · PR #154
+**Duración aproximada:** 3 h
+**Herramientas:** Claude Code
+
+#### Objetivo
+Responder la revisión de C en el PR #154, dejar la evidencia de una ejecución verde y una roja del CI, publicar la página «Entrega 3» de la Wiki y poner al día los issues.
+
+#### Qué se hizo
+- Orden de merge de los PRs abiertos (#149, #156, #157, #155, #148 y #154 al final), simulado por pares con `git merge-tree`: entre ellos solo chocan archivos de docs.
+- Issues: cuerpos y comentarios de #32, #150 a #153, #64 y #30 al día; #26 (ES-07) cerrado porque sus tres criterios están en `develop`.
+- Pruebas nuevas, pedidas por C: OWN-02 publica desde el formulario (completa un borrador subiendo la foto y lo abre en el catálogo) y OWN-03 edita un espacio publicado. Quedan 25 pruebas.
+- OWN-04 (antes OWN-02) y FAV-01 crean sus datos por API en vez de modificar los del seed; CAT-05 comprueba el orden leyendo los precios de las tarjetas y CAT-02 el texto de cada tarjeta.
+- `engines` en `>=24.9` y sin la salida duplicada en la consola (Mochawesome ya imprime como `spec`).
+- Evidencia en el CI: una ejecución verde y una roja hecha a propósito (CAT-07 esperando un título que no existe, en un commit que se revirtió), enlazadas en `docs/entrega-3.md`.
+- Página «Entrega 3» de la Wiki publicada con el contenido de `docs/entrega-3.md`, y el README con el nivel de Selenium.
+
+#### Decisiones y por qué
+| Decisión | Alternativas consideradas | Por qué se eligió |
+|---|---|---|
+| OWN-02 parte de un borrador con datos y horario cargados por API y completa en la interfaz la foto y la publicación | Recorrer los cinco pasos en la interfaz | El horario semanal (de C) y el mapa son los pasos más frágiles de automatizar; la parte de publicar, que es la que pide QA-06, sí pasa por la interfaz |
+| Ejecución roja con un commit que se revierte | Un `workflow_dispatch` con un input para forzar la falla | `workflow_dispatch` solo se puede lanzar cuando el workflow está en la rama por defecto (`main`), y eso pasa recién con el release |
+| Espacios de las pruebas en Providencia y a $99.000 la hora | Usar la primera comuna y un precio cualquiera | No aparecen en la búsqueda «Las Condes» de CAT-02 ni alteran el orden por precio |
+
+#### Archivos principales
+- `e2e-selenium/test/owner.test.js`: OWN-01 a OWN-05.
+- `e2e-selenium/lib/api.js`: `createCompleteDraft`, `uploadPhoto` y `createPublishedSpace`.
+- `e2e-selenium/fixtures/espacio.png`: foto de prueba (64 × 48).
+- `docs/entrega-3.md`, `README.md`, `docs/plan-de-pruebas.md`, `e2e-selenium/README.md`.
+
+#### Cómo probarlo
+- Pasos en `e2e-selenium/README.md`; en el CI, el job «E2E (Selenium)» del PR #154.
+
+#### Estado de verificación
+- Build: no aplica (no cambia código de la app).
+- Lint: no aplica.
+- Tests: ✅ 25 de 25 en local con Node 24 y en el CI del PR #154.
+
+#### Pendientes y bloqueos
+- El aviso a Discord sigue sin enviarse: falta que A cree el secreto `DISCORD_WEBHOOK_URL` y relanzar el run.
+- BOK-04 (cancelar una reserva) lo agrega C en un PR aparte, junto con el diálogo de cancelación en la página de la reserva.
+- El video de la entrega.
+- Cerrar a mano #32 y #150 a #152 al mergear sus PRs: los PRs apuntan a `develop` y GitHub no los cierra solo.
+
+#### Para el resto del equipo
+- Orden de merge sugerido: #149, #156, #157 (cambiarle la base a `develop` después de #156; hasta entonces su CI no corre), #155, #148 y #154 al final, para que su CI pruebe todo junto.
+- Los espacios que crean las pruebas quedan en la base del CI, que se descarta en cada ejecución; en una base local se acumulan.
+
+---
