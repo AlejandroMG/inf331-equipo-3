@@ -115,7 +115,7 @@ describe('Catálogo y búsqueda', function () {
     const { driver } = browser;
     await open(driver, '/esta-pagina-no-existe');
 
-    await visible(driver, heading(1, 'No encontramos esta página'));
+    await visible(driver, heading(1, 'Título que no existe (falla a propósito para la evidencia)'));
     assert.equal(await currentPath(driver), '/esta-pagina-no-existe');
   });
 });
