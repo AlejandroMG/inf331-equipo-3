@@ -1,4 +1,4 @@
-import { BadGatewayException, Logger } from '@nestjs/common';
+import { BadGatewayException, ConflictException, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type Stripe from 'stripe';
 import { CheckoutBooking, CheckoutGateway, CheckoutSession } from './checkout-gateway';
@@ -6,7 +6,7 @@ import { bookingPageUrl } from './frontend-url';
 
 /** Lo único que este gateway usa del cliente de Stripe; así los tests le pasan un doble pequeño. */
 export type StripeCheckoutClient = {
-  checkout: { sessions: Pick<Stripe['checkout']['sessions'], 'create' | 'expire'> };
+  checkout: { sessions: Pick<Stripe['checkout']['sessions'], 'create' | 'expire' | 'retrieve'> };
 };
 
 /** Lo que ve el arrendatario si Stripe falla: no se cobró nada y la reserva no quedó creada. */
@@ -69,6 +69,25 @@ export class StripeCheckoutGateway implements CheckoutGateway {
         this.logger.warn(`No se pudo expirar la sesión ${session.id}: ${describeStripeError(error)}`),
       );
       throw new BadGatewayException(STRIPE_UNAVAILABLE_MESSAGE);
+    }
+    return { url: session.url, sessionId: session.id };
+  }
+
+  async resumeSession(_booking: CheckoutBooking, sessionId?: string): Promise<CheckoutSession> {
+    if (!sessionId) {
+      throw new ConflictException('No hay un pago disponible para continuar en esta reserva');
+    }
+
+    let session: Awaited<ReturnType<StripeCheckoutClient['checkout']['sessions']['retrieve']>>;
+    try {
+      session = await this.stripe.checkout.sessions.retrieve(sessionId);
+    } catch (error) {
+      this.logger.error(`No se pudo recuperar el checkout ${sessionId}: ${describeStripeError(error)}`);
+      throw new BadGatewayException(STRIPE_UNAVAILABLE_MESSAGE);
+    }
+
+    if (session.status !== 'open' || !session.url) {
+      throw new ConflictException('La sesión de pago ya no está disponible; actualiza el estado de la reserva');
     }
     return { url: session.url, sessionId: session.id };
   }

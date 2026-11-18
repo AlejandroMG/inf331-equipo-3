@@ -62,3 +62,28 @@
   height: 44px;
   line-height: 44px;
 }
+
+@media print {
+  body * {
+    visibility: hidden !important;
+  }
+
+  dialog[data-printable='true'],
+  dialog[data-printable='true'] * {
+    visibility: visible !important;
+  }
+
+  dialog[data-printable='true'] {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    max-width: none;
+    max-height: none;
+    border: 0;
+    box-shadow: none;
+  }
+
+  .receipt-print-actions {
+    display: none !important;
+  }
+}

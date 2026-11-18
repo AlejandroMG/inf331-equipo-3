@@ -17,6 +17,8 @@
  */
 export interface CheckoutGateway {
   createSession(booking: CheckoutBooking): Promise<CheckoutSession>;
+  /** Recupera un checkout vigente para continuar un pago que sigue pendiente. */
+  resumeSession(booking: CheckoutBooking, sessionId?: string): Promise<CheckoutSession>;
   /** Anula una sesión que quedó sin reserva o cuya reserva se canceló. Opcional: el checkout provisorio no crea sesiones. */
   cancelSession?(sessionId: string): Promise<void>;
 }
