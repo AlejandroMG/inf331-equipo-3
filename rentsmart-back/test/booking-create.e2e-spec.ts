@@ -333,6 +333,26 @@ describe('Reservar un espacio (e2e)', () => {
       expect(page2.items.map((item) => item.id)).toEqual([created[0]]);
     });
 
+    it('filtra mis reservas por estado antes de paginar', async () => {
+      const { body } = await request(server())
+        .get('/api/bookings/me?status=CONFIRMED')
+        .set(bearer(app, pageUserId))
+        .expect(200);
+
+      expect(body).toMatchObject({ items: [], total: 0, page: 1, pageSize: 20 });
+    });
+
+    it('permite continuar el checkout solo de una reserva propia pendiente', async () => {
+      const bookingId = created[0];
+      const { body } = await request(server())
+        .get(`/api/bookings/${bookingId}/checkout`)
+        .set(bearer(app, pageUserId))
+        .expect(200);
+
+      expect(body).toMatchObject({ bookingId, checkoutUrl: expect.stringMatching(new RegExp(`/bookings/${bookingId}$`)) });
+      await request(server()).get(`/api/bookings/${bookingId}/checkout`).set(bearer(app, otherId)).expect(403);
+    });
+
     it('no muestra las reservas de otros', async () => {
       const { body } = await request(server()).get('/api/bookings/me').set(bearer(app, otherId)).expect(200);
 

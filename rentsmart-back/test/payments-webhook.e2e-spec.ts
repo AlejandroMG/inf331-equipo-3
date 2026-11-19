@@ -122,6 +122,8 @@ describe('Webhook de Stripe (e2e)', () => {
     configuredSecret = WEBHOOK_SECRET;
     refunder.refundBooking.mockReset();
     refunder.refundBooking.mockResolvedValue(undefined);
+    // Este archivo prueba el webhook hasta `PAID`; la validación real (RE-04) está en booking-confirmation.e2e-spec.ts.
+    jest.spyOn(app.get(BookingConfirmationService), 'confirm').mockClear().mockResolvedValue('skipped');
   });
 
   afterAll(async () => {

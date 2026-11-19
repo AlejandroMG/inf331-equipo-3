@@ -5,12 +5,13 @@ interface ModalProps {
   onClose: () => void
   title: string
   children: ReactNode
+  printable?: boolean
   /** Botones de acción, alineados a la derecha. */
   footer?: ReactNode
 }
 
 // Usa <dialog> nativo: el navegador atrapa el foco, cierra con Esc y bloquea el fondo.
-export function Modal({ open, onClose, title, children, footer }: ModalProps) {
+export function Modal({ open, onClose, title, children, footer, printable = false }: ModalProps) {
   const dialogRef = useRef<HTMLDialogElement>(null)
   const titleId = useId()
 
@@ -25,6 +26,7 @@ export function Modal({ open, onClose, title, children, footer }: ModalProps) {
     <dialog
       ref={dialogRef}
       aria-labelledby={titleId}
+      data-printable={printable || undefined}
       // Esc y dialog.close() disparan "close"; si ya estaba cerrado por props no se avisa de nuevo.
       onClose={() => {
         if (open) onClose()

@@ -1,4 +1,4 @@
-import { mkdir, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve, sep } from 'node:path';
 import {
   StorageService,
@@ -20,6 +20,10 @@ export class LocalStorageService extends StorageService {
 
   async remove(path: string): Promise<void> {
     await rm(this.locate(path), { force: true });
+  }
+
+  async read(path: string): Promise<Buffer> {
+    return readFile(this.locate(path));
   }
 
   /** Ruta en disco de un archivo; rechaza las que se salgan de la carpeta de fotos. */

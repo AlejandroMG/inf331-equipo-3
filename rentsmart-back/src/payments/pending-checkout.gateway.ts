@@ -17,4 +17,8 @@ export class PendingCheckoutGateway implements CheckoutGateway {
   createSession(booking: CheckoutBooking): Promise<CheckoutSession> {
     return Promise.resolve({ url: bookingPageUrl(this.config, booking.id) });
   }
+
+  resumeSession(booking: CheckoutBooking): Promise<CheckoutSession> {
+    return this.createSession(booking);
+  }
 }

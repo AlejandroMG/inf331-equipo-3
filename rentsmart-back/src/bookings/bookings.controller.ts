@@ -19,7 +19,7 @@ import { BookingsService } from './bookings.service';
 import { BookingCheckoutDto, BookingDto, BookingsPageDto } from './dto/booking.dto';
 import { CancelBookingDto } from './dto/cancel-booking.dto';
 import { CreateBookingDto } from './dto/create-booking.dto';
-import { PageQueryDto } from './dto/page-query.dto';
+import { BookingsQueryDto } from './dto/page-query.dto';
 
 @ApiTags('Reservas')
 @ApiBearerAuth()
@@ -62,8 +62,22 @@ export class BookingsController {
   })
   @ApiOkResponse({ type: BookingsPageDto })
   @ApiBadRequestResponse({ description: 'Un parámetro inválido o desconocido' })
-  findMine(@CurrentUser() user: AuthUser, @Query() query: PageQueryDto): Promise<BookingsPageDto> {
+  findMine(@CurrentUser() user: AuthUser, @Query() query: BookingsQueryDto): Promise<BookingsPageDto> {
     return this.service.findMine(user.id, query);
+  }
+
+  @Get(':id/checkout')
+  @ApiOperation({
+    summary: 'Continuar el pago de una reserva pendiente',
+    description: 'Devuelve el enlace de la sesión de Stripe vigente. Solo funciona para una reserva propia pendiente cuya retención no haya vencido.',
+  })
+  @ApiOkResponse({ type: BookingCheckoutDto })
+  @ApiForbiddenResponse({ description: 'La reserva es de otra persona' })
+  @ApiNotFoundResponse({ description: 'La reserva no existe' })
+  @ApiConflictResponse({ description: 'La reserva ya no está pendiente o el checkout venció' })
+  @ApiBadGatewayResponse({ description: 'Stripe no pudo recuperar la sesión de pago' })
+  resumeCheckout(@CurrentUser() user: AuthUser, @Param('id') id: string): Promise<BookingCheckoutDto> {
+    return this.service.resumeCheckout(user.id, id);
   }
 
   @Get(':id')

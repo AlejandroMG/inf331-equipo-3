@@ -21,7 +21,9 @@ const filled: SpaceForm = {
 
 describe('validate', () => {
   it('un formulario vacío solo exige el nombre', () => {
-    expect(validate(emptyForm)).toEqual({ name: 'Ponle un nombre a tu espacio.' })
+    expect(validate(emptyForm)).toEqual({
+      name: 'Ponle un nombre a tu espacio.',
+    })
   })
 
   it('un nombre en blanco cuenta como vacío', () => {
@@ -51,7 +53,14 @@ describe('validate', () => {
   })
 
   it('los límites son válidos', () => {
-    expect(validate({ ...filled, capacity: '1000', pricePerHour: '1', pricePerDay: '10000000' })).toEqual({})
+    expect(
+      validate({
+        ...filled,
+        capacity: '1000',
+        pricePerHour: '1',
+        pricePerDay: '10000000',
+      }),
+    ).toEqual({})
   })
 
   describe('punto en el mapa', () => {
@@ -146,6 +155,9 @@ describe('toForm', () => {
     name: 'Sala',
     typeId: 2,
     description: null,
+    aiDescriptionGenerated: false,
+    aiDescriptionNeedsReview: false,
+    aiDescriptionAttempts: 0,
     capacity: 10,
     pricePerHour: 12000,
     pricePerDay: null,
@@ -195,8 +207,7 @@ describe('toForm', () => {
 })
 
 describe('publishChecklist', () => {
-  const done = (form: SpaceForm, photoCount = 0) =>
-    Object.fromEntries(publishChecklist(form, photoCount).map((i) => [i.label, i.done]))
+  const done = (form: SpaceForm, photoCount = 0) => Object.fromEntries(publishChecklist(form, photoCount).map((i) => [i.label, i.done]))
 
   it('sin datos no hay nada listo', () => {
     expect(Object.values(done(emptyForm)).every((d) => !d)).toBe(true)
@@ -237,9 +248,7 @@ describe('publishChecklist: tipo y comuna (P-18)', () => {
   const byCode = (form: SpaceForm) => Object.fromEntries(publishChecklist(form, 0).map((i) => [i.code, i.done]))
 
   it('incluye todos los requisitos en el orden del formulario', () => {
-    expect(publishChecklist(emptyForm, 0).map((i) => i.code)).toEqual([
-      'type', 'description', 'capacity', 'commune', 'price', 'schedule', 'photos',
-    ])
+    expect(publishChecklist(emptyForm, 0).map((i) => i.code)).toEqual(['type', 'description', 'capacity', 'commune', 'price', 'schedule', 'photos'])
   })
 
   it('el tipo y la comuna cuentan cuando están elegidos', () => {
@@ -249,7 +258,13 @@ describe('publishChecklist: tipo y comuna (P-18)', () => {
 
   it('cada requisito apunta al paso donde se completa', () => {
     expect(Object.fromEntries(publishChecklist(emptyForm, 0).map((i) => [i.code, i.step]))).toEqual({
-      type: 1, description: 1, capacity: 1, commune: 2, price: 3, photos: 4, schedule: 3,
+      type: 1,
+      description: 5,
+      capacity: 1,
+      commune: 2,
+      price: 3,
+      photos: 4,
+      schedule: 3,
     })
   })
 })

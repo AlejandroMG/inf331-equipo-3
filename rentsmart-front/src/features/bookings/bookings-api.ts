@@ -1,5 +1,5 @@
 import { http } from '../../lib/http'
-import type { Availability, Booking, BookingCheckout, CancelBookingPayload, CreateBookingPayload } from './types'
+import type { Availability, Booking, BookingCheckout, BookingsPage, BookingStatus, CancelBookingPayload, CreateBookingPayload, PaymentsPage } from './types'
 
 /**
  * Bloques libres de un espacio publicado entre dos días de Chile, `AAAA-MM-DD`, ambos incluidos y hasta 31 (DI-02).
@@ -22,3 +22,15 @@ export const createBooking = (payload: CreateBookingPayload) =>
 /** Una reserva propia, con su estado y su desglose (RE-02). 403 si es de otro usuario y 404 si no existe. */
 export const getBooking = (bookingId: string, signal?: AbortSignal) =>
   http.get<Booking>(`/bookings/${encodeURIComponent(bookingId)}`, { signal })
+
+/** Mis reservas paginadas, con filtro de estado opcional (PN-03). */
+export const getMyBookings = (page = 1, status?: BookingStatus, signal?: AbortSignal) =>
+  http.get<BookingsPage>('/bookings/me', { params: { page, pageSize: 20, status }, signal })
+
+/** Mis pagos paginados, los más recientes primero (PN-03). */
+export const getMyPayments = (page = 1, signal?: AbortSignal) =>
+  http.get<PaymentsPage>('/payments/me', { params: { page, pageSize: 20 }, signal })
+
+/** Recupera el enlace de Stripe vigente para continuar una reserva pendiente. */
+export const resumeBookingCheckout = (bookingId: string) =>
+  http.get<BookingCheckout>(`/bookings/${encodeURIComponent(bookingId)}/checkout`)

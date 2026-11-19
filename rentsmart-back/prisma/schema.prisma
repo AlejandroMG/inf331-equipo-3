@@ -71,11 +71,13 @@ model User {
   createdAt        DateTime   @default(now())
   updatedAt        DateTime   @updatedAt
 
-  spaces        Space[]
-  bookings      Booking[]      @relation("Renter")
-  bookingEvents BookingEvent[]
-  reviews       Review[]
-  favorites     Favorite[]
+  spaces             Space[]
+  bookings           Booking[]           @relation("Renter")
+  bookingEvents      BookingEvent[]
+  reviews            Review[]
+  favorites          Favorite[]
+  aiGenerations      AiGeneration[]
+  aiSpaceGenerations AiSpaceGeneration[]
 }
 
 // ---------------------------------------------------------------------------
@@ -154,12 +156,14 @@ model Space {
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
 
-  amenities SpaceAmenity[]
-  photos    SpacePhoto[]
-  rulesWeek AvailabilityRule[]
-  bookings  Booking[]
-  reviews   Review[]
-  favorites Favorite[]
+  amenities          SpaceAmenity[]
+  photos             SpacePhoto[]
+  rulesWeek          AvailabilityRule[]
+  bookings           Booking[]
+  reviews            Review[]
+  favorites          Favorite[]
+  aiGenerations      AiGeneration[]
+  aiSpaceGenerations AiSpaceGeneration[]
 
   // Consultas del catálogo: solo activos, filtrados por comuna y tipo.
   @@index([status, communeId])
@@ -300,4 +304,35 @@ model Favorite {
   @@id([userId, spaceId])
   // La lista de favoritos de un usuario, los guardados más recientemente primero.
   @@index([userId, createdAt])
+}
+
+// Intentos de IA usados para aplicar la cuota móvil por usuario.
+model AiGeneration {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  spaceId   String
+  space     Space    @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  @@index([userId, createdAt])
+}
+
+// Conserva el resultado actual, el contador permanente por espacio y los leases recuperables ante caídas.
+model AiSpaceGeneration {
+  id             String    @id @default(uuid())
+  spaceId        String    @unique
+  space          Space     @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  attemptId      String    @unique
+  attemptCount   Int       @default(0)
+  description    String?
+  source         String?
+  reviewedAt     DateTime? @db.Timestamptz(3)
+  createdAt      DateTime  @default(now()) @db.Timestamptz(3)
+  completedAt    DateTime? @db.Timestamptz(3)
+  leaseExpiresAt DateTime  @db.Timestamptz(3)
+
+  @@index([leaseExpiresAt])
 }

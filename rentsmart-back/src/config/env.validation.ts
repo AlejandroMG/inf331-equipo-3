@@ -100,6 +100,36 @@ class EnvironmentVariables {
   @Max(2_147_483_647, { message: 'BOOKING_SWEEP_INTERVAL_MS debe ser de a lo más 2147483647 ms' })
   @Type(() => Number)
   BOOKING_SWEEP_INTERVAL_MS: number;
+
+  // El proveedor mock permite ejecutar local y CI sin una clave externa.
+  @IsOptional()
+  @IsIn(['gemini', 'mock'])
+  AI_PROVIDER: 'gemini' | 'mock';
+
+  // La clave solo es obligatoria cuando se selecciona Gemini; nunca se expone al frontend.
+  @ValidateIf((env: EnvironmentVariables) => env.AI_PROVIDER === 'gemini')
+  @IsString()
+  @IsNotEmpty()
+  AI_API_KEY: string;
+
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  AI_MODEL: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1000, { message: 'AI_TIMEOUT_MS debe ser de al menos 1000 ms' })
+  @Max(60_000, { message: 'AI_TIMEOUT_MS debe ser de a lo más 60000 ms' })
+  @Type(() => Number)
+  AI_TIMEOUT_MS: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1, { message: 'AI_MAX_USES_PER_24H debe ser positivo' })
+  @Max(100, { message: 'AI_MAX_USES_PER_24H no puede superar 100' })
+  @Type(() => Number)
+  AI_MAX_USES_PER_24H: number;
 }
 
 function validate(config: Record<string, unknown>) {

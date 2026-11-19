@@ -53,6 +53,17 @@ export class SupabaseStorageService extends StorageService {
     }
   }
 
+  async read(path: string): Promise<Buffer> {
+    const response = await this.fetchImpl(this.objectUrl(path), {
+      method: 'GET',
+      headers: this.auth(),
+    });
+    if (!response.ok) {
+      throw new Error(`Supabase Storage no leyó el archivo (${response.status})`);
+    }
+    return Buffer.from(await response.arrayBuffer());
+  }
+
   private objectUrl(path: string): string {
     const { url, bucket } = this.config;
     return `${url}/storage/v1/object/${bucket}/${this.encode(path)}`;

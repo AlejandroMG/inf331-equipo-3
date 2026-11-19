@@ -1,6 +1,7 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsInt, IsOptional, Max, Min } from 'class-validator';
+import { IsEnum, IsInt, IsOptional, Max, Min } from 'class-validator';
+import { BookingStatus } from '../../generated/prisma/enums';
 
 export const DEFAULT_PAGE_SIZE = 20;
 export const MAX_PAGE_SIZE = 50;
@@ -21,4 +22,12 @@ export class PageQueryDto {
   @Min(1)
   @Max(MAX_PAGE_SIZE)
   pageSize: number = DEFAULT_PAGE_SIZE;
+}
+
+/** Paginación y filtro opcional por estado de las reservas del arrendatario. */
+export class BookingsQueryDto extends PageQueryDto {
+  @ApiPropertyOptional({ enum: BookingStatus, description: 'Filtra las reservas por estado' })
+  @IsOptional()
+  @IsEnum(BookingStatus)
+  status?: BookingStatus;
 }
