@@ -3274,3 +3274,55 @@ Que cancelar devuelva de verdad el dinero en Stripe, según lo que decide P-14, 
 - No se tocaron `schema.prisma` ni las migraciones.
 
 ---
+
+### 2026-10-27 · B (xReNatS) · BU-06 calendario de disponibilidad en el detalle
+
+**Issues:** #32 (BU-06); cierra además #48 (PN-01), que ya estaba implementado
+**Rama / PR:** `feature/BU-06-calendario-disponibilidad`, desde `develop` (ya con #141 a #147) · sin PR todavía
+**Duración aproximada:** 2 h
+**Herramientas:** Claude Code
+
+#### Objetivo
+Mostrar en el detalle del espacio una vista semanal con los bloques libres y los ocupados, y que tocar un bloque libre deje la reserva cargada en el widget de C.
+
+#### Qué se hizo
+- Nueva sección «Disponibilidad» en el detalle: dos semanas desde hoy (la misma ventana del widget, `BOOKING_WINDOW_DAYS`), con navegación semana anterior y siguiente. Un día por fila y un botón por bloque de una hora; si el espacio solo se arrienda por día, un botón «Día completo» por día.
+- `availability-calendar.ts` junta el horario semanal del espacio con los bloques libres de `GET /api/spaces/:id/availability`. La API solo entrega lo libre, así que un bloque del horario que no viene es «ocupado», o «ya pasó» si es de hoy y su hora ya empezó. Así no hace falta un endpoint nuevo ni exponer las reservas de otras personas.
+- `BookingWidget` recibe la prop opcional `preselection`: se aplica una vez por cada `key`, cuando ya cargó la disponibilidad (cambia la unidad, el día y marca el bloque). Si el bloque ya no está libre deja el día elegido y ninguna hora marcada; si la unidad no la ofrece el espacio, la ignora.
+- `SpaceDetailPage` guarda la elección y pasa el foco al panel «Reservar» (en el celular queda más abajo).
+- Se probó con el front simulado (MSW) a 375 px y en escritorio, sin desbordes y con botones de 44 px.
+- 2026-11-17: se integró `develop` (fast-forward hasta #147) y se agregó `host` al espacio de `SpaceDetailPage.calendar.test.tsx`, porque el detalle ahora muestra la sección «Anfitrión».
+
+#### Decisiones y por qué
+| Decisión | Alternativas consideradas | Por qué se eligió |
+|---|---|---|
+| Deducir los bloques ocupados del horario menos lo libre | Endpoint nuevo con las reservas por bloque | La disponibilidad ya existe (DI-02) y es pública; un endpoint nuevo habría tocado el dominio de C y mostrado reservas ajenas |
+| Un día por fila con botones de hora, no una grilla de 7 columnas | Grilla semanal clásica | A 375 px una grilla de siete columnas no cabe con botones de 44 px |
+| Dos semanas, igual que el widget | Hasta 31 días que permite la API | Evita ofrecer en el calendario días que el widget no deja reservar |
+| Elección previa por prop `preselection` con `key` | Subir el estado del widget al detalle; leer el bloque de la URL | Cambio mínimo en el archivo de C y sin acoplar el widget a la página |
+
+#### Archivos principales
+- `rentsmart-front/src/features/catalog/availability-calendar.ts`: lógica pura (libre, ocupado, pasado).
+- `rentsmart-front/src/features/catalog/AvailabilityCalendar.tsx`: la sección del calendario.
+- `rentsmart-front/src/features/catalog/SpaceDetailPage.tsx`: monta el calendario, guarda la elección y mueve el foco.
+- `rentsmart-front/src/features/bookings/BookingWidget.tsx`: prop `preselection` (**archivo de C**, cambio acotado).
+- Tests: `availability-calendar.test.ts`, `AvailabilityCalendar.test.tsx`, `SpaceDetailPage.calendar.test.tsx` y `BookingWidget.preselection.test.tsx`.
+
+#### Cómo probarlo
+- En `rentsmart-front`: `npm test`, `npm run lint`, `npm run build`.
+- A mano, con `VITE_USE_MOCKS=true npm run dev`, abrir `/spaces/seed-space-2`: los miércoles a las 13:00 salen ocupados; tocar un bloque libre lo deja elegido en el panel «Reservar».
+
+#### Estado de verificación
+- Build: ✅ (`tsc -b` y `vite build`).
+- Lint: ✅
+- Tests: ✅ 761 de 761 en el front con Node 24, ya integrado `develop`.
+- Probado en el navegador a 375 px y en escritorio: ✅
+
+#### Pendientes y bloqueos
+- El bloque elegido no se resalta en el calendario; solo queda marcado en el panel de reserva.
+- La API no distingue «ocupado» de «fuera de horario por pausa» dentro de un día: ambos se ven como ocupado.
+
+#### Para el resto del equipo
+- C (@gonzzza-lol): toqué `BookingWidget.tsx` (prop opcional `preselection`, sin cambiar lo demás) y `SpaceDetailPage.tsx`. Revisa que la prop te parezca bien.
+
+---
