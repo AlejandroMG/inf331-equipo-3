@@ -3377,3 +3377,45 @@ Responder la revisión de C en el PR #154, dejar la evidencia de una ejecución 
 - Los espacios que crean las pruebas quedan en la base del CI, que se descarta en cada ejecución; en una base local se acumulan.
 
 ---
+
+### 2026-11-19 · B (xReNatS) · Conflictos de PN-03 y RE-04 fuera de develop
+
+**Issues:** #50 (PN-03), #41 (RE-04)
+**Rama / PR:** merge en `feature/PN-03-panel-arrendatario` (PR #155, de A) · `feature/RE-04-integrar-en-develop` · PR #158
+**Duración aproximada:** 1 h
+**Herramientas:** Claude Code
+
+#### Objetivo
+Resolver los conflictos del PR #155 con `develop` después de los merges de #149 y #156.
+
+#### Qué se hizo
+- En la rama de #155 integré `develop` (commit c9143b0). Los conflictos eran solo de docs. En `docs/arquitectura.md` la fila del webhook quedó como en `develop` y la de `GET /api/payments/me` como en PN-03. En `docs/memory.md` se conservaron las dos entradas. El código de pagos se fusionó solo: `resumeSession` de PN-03 convive con PA-02.
+- Encontré que #157 (RE-04) se mergeó en `feature/PA-02-webhook-stripe` un minuto después de que #156 entrara a `develop`, así que RE-04 no llegó a `develop`. Abrí el PR #158, que es `develop` más esa rama, sin cambiar código. Su único conflicto fue `docs/memory.md`.
+- Comenté en #155 y #157 lo hecho, y pedí a C que revise #158.
+
+#### Decisiones y por qué
+| Decisión | Alternativas consideradas | Por qué se eligió |
+|---|---|---|
+| Rama nueva `feature/RE-04-integrar-en-develop` para #158 | Abrir el PR directo desde `feature/PA-02-webhook-stripe` | Ese PR habría chocado en `memory.md` y para resolverlo había que empujar a la rama de C; con una rama nueva su rama no se toca |
+
+#### Archivos principales
+- `docs/arquitectura.md` y `docs/memory.md` en la rama de #155.
+- `docs/memory.md` en la rama de #158.
+
+#### Cómo probarlo
+- `git log origin/develop..origin/feature/RE-04-integrar-en-develop` muestra solo los commits de RE-04 y el merge.
+
+#### Estado de verificación
+- Build: ✅ back y front en las dos ramas.
+- Lint: ✅ back (oxlint) y front (ESLint).
+- Tests: ✅ con Node 24. Front: 766 de 766 en #155 y 768 de 768 en #158. Back unitarias: 704 de 705 y 747 de 748; el que falla es `prisma.service.spec`, que necesita base de datos (Docker Desktop no arrancó). En el CI de #155 pasaron Backend, con los e2e de la API, y Frontend.
+
+#### Pendientes y bloqueos
+- #155 y #158 chocan entre sí solo en `docs/memory.md`. El que se mergee segundo necesita el mismo arreglo.
+- Orden sugerido ahora: #158, #155, #148 y #154 al final.
+- Cerrar a mano #41 y #50 al mergear, porque los PRs apuntan a `develop`.
+
+#### Para el resto del equipo
+- Con PRs apilados: después de mergear el de abajo, cambien la base del de arriba a `develop` antes de mergearlo. Si no, el merge se queda en la rama intermedia.
+
+---
