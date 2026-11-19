@@ -177,6 +177,10 @@ jobs:
   e2e-selenium:
     name: E2E (Selenium)
     runs-on: ubuntu-latest
+    # checks: write permite publicar el reporte JUnit como un check del commit o del PR («Reporte E2E (Selenium)»).
+    permissions:
+      contents: read
+      checks: write
 
     services:
       db-e2e:
@@ -284,12 +288,98 @@ jobs:
           path: e2e-selenium/screenshots/
           retention-days: 14
 
-  # Avisa a Discord el resultado del pipeline. Solo corre si el secreto DISCORD_WEBHOOK_URL está configurado en el repo;
-  # sin él se omite sin fallar. La URL nunca se escribe en el repositorio ni en los logs.
+      # Publica el JUnit como un check con el resultado de cada prueba, visible en el PR sin descargar artefactos.
+      # En PRs desde forks GitHub no da permiso de escritura, así que ahí se omite.
+      - name: Publicar el reporte de pruebas como check
+        if: always() && (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository)
+        uses: dorny/test-reporter@v1
+        with:
+          name: Reporte E2E (Selenium)
+          path: e2e-selenium/reports/junit.xml
+          reporter: java-junit
+          fail-on-error: false
+          fail-on-empty: false
+
+  # Empaquetado: solo corre si todas las pruebas pasaron. Genera los paquetes del back y del front listos para
+  # desplegar, con un manifiesto de la versión, y los deja como artefacto de la ejecución (30 días). No hay un
+  # ambiente donde desplegarlos todavía (P-17); el paso de deploy se agregaría aquí, a partir de estos paquetes.
+  package:
+    name: Empaquetar
+    runs-on: ubuntu-latest
+    needs: [backend, frontend, e2e, e2e-selenium]
+
+    env:
+      # prisma.config.ts exige DATABASE_URL incluso para generar el cliente; no se conecta a ninguna base.
+      DATABASE_URL: postgresql://build:build@localhost:5432/build
+      # El front lee la URL de la API al compilar. La variable de repositorio PACKAGE_API_URL permite fijar la del
+      # ambiente de destino; sin ella se usa la de un despliegue local.
+      VITE_API_URL: ${{ vars.PACKAGE_API_URL || 'http://localhost:3000' }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: |
+            rentsmart-back/package-lock.json
+            rentsmart-front/package-lock.json
+
+      - name: Build del back
+        working-directory: rentsmart-back
+        run: |
+          npm ci
+          npx prisma generate
+          npm run build
+
+      - name: Build del front
+        working-directory: rentsmart-front
+        run: |
+          npm ci
+          npm run build
+
+      - name: Armar los paquetes
+        run: |
+          VERSION="${GITHUB_REF_NAME//\//-}-${GITHUB_SHA::7}"
+          mkdir -p paquetes
+          # Back: el código compilado más lo necesario para instalar dependencias de producción y migrar la base.
+          # En el servidor: npm ci --omit=dev && npx prisma migrate deploy && node dist/main.js
+          tar -czf "paquetes/rentsmart-back-$VERSION.tar.gz" -C rentsmart-back dist package.json package-lock.json prisma prisma.config.ts
+          # Front: archivos estáticos listos para cualquier servidor web.
+          tar -czf "paquetes/rentsmart-front-$VERSION.tar.gz" -C rentsmart-front/dist .
+          {
+            echo "version: $VERSION"
+            echo "commit: $GITHUB_SHA"
+            echo "rama: $GITHUB_REF_NAME"
+            echo "fecha: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "api_url_del_front: $VITE_API_URL"
+          } > paquetes/manifiesto.txt
+          ls -lh paquetes
+
+      - name: Resumen del empaquetado
+        run: |
+          echo "### Paquetes generados" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Archivo | Tamaño |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|---|---|" >> "$GITHUB_STEP_SUMMARY"
+          for f in paquetes/*; do echo "| $(basename "$f") | $(du -h "$f" | cut -f1) |" >> "$GITHUB_STEP_SUMMARY"; done
+
+      - name: Subir los paquetes
+        uses: actions/upload-artifact@v4
+        with:
+          name: rentsmart-paquetes
+          path: paquetes/
+          retention-days: 30
+
+  # Mensaje único con el resultado del pipeline completo. El canal ya recibe los avisos de la integración de GitHub con
+  # Discord (uno por job); este job es opcional y solo envía si el secreto DISCORD_WEBHOOK_URL está configurado.
+  # Sin él se omite sin fallar. La URL nunca se escribe en el repositorio ni en los logs.
   notify:
     name: Notificar a Discord
     runs-on: ubuntu-latest
-    needs: [backend, frontend, e2e, e2e-selenium]
+    needs: [backend, frontend, e2e, e2e-selenium, package]
     if: always()
     env:
       DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
