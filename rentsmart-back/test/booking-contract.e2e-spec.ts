@@ -9,7 +9,7 @@ import { bookingWeek } from './utils/booking-dates';
 import { createTestApp } from './utils/create-test-app';
 
 // F-05: el contrato de disponibilidad, reservas y pagos. Comprueba la forma (Swagger, 400 y 401), no la lógica:
-// cada historia (PA-01, PA-02) reemplaza su 501 por sus propios tests. El horario semanal (DI-01) ya
+// cada historia reemplazó su 501 por sus propios tests. El horario semanal (DI-01) ya
 // está implementado: sus e2e están en schedule.e2e-spec.ts. La disponibilidad (DI-02) también: sus e2e están abajo.
 // Reservar y consultar (RE-02) también: sus e2e están en booking-create.e2e-spec.ts.
 const SUFFIX = `e2e-f05-${Date.now()}`;
@@ -70,7 +70,7 @@ describe('Contrato de disponibilidad, reservas y pagos (e2e)', () => {
       ['get', '/api/bookings/{id}/checkout', ['200', '401', '403', '404', '409', '502']],
       ['get', '/api/bookings/{id}', ['200', '401', '403', '404']],
       ['post', '/api/bookings/{id}/cancel', ['200', '400', '401', '403', '404', '409']],
-      ['post', '/api/payments/webhook', ['200', '400']],
+      ['post', '/api/payments/webhook', ['200', '400', '409', '500', '503']],
       ['get', '/api/payments/me', ['200', '400', '401']],
     ])('documenta %s %s con sus respuestas', (method, path, codes) => {
       const operation = doc.paths[path]?.[method];
@@ -517,15 +517,12 @@ describe('Contrato de disponibilidad, reservas y pagos (e2e)', () => {
     });
   });
 
-  // Los datos válidos del contrato pasan la validación y llegan al servicio, que todavía no existe (501).
-  // Cada historia cambia su línea por tests de verdad. `GET /api/payments/me` ya está (PA-01, test/payments.e2e-spec.ts).
-  describe('pendiente de implementar', () => {
-    it('el webhook con firma llega al servicio (501)', () => {
-      return request(server())
-        .post('/api/payments/webhook')
-        .set('stripe-signature', 't=1,v1=firma')
-        .send({ id: 'evt_1', type: 'checkout.session.completed' })
-        .expect(501);
-    });
+  // PA-02: el webhook ya está (test/payments-webhook.e2e-spec.ts). Aquí corre sin Stripe, como todos los e2e.
+  it('el webhook con firma, sin Stripe configurado, responde 503', () => {
+    return request(server())
+      .post('/api/payments/webhook')
+      .set('stripe-signature', 't=1,v1=firma')
+      .send({ id: 'evt_1', type: 'checkout.session.completed' })
+      .expect(503);
   });
 });
