@@ -17,6 +17,8 @@ export const STRIPE_UNAVAILABLE_MESSAGE = 'No pudimos iniciar el pago con Stripe
  * reserva y devuelve su URL y su id, que `BookingsService.create` guarda en la reserva y en su `Payment`.
  *
  * - CLP no tiene decimales en Stripe: el monto va tal cual, sin multiplicar por 100.
+ * - Solo con tarjeta (`allowed_payment_method_types`; el SDK 23 ya no acepta `payment_method_types` al crear la sesión),
+ *   aunque se activen otros medios en el dashboard: así no entra un pago asíncrono, que el webhook no atiende.
  * - El id de la reserva va en `metadata.bookingId` y en `client_reference_id`, para que el webhook (PA-02) la encuentre.
  * - La sesión vence en el mismo instante que la retención (`expiresAt`, P-06). Stripe exige que `expires_at` quede al
  *   menos 30 minutos después de crear la sesión; con 31 minutos de retención queda un margen de unos 40 s o más (ver
@@ -42,6 +44,7 @@ export class StripeCheckoutGateway implements CheckoutGateway {
       session = await this.stripe.checkout.sessions.create({
         mode: 'payment',
         currency: 'clp',
+        allowed_payment_method_types: ['card'],
         line_items: [
           {
             quantity: 1,

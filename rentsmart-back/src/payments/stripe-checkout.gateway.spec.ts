@@ -48,6 +48,7 @@ describe('StripeCheckoutGateway (PA-01)', () => {
     expect(create).toHaveBeenCalledWith({
       mode: 'payment',
       currency: 'clp',
+      allowed_payment_method_types: ['card'],
       line_items: [
         {
           quantity: 1,

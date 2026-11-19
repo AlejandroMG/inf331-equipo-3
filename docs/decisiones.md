@@ -74,7 +74,7 @@ Decisiones abiertas: ver [al final](#decisiones-abiertas).
 
 ## P-06 · Pendiente → Pagada → Confirmada
 
-- **Estado:** Decidida, 25-09-2026; enmendada el 29-10-2026 (retención de 31 minutos, [ver abajo](#enmienda-del-29-10-2026-retención-de-31-minutos)) · Issue [#73](https://github.com/AlejandroMG/inf331-equipo-3/issues/73)
+- **Estado:** Decidida, 25-09-2026; enmendada el 29-10-2026 (retención de 31 minutos, [ver abajo](#enmienda-del-29-10-2026-retención-de-31-minutos)) y el 02-11-2026 (pago sobre una reserva cancelada, [ver abajo](#enmienda-del-02-11-2026-pago-recibido-sobre-una-reserva-cancelada)) · Issue [#73](https://github.com/AlejandroMG/inf331-equipo-3/issues/73)
 - **Contexto:** con reserva inmediata había que definir los estados y qué pasa con el horario mientras la persona paga.
 - **Decisión:**
   - La reserva nace en **Pendiente** y retiene el horario **31 minutos** (eran 30 hasta la enmienda), y la sesión de Stripe Checkout vence en el mismo instante.
@@ -94,6 +94,15 @@ Decisiones abiertas: ver [al final](#decisiones-abiertas).
   - Si igual llega un `checkout.session.completed` para una reserva **Expirada** (por ejemplo, un webhook atrasado o un pago que se completó en el último segundo), se **reembolsa el total automáticamente** y la reserva **no revive** (`EXPIRED → PAID` sigue sin ser una transición válida). Lo implementan PA-02 (#46, el webhook) y PA-03 (#47, el reembolso).
 - **Alternativas descartadas:** mantener 30 minutos con un margen de gracia en el barrido de vencimientos (RE-06): la sesión seguiría venciendo después de la reserva y el barrido tendría que esperar sin una regla clara; además el horario quedaría retenido más de lo que dice la regla.
 - **Consecuencias:** la reserva y la sesión vencen juntas, salvo por una diferencia de reloj con Stripe. Cambian `HOLD_MINUTES`, los textos que decían «30 minutos» (producto, arquitectura, `AGENTS.md`, el detalle del espacio en el front, Swagger) y el mock de MSW. El webhook de PA-02 tiene que manejar el `completed` sobre una `EXPIRED` como se describe arriba.
+
+### Enmienda del 02-11-2026: pago recibido sobre una reserva cancelada
+
+- **Estado:** Decidida, 02-11-2026 (aprobada por C) · PA-02 ([#46](https://github.com/AlejandroMG/inf331-equipo-3/issues/46))
+- **Contexto:** la enmienda anterior cubre el `checkout.session.completed` sobre una reserva **Expirada**. Falta el caso de una **Cancelada**: el arrendatario puede cancelar la `Pendiente` y pagar en una pestaña que dejó abierta, porque cancelar no anula la sesión de Stripe. Cobrar sin dar el servicio no es aceptable.
+- **Decisión:** un `checkout.session.completed` sobre una reserva **Cancelada** que no llegó a pagarse se trata igual que sobre una **Expirada**: se registra el pago, se **reembolsa el total automáticamente** y la reserva **no cambia**. Si el reembolso falla, el webhook responde con un error y Stripe reintenta, un número limitado de veces; después puede requerir reparación manual ([detalle](arquitectura.md#disponibilidad-reservas-y-pagos-f-05)).
+- **Alcance:** esta regla es solo para el pago que llega tarde. Si la reserva sí llegó a `Pagada` y se canceló después, lo que se devuelve lo decide la política de cancelación ([P-14](#p-14--cancelación-gratis-hasta-24-horas-antes)), y un evento repetido no reembolsa nada: el webhook lo distingue porque en el historial hay un `BookingEvent` hacia `PAID`. Por lo mismo, **reenviar el evento no repara el reembolso fallido de una cancelación con evento hacia `PAID`**: ese reembolso es de quien cancela (PA-03) y hay que repararlo por otra vía.
+- **Alternativas descartadas:** dejar el cobro para un reembolso manual (es dinero del arrendatario sin servicio, y depende de que alguien mire el log).
+- **Consecuencias:** `PaymentsService` trata igual las dos reservas que ya no siguen en pie. La idempotencia se basa en el estado de la reserva y del pago, sin tabla de eventos procesados: `schema.prisma` no cambia.
 
 ## P-07 · Por hora y/o por día, en bloques de 1 hora
 
@@ -146,7 +155,7 @@ Decisiones abiertas: ver [al final](#decisiones-abiertas).
   - Si cancela el **propietario**, siempre se reembolsa el **total**, falte lo que falte.
   - El total incluye la **comisión**: en un reembolso se devuelve el subtotal y la comisión.
   - Se cancela con un **motivo** obligatorio, de 5 a 500 caracteres, que queda en el historial de la reserva.
-  - Una reserva `Pendiente` no tiene pago: cancelarla solo libera el horario.
+  - Una reserva `Pendiente` no tiene pago: cancelarla solo libera el horario. Si igual se paga después, en la sesión que quedó abierta, se reembolsa el total ([enmienda a P-06](#enmienda-del-02-11-2026-pago-recibido-sobre-una-reserva-cancelada)).
 - **Alternativas descartadas:** reembolso parcial del 50 % con menos de 24 horas; impedir que el arrendatario cancele con menos de 24 horas; que la plataforma conserve la comisión.
 - **Consecuencias:** `POST /api/bookings/:id/cancel` recibe `{ reason }` y acepta al arrendatario o al dueño del espacio (cambio del contrato de F-05). La política es la función pura `cancellationRefund` (`src/bookings/cancellation-policy.ts`). El reembolso en Stripe lo ejecuta PA-03 con ese monto. Falta mostrar la política en el detalle del espacio y al reservar.
 
