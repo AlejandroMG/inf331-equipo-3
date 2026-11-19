@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { AvailabilityModule } from '../availability/availability.module';
 import { CheckoutModule } from '../payments/checkout.module';
+import { BookingConfirmationService } from './booking-confirmation.service';
 import { RefundsModule } from '../payments/refunds.module';
 import { BookingExpiryScheduler } from './booking-expiry.scheduler';
 import { BookingExpiryService } from './booking-expiry.service';
@@ -14,7 +15,7 @@ import { BookingsService } from './bookings.service';
   // Cancelar (RE-05) reembolsa con el puerto de PA-03.
   imports: [AvailabilityModule, CheckoutModule, RefundsModule],
   controllers: [BookingsController],
-  providers: [BookingsService, BookingStateService, BookingExpiryService, BookingExpiryScheduler],
-  exports: [BookingsService, BookingStateService, BookingExpiryService],
+  providers: [BookingsService, BookingStateService, BookingExpiryService, BookingExpiryScheduler, BookingConfirmationService],
+  exports: [BookingsService, BookingStateService, BookingExpiryService, BookingConfirmationService],
 })
 export class BookingsModule {}
