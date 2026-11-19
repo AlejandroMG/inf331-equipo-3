@@ -58,11 +58,12 @@ export class BookingExpiryScheduler implements OnApplicationBootstrap, OnModuleD
   private async run(now: Date): Promise<SweepResult | null> {
     try {
       const result = await this.expiry.sweep(now);
-      const { finished, expired } = result;
-      if (finished.changed + expired.changed + finished.failed + expired.failed > 0) {
+      const { finished, expired, stuckPaid } = result;
+      const failed = finished.failed + expired.failed + stuckPaid.failed;
+      if (finished.changed + expired.changed + stuckPaid.changed + failed > 0) {
         this.logger.log(
           `Barrido: ${finished.changed} finalizadas, ${expired.changed} expiradas, ` +
-            `${finished.failed + expired.failed} con error`,
+            `${stuckPaid.changed} pagadas resueltas, ${failed} con error`,
         );
       }
       return result;
