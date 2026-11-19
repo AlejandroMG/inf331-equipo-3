@@ -3730,7 +3730,7 @@ Corregir lo que el profesor observó en las rúbricas de las entregas 1 y 2, y l
 - `ci.yml`: job «Empaquetar» (solo si pasan todas las pruebas; paquetes del back y del front con manifiesto, artefacto de 30 días) y el JUnit de Selenium publicado como el check «Reporte E2E (Selenium)» con `dorny/test-reporter`. `notify` ahora espera también al empaquetado.
 - README: badges del CI, estado de la Entrega 3 (antes decía Entrega 1), videos de las entregas 1 y 2, releases y cifras de pruebas y cobertura de las tres entregas.
 - CHANGELOG: entradas v2 (con la corrección de las notas del release, que decían que los reembolsos quedaban para después) y v3.
-- `docs/entrega-3.md`: capturas de Discord de una ejecución en verde y una en rojo, enlace al milestone como tablero Kanban, comparación GitHub Actions frente a Jenkins, tabla de etapas del pipeline, empaquetado, notificaciones con la integración nativa de GitHub con Discord y su captura, problemas con cómo se detectaron y cómo se arreglaron, y una sección de metodología.
+- `docs/entrega-3.md`: sección «Qué corregimos desde las entregas 1 y 2», con cada observación de las rúbricas, lo hecho y dónde verlo; capturas de Discord de una ejecución en verde y una en rojo, enlace al milestone como tablero Kanban, comparación GitHub Actions frente a Jenkins, tabla de etapas del pipeline, empaquetado, notificaciones con la integración nativa de GitHub con Discord y su captura, problemas con cómo se detectaron y cómo se arreglaron, y una sección de metodología.
 - Wiki (sin publicar todavía): enlaces a los videos que seguían como `PENDIENTE_LINK_VIDEO`, Entrega 2 sin «(pendiente)» y la página Entrega 3 al día.
 
 #### Decisiones y por qué
@@ -3753,7 +3753,7 @@ Corregir lo que el profesor observó en las rúbricas de las entregas 1 y 2, y l
 - El job nuevo y el check se verifican en el primer CI del PR.
 
 #### Pendientes y bloqueos
-- Proteger `develop` con un ruleset (A, admin del repo); `docs/entrega-3.md` ya lo describe como la corrección.
+- `develop` quedó protegida por A el 19 de noviembre (ruleset «Protect main and Develop»: PR, una aprobación y checks Backend y Frontend). Falta sumar los checks E2E al ruleset.
 - Video de la entrega y confirmar si al equipo le toca presentar (las diapositivas están preparadas).
 - Publicar los cambios de la Wiki después de la revisión.
 
