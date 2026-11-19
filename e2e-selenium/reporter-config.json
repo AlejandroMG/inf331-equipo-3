@@ -1,0 +1,14 @@
+{
+  "reporterEnabled": "mochawesome, mocha-junit-reporter",
+  "mochaJunitReporterReporterOptions": {
+    "mochaFile": "./reports/junit.xml",
+    "testsuitesTitle": "RentSmart E2E (Selenium)"
+  },
+  "mochawesomeReporterOptions": {
+    "reportDir": "./reports",
+    "reportFilename": "index",
+    "reportTitle": "RentSmart E2E (Selenium)",
+    "quiet": true,
+    "json": true
+  }
+}

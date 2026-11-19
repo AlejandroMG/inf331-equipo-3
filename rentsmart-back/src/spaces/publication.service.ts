@@ -21,6 +21,11 @@ interface LoadedSpace {
   pricePerHour: number | null;
   pricePerDay: number | null;
   _count: { photos: number; rulesWeek: number };
+  aiSpaceGenerations: {
+    description: string | null;
+    reviewedAt: Date | null;
+    leaseExpiresAt: Date;
+  }[];
 }
 
 const BLOCKED_MESSAGE =
@@ -48,6 +53,7 @@ export class PublicationService {
         'El espacio está desactivado: actívalo para publicarlo de nuevo',
       );
     }
+    this.assertAiDescriptionReviewed(space);
     this.assertComplete(space);
 
     await this.move(ownerId, id, SpaceStatus.DRAFT, SpaceStatus.ACTIVE);
@@ -75,7 +81,10 @@ export class PublicationService {
       );
     }
 
-    if (target === SpaceStatus.ACTIVE) this.assertComplete(space);
+    if (target === SpaceStatus.ACTIVE) {
+      this.assertComplete(space);
+      this.assertAiDescriptionReviewed(space);
+    }
     await this.move(ownerId, id, space.status, target);
     return this.spaces.findOne(ownerId, id);
   }
@@ -87,6 +96,22 @@ export class PublicationService {
       scheduleCount: space._count.rulesWeek,
     });
     if (missing.length > 0) throw new IncompleteSpaceException(missing);
+  }
+
+  private assertAiDescriptionReviewed(
+    space: Pick<LoadedSpace, 'aiSpaceGenerations'>,
+  ) {
+    const generation = space.aiSpaceGenerations?.[0];
+    if (
+      generation &&
+      ((generation.description === null &&
+        generation.leaseExpiresAt > new Date()) ||
+        (generation.description !== null && generation.reviewedAt === null))
+    ) {
+      throw new ConflictException(
+        'Revisa la descripción generada con IA antes de publicar.',
+      );
+    }
   }
 
   /** Cambia el estado solo si sigue siendo `from`: así dos peticiones a la vez no se pisan. */
@@ -105,6 +130,19 @@ export class PublicationService {
         throw new ConflictException(
           'El estado del espacio cambió: recarga e inténtalo de nuevo',
         );
+      }
+      if (to === SpaceStatus.ACTIVE) {
+        const aiSpaceGeneration = await tx.aiSpaceGeneration.findUnique({
+          where: { spaceId: id },
+          select: {
+            description: true,
+            reviewedAt: true,
+            leaseExpiresAt: true,
+          },
+        });
+        this.assertAiDescriptionReviewed({
+          aiSpaceGenerations: aiSpaceGeneration ? [aiSpaceGeneration] : [],
+        });
       }
       // Publicar habilita a la cuenta como propietaria (P-02).
       if (to === SpaceStatus.ACTIVE) {
@@ -129,6 +167,14 @@ export class PublicationService {
         pricePerHour: true,
         pricePerDay: true,
         _count: { select: { photos: true, rulesWeek: true } },
+        aiSpaceGenerations: {
+          select: {
+            description: true,
+            reviewedAt: true,
+            leaseExpiresAt: true,
+          },
+          take: 1,
+        },
       },
     });
     if (!space) throw new NotFoundException('El espacio no existe');

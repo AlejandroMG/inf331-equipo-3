@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { useRef, useState, type ReactNode } from 'react'
 import { Link, useParams } from 'react-router'
 import { LinkButton, Button } from '../../components/Button'
 import { ApiError } from '../../lib/http'
@@ -7,7 +7,8 @@ import { usePageTitle } from '../../lib/page-title'
 import { paths } from '../../lib/paths'
 import { FavoriteButton } from '../favorites/FavoriteButton'
 import { LazyLocationMap } from '../map/LazyMaps'
-import { BookingWidget } from '../bookings/BookingWidget'
+import { BookingWidget, type BookingPreselection } from '../bookings/BookingWidget'
+import { AvailabilityCalendar, type CalendarPick } from './AvailabilityCalendar'
 import { Gallery } from './Gallery'
 import { groupSchedule } from './schedule'
 import { useSpace } from './useSpace'
@@ -35,6 +36,14 @@ export function SpaceDetailPage() {
   const { spaceId = '' } = useParams()
   const { data: space, error, loading, retry } = useSpace(spaceId)
   usePageTitle(space?.name ?? (error instanceof ApiError && error.status === 404 ? 'Espacio no disponible' : undefined))
+  const [preselection, setPreselection] = useState<BookingPreselection>()
+  const bookingRef = useRef<HTMLElement>(null)
+
+  // Un bloque del calendario queda cargado en la reserva y el foco pasa a ella, que en el celular está más abajo.
+  function pick(choice: CalendarPick) {
+    setPreselection((current) => ({ ...choice, key: (current?.key ?? 0) + 1 }))
+    bookingRef.current?.focus()
+  }
 
   return (
     <div className="mx-auto max-w-[1200px] px-4 py-6 sm:px-6 sm:py-8">
@@ -146,6 +155,18 @@ export function SpaceDetailPage() {
                 </Section>
               )}
 
+              {space.schedule.length > 0 && (space.pricePerHour !== null || space.pricePerDay !== null) && (
+                <Section title="Disponibilidad">
+                  <AvailabilityCalendar
+                    spaceId={space.id}
+                    schedule={space.schedule}
+                    pricePerHour={space.pricePerHour}
+                    pricePerDay={space.pricePerDay}
+                    onPick={pick}
+                  />
+                </Section>
+              )}
+
               <Section title="Ubicación">
                 <p className="text-base">
                   {[space.address, space.communeName, space.regionName].filter(Boolean).join(', ')}
@@ -172,7 +193,7 @@ export function SpaceDetailPage() {
               </Section>
             </div>
 
-            <aside aria-label="Reservar" className="box-border flex max-w-[420px] flex-[1_1_340px] flex-col gap-3.5 rounded-[18px] border border-line bg-white p-5 shadow-[0_8px_24px_rgba(16,32,30,0.08)] lg:sticky lg:top-4">
+            <aside ref={bookingRef} tabIndex={-1} aria-label="Reservar" className="box-border flex max-w-[420px] flex-[1_1_340px] flex-col gap-3.5 rounded-[18px] border border-line bg-white p-5 shadow-[0_8px_24px_rgba(16,32,30,0.08)] lg:sticky lg:top-4">
               <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
                 {space.pricePerHour !== null && (
                   <>
@@ -190,7 +211,12 @@ export function SpaceDetailPage() {
                   </span>
                 )}
               </div>
-              <BookingWidget spaceId={space.id} pricePerHour={space.pricePerHour} pricePerDay={space.pricePerDay} />
+              <BookingWidget
+                spaceId={space.id}
+                pricePerHour={space.pricePerHour}
+                pricePerDay={space.pricePerDay}
+                preselection={preselection}
+              />
               <p className="text-sm leading-relaxed text-muted">
                 Reserva inmediata: no necesitas esperar la aprobación del propietario. El horario queda retenido 31 minutos mientras pagas.
               </p>

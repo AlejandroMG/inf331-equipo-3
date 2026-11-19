@@ -19,6 +19,22 @@ export class SpaceDto {
   @ApiProperty({ type: String, nullable: true })
   description: string | null;
 
+  @ApiProperty({
+    description: 'Indica si el espacio tiene una descripción generada por IA',
+  })
+  aiDescriptionGenerated: boolean;
+
+  @ApiProperty({
+    description:
+      'Indica si falta que el propietario revise la descripción generada',
+  })
+  aiDescriptionNeedsReview: boolean;
+
+  @ApiProperty({
+    description: 'Intentos de generación usados para esta publicación',
+  })
+  aiDescriptionAttempts: number;
+
   @ApiProperty({ type: Number, nullable: true })
   capacity: number | null;
 
@@ -40,22 +56,38 @@ export class SpaceDto {
   @ApiProperty({ type: String, nullable: true })
   addressDetail: string | null;
 
-  @ApiProperty({ type: Number, nullable: true, description: 'Punto exacto que marcó el propietario' })
+  @ApiProperty({
+    type: Number,
+    nullable: true,
+    description: 'Punto exacto que marcó el propietario',
+  })
   latitude: number | null;
 
-  @ApiProperty({ type: Number, nullable: true, description: 'Punto exacto que marcó el propietario' })
+  @ApiProperty({
+    type: Number,
+    nullable: true,
+    description: 'Punto exacto que marcó el propietario',
+  })
   longitude: number | null;
 
   @ApiProperty({ type: String, nullable: true })
   rules: string | null;
 
-  @ApiProperty({ type: String, nullable: true, description: 'Por qué un administrador bloqueó el espacio; null si no está bloqueado' })
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description:
+      'Por qué un administrador bloqueó el espacio; null si no está bloqueado',
+  })
   blockedReason: string | null;
 
   @ApiProperty({ type: [Number] })
   amenityIds: number[];
 
-  @ApiProperty({ type: [PhotoDto], description: 'Por posición; la primera es la portada' })
+  @ApiProperty({
+    type: [PhotoDto],
+    description: 'Por posición; la primera es la portada',
+  })
   photos: PhotoDto[];
 
   @ApiProperty()

@@ -19,6 +19,9 @@ export abstract class StorageService {
 
   /** Borra un archivo. Si ya no existe no es un error. */
   abstract remove(path: string): Promise<void>;
+
+  /** Lee un objeto por su ruta interna ya persistida; nunca acepta URLs proporcionadas por el cliente. */
+  abstract read(path: string): Promise<Buffer>;
 }
 
 /** Carpeta donde el almacenamiento local guarda y desde donde se sirven las fotos. */

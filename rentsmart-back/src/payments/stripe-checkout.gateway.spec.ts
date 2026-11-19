@@ -21,7 +21,8 @@ const BOOKING = {
 describe('StripeCheckoutGateway (PA-01)', () => {
   const create = jest.fn();
   const expire = jest.fn();
-  const stripe = { checkout: { sessions: { create, expire } } } as unknown as StripeCheckoutClient;
+  const retrieve = jest.fn();
+  const stripe = { checkout: { sessions: { create, expire, retrieve } } } as unknown as StripeCheckoutClient;
   let logError: jest.SpyInstance;
   let logWarn: jest.SpyInstance;
   const gateway = (frontendUrl?: string) =>
@@ -30,6 +31,7 @@ describe('StripeCheckoutGateway (PA-01)', () => {
   beforeEach(() => {
     create.mockReset();
     expire.mockReset();
+    retrieve.mockReset();
     create.mockResolvedValue({ id: 'cs_test_1', url: 'https://checkout.stripe.com/c/pay/cs_test_1' });
     expire.mockResolvedValue({ id: 'cs_test_1', status: 'expired' });
     logError = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
@@ -48,6 +50,7 @@ describe('StripeCheckoutGateway (PA-01)', () => {
     expect(create).toHaveBeenCalledWith({
       mode: 'payment',
       currency: 'clp',
+      allowed_payment_method_types: ['card'],
       line_items: [
         {
           quantity: 1,
@@ -144,6 +147,22 @@ describe('StripeCheckoutGateway (PA-01)', () => {
     expire.mockRejectedValue(new Error('ya expirada'));
 
     await expect(gateway().cancelSession('cs_test_9')).rejects.toThrow('ya expirada');
+  });
+
+  it('recupera la URL de una sesión abierta para continuar el pago', async () => {
+    retrieve.mockResolvedValue({ id: 'cs_test_1', status: 'open', url: 'https://checkout.stripe.test/cs_test_1' });
+
+    await expect(gateway().resumeSession(BOOKING, 'cs_test_1')).resolves.toEqual({
+      url: 'https://checkout.stripe.test/cs_test_1',
+      sessionId: 'cs_test_1',
+    });
+    expect(retrieve).toHaveBeenCalledWith('cs_test_1');
+  });
+
+  it('rechaza una sesión ya cerrada o sin URL', async () => {
+    retrieve.mockResolvedValue({ id: 'cs_test_1', status: 'complete', url: null });
+
+    await expect(gateway().resumeSession(BOOKING, 'cs_test_1')).rejects.toThrow('La sesión de pago ya no está disponible');
   });
 
   it('describeStripeError no incluye el mensaje', () => {

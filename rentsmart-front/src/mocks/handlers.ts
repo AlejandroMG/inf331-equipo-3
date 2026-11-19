@@ -20,7 +20,11 @@ const COMMUNE_LOCATIONS: Record<string, SpaceDetail['location']> = {
 function detailOf(item: (typeof catalogData)[number]): SpaceDetail {
   return {
     ...item,
-    host: { id: 'mock-host', name: 'Anfitrión de ejemplo', profilePhotoUrl: null },
+    host: {
+      id: 'mock-host',
+      name: 'Anfitrión de ejemplo',
+      profilePhotoUrl: null,
+    },
     description: 'Espacio de ejemplo para el catálogo simulado.',
     regionName: 'Región Metropolitana',
     address: 'Av. Libertador Bernardo O’Higgins 1234',
@@ -29,7 +33,11 @@ function detailOf(item: (typeof catalogData)[number]): SpaceDetail {
     rules: 'No fumar.',
     amenities: ['Aire acondicionado', 'Proyector', 'Wifi'],
     photos: item.coverUrl ? [{ id: `${item.id}-0`, url: item.coverUrl, position: 0 }] : [],
-    schedule: [1, 2, 3, 4, 5].map((weekday) => ({ weekday, startTime: '09:00', endTime: '21:00' })),
+    schedule: [1, 2, 3, 4, 5].map((weekday) => ({
+      weekday,
+      startTime: '09:00',
+      endTime: '21:00',
+    })),
   }
 }
 
@@ -95,7 +103,19 @@ export function resetMockDrafts() {
 
 function ownerSpace(id: string, payload: SpacePayload, previous?: OwnerSpace): OwnerSpace {
   const now = new Date().toISOString()
-  return { ...payload, id, status: previous?.status ?? 'DRAFT', photos: previous?.photos ?? [], createdAt: previous?.createdAt ?? now, updatedAt: now }
+  const descriptionChanged = previous !== undefined && previous.description !== payload.description
+  const aiDescriptionGenerated = previous?.aiDescriptionGenerated ?? false
+  return {
+    ...payload,
+    id,
+    status: previous?.status ?? 'DRAFT',
+    aiDescriptionGenerated,
+    aiDescriptionAttempts: previous?.aiDescriptionAttempts ?? 0,
+    aiDescriptionNeedsReview: aiDescriptionGenerated && descriptionChanged ? true : (previous?.aiDescriptionNeedsReview ?? false),
+    photos: previous?.photos ?? [],
+    createdAt: previous?.createdAt ?? now,
+    updatedAt: now,
+  }
 }
 
 let photoCounter = 0
@@ -105,7 +125,11 @@ function mockPhoto(position: number): OwnerPhoto {
   photoCounter += 1
   const hue = (photoCounter * 47) % 360
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="600" height="400"><rect width="600" height="400" fill="hsl(${hue} 45% 80%)"/><text x="300" y="215" font-size="40" text-anchor="middle" fill="hsl(${hue} 45% 25%)" font-family="sans-serif">Foto ${photoCounter}</text></svg>`
-  return { id: `photo-${photoCounter}`, url: `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`, position }
+  return {
+    id: `photo-${photoCounter}`,
+    url: `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`,
+    position,
+  }
 }
 
 /**
@@ -140,11 +164,9 @@ function summaryOf(space: OwnerSpace): OwnerSpaceSummary {
   }
 }
 
-const conflict = (message: string, extra: object = {}) =>
-  HttpResponse.json({ statusCode: 409, error: 'Conflict', message, ...extra }, { status: 409 })
+const conflict = (message: string, extra: object = {}) => HttpResponse.json({ statusCode: 409, error: 'Conflict', message, ...extra }, { status: 409 })
 
-const notFound = (message: string) =>
-  HttpResponse.json({ message, error: 'Not Found', statusCode: 404 }, { status: 404 })
+const notFound = (message: string) => HttpResponse.json({ message, error: 'Not Found', statusCode: 404 }, { status: 404 })
 
 /** Un nombre que ningún espacio tiene: un id que no existe no debe filtrar "por nada". */
 const NO_MATCH = '\u0000'
@@ -155,8 +177,7 @@ const NO_MATCH = '\u0000'
  * nombre, el tipo o la comuna. Al final, el orden pedido (`sort`).
  */
 function filterCatalog(params: URLSearchParams) {
-  const nameOf = (list: Array<{ id: number; name: string }>, id: string | null) =>
-    id === null ? null : (list.find((item) => String(item.id) === id)?.name ?? NO_MATCH)
+  const nameOf = (list: Array<{ id: number; name: string }>, id: string | null) => (id === null ? null : (list.find((item) => String(item.id) === id)?.name ?? NO_MATCH))
   const typeName = nameOf(SPACE_TYPES, params.get('typeId'))
   const communeName = nameOf(COMMUNES, params.get('communeId'))
   const minCapacity = Number(params.get('minCapacity') ?? 0)
@@ -234,17 +255,77 @@ export const handlers = [
     const space = drafts.get(String(params.id))
     return space
       ? HttpResponse.json(space)
-      : HttpResponse.json({ message: 'El espacio no existe', error: 'Not Found', statusCode: 404 }, { status: 404 })
+      : HttpResponse.json(
+          {
+            message: 'El espacio no existe',
+            error: 'Not Found',
+            statusCode: 404,
+          },
+          { status: 404 },
+        )
   }),
   http.patch('*/api/spaces/:id', async ({ params, request }) => {
     const id = String(params.id)
     const previous = drafts.get(id)
     if (!previous) {
-      return HttpResponse.json({ message: 'El espacio no existe', error: 'Not Found', statusCode: 404 }, { status: 404 })
+      return HttpResponse.json(
+        {
+          message: 'El espacio no existe',
+          error: 'Not Found',
+          statusCode: 404,
+        },
+        { status: 404 },
+      )
     }
     const space = ownerSpace(id, (await request.json()) as SpacePayload, previous)
     drafts.set(id, space)
     return HttpResponse.json(space)
+  }),
+  http.post('*/api/spaces/:id/generate-description', ({ params }) => {
+    const space = drafts.get(String(params.id))
+    if (!space) return notFound('El espacio no existe')
+    if (space.status !== 'DRAFT') return conflict('Solo puedes generar una descripción para un borrador')
+    if (space.aiDescriptionAttempts >= 5) {
+      return HttpResponse.json(
+        {
+          message: 'Alcanzaste el límite de 5 generaciones para esta publicación',
+          statusCode: 429,
+        },
+        { status: 429 },
+      )
+    }
+    if (space.photos.length === 0) {
+      return HttpResponse.json(
+        {
+          message: 'Agrega al menos una foto antes de generar la descripción',
+          statusCode: 400,
+        },
+        { status: 400 },
+      )
+    }
+    const description = `Espacio ${space.name}, ideal para tus actividades. Revisa y edita esta sugerencia antes de publicarla.`
+    drafts.set(space.id, {
+      ...space,
+      description,
+      aiDescriptionGenerated: true,
+      aiDescriptionNeedsReview: true,
+      aiDescriptionAttempts: space.aiDescriptionAttempts + 1,
+      updatedAt: new Date().toISOString(),
+    })
+    return HttpResponse.json({
+      description,
+      source: 'mock',
+      attemptsUsed: space.aiDescriptionAttempts + 1,
+    })
+  }),
+  http.post('*/api/spaces/:id/review-description', ({ params }) => {
+    const space = drafts.get(String(params.id))
+    if (!space) return notFound('El espacio no existe')
+    if (!space.aiDescriptionGenerated) {
+      return HttpResponse.json({ message: 'Primero genera una descripción con IA', statusCode: 400 }, { status: 400 })
+    }
+    drafts.set(space.id, { ...space, aiDescriptionNeedsReview: false })
+    return new HttpResponse(null, { status: 204 })
   }),
 
   // ES-04 y ES-06: publicar y activar o desactivar.
@@ -252,6 +333,9 @@ export const handlers = [
     const space = drafts.get(String(params.id))
     if (!space) return notFound('El espacio no existe')
     if (space.status !== 'DRAFT') return conflict('El espacio ya está publicado')
+    if (space.aiDescriptionNeedsReview) {
+      return conflict('Revisa la descripción generada con IA antes de publicar')
+    }
     const missing = missingToPublish(space)
     if (missing.length > 0) return conflict('Faltan datos para publicar el espacio', { missing })
     const published: OwnerSpace = { ...space, status: 'ACTIVE' }
@@ -261,9 +345,14 @@ export const handlers = [
   http.patch('*/api/spaces/:id/status', async ({ params, request }) => {
     const space = drafts.get(String(params.id))
     if (!space) return notFound('El espacio no existe')
-    const { status } = (await request.json()) as { status: 'ACTIVE' | 'INACTIVE' }
+    const { status } = (await request.json()) as {
+      status: 'ACTIVE' | 'INACTIVE'
+    }
     if (space.status === 'DRAFT') return conflict('Un borrador no se activa ni se desactiva: publícalo primero')
     if (status === 'ACTIVE') {
+      if (space.aiDescriptionNeedsReview) {
+        return conflict('Revisa la descripción generada con IA antes de reactivar')
+      }
       const missing = missingToPublish(space)
       if (missing.length > 0) return conflict('Faltan datos para publicar el espacio', { missing })
     }
@@ -295,9 +384,18 @@ export const handlers = [
     const { photoIds } = (await request.json()) as { photoIds: string[] }
     const sameSet = photoIds.length === space.photos.length && space.photos.every((p) => photoIds.includes(p.id))
     if (!sameSet) {
-      return HttpResponse.json({ message: 'La lista debe tener exactamente las fotos del espacio, sin repetir', statusCode: 400 }, { status: 400 })
+      return HttpResponse.json(
+        {
+          message: 'La lista debe tener exactamente las fotos del espacio, sin repetir',
+          statusCode: 400,
+        },
+        { status: 400 },
+      )
     }
-    const photos = photoIds.map((id, position) => ({ ...space.photos.find((p) => p.id === id)!, position }))
+    const photos = photoIds.map((id, position) => ({
+      ...space.photos.find((p) => p.id === id)!,
+      position,
+    }))
     drafts.set(space.id, { ...space, photos })
     return HttpResponse.json(photos)
   }),
@@ -329,7 +427,14 @@ export const handlers = [
   http.get('*/api/catalog/:id', ({ params }) => {
     const item = catalogData.find((space) => space.id === params.id)
     if (!item) {
-      return HttpResponse.json({ message: 'El espacio no existe', error: 'Not Found', statusCode: 404 }, { status: 404 })
+      return HttpResponse.json(
+        {
+          message: 'El espacio no existe',
+          error: 'Not Found',
+          statusCode: 404,
+        },
+        { status: 404 },
+      )
     }
     return HttpResponse.json(detailOf(item))
   }),
@@ -339,19 +444,27 @@ export const handlers = [
     const url = new URL(request.url)
     const status = url.searchParams.get('status')
     const q = (url.searchParams.get('q') ?? '').toLowerCase()
-    const items = [...adminSpaces.values()].filter(
-      (space) => (!status || space.status === status) && (!q || `${space.name} ${space.ownerName} ${space.ownerEmail}`.toLowerCase().includes(q)),
-    )
+    const items = [...adminSpaces.values()].filter((space) => (!status || space.status === status) && (!q || `${space.name} ${space.ownerName} ${space.ownerEmail}`.toLowerCase().includes(q)))
     const page = Math.max(1, Number(url.searchParams.get('page')) || 1)
     const pageSize = Math.max(1, Number(url.searchParams.get('pageSize')) || 20)
-    return HttpResponse.json({ items: items.slice((page - 1) * pageSize, page * pageSize), total: items.length, page, pageSize })
+    return HttpResponse.json({
+      items: items.slice((page - 1) * pageSize, page * pageSize),
+      total: items.length,
+      page,
+      pageSize,
+    })
   }),
   http.post('*/api/admin/spaces/:id/block', async ({ params, request }) => {
     const space = adminSpaces.get(String(params.id))
     const { reason } = (await request.json()) as { reason: string }
     if (!space) return HttpResponse.json({ message: 'El espacio no existe', statusCode: 404 }, { status: 404 })
     if (space.status === 'DRAFT' || space.status === 'BLOCKED') return conflict(space.status === 'BLOCKED' ? 'El espacio ya está bloqueado' : 'Un borrador no está publicado: no hay nada que bloquear')
-    const blocked = { ...space, status: 'BLOCKED' as const, blockedReason: reason, blockedAt: new Date().toISOString() }
+    const blocked = {
+      ...space,
+      status: 'BLOCKED' as const,
+      blockedReason: reason,
+      blockedAt: new Date().toISOString(),
+    }
     adminSpaces.set(space.id, blocked)
     return HttpResponse.json(blocked)
   }),
@@ -359,7 +472,12 @@ export const handlers = [
     const space = adminSpaces.get(String(params.id))
     if (!space) return HttpResponse.json({ message: 'El espacio no existe', statusCode: 404 }, { status: 404 })
     if (space.status !== 'BLOCKED') return conflict('El espacio no está bloqueado')
-    const unblocked = { ...space, status: 'INACTIVE' as const, blockedReason: null, blockedAt: null }
+    const unblocked = {
+      ...space,
+      status: 'INACTIVE' as const,
+      blockedReason: null,
+      blockedAt: null,
+    }
     adminSpaces.set(space.id, unblocked)
     return HttpResponse.json(unblocked)
   }),
@@ -367,7 +485,11 @@ export const handlers = [
   http.post('*/api/admin/space-types', async ({ request }) => {
     const { name } = (await request.json()) as { name: string }
     if (adminTypes.some((type) => type.name.toLowerCase() === name.toLowerCase())) return conflict('Ya existe un tipo de espacio con ese nombre')
-    const type = { id: Math.max(0, ...adminTypes.map((t) => t.id)) + 1, name, spaces: 0 }
+    const type = {
+      id: Math.max(0, ...adminTypes.map((t) => t.id)) + 1,
+      name,
+      spaces: 0,
+    }
     adminTypes.push(type)
     return HttpResponse.json(type, { status: 201 })
   }),
@@ -383,7 +505,12 @@ export const handlers = [
   // PN-02 y PN-04: reservas y métricas del propietario. Sin reservas simuladas: las pantallas muestran su estado vacío.
   http.get('*/api/owner/bookings', ({ request }) => {
     const url = new URL(request.url)
-    return HttpResponse.json({ items: [], total: 0, page: Number(url.searchParams.get('page')) || 1, pageSize: Number(url.searchParams.get('pageSize')) || 20 })
+    return HttpResponse.json({
+      items: [],
+      total: 0,
+      page: Number(url.searchParams.get('page')) || 1,
+      pageSize: Number(url.searchParams.get('pageSize')) || 20,
+    })
   }),
   http.get('*/api/owner/metrics', ({ request }) => {
     const month = new URL(request.url).searchParams.get('month') ?? '2026-10'
@@ -397,12 +524,24 @@ export const handlers = [
     const page = Math.max(1, Number(url.searchParams.get('page')) || 1)
     const pageSize = Math.max(1, Number(url.searchParams.get('pageSize')) || 12)
     const items = favoriteIds.flatMap((id) => catalogData.find((space) => space.id === id) ?? [])
-    return HttpResponse.json({ items: items.slice((page - 1) * pageSize, page * pageSize), total: items.length, page, pageSize })
+    return HttpResponse.json({
+      items: items.slice((page - 1) * pageSize, page * pageSize),
+      total: items.length,
+      page,
+      pageSize,
+    })
   }),
   http.put('*/api/favorites/:spaceId', ({ params }) => {
     const id = String(params.spaceId)
     if (!catalogData.some((space) => space.id === id)) {
-      return HttpResponse.json({ message: 'El espacio no existe', error: 'Not Found', statusCode: 404 }, { status: 404 })
+      return HttpResponse.json(
+        {
+          message: 'El espacio no existe',
+          error: 'Not Found',
+          statusCode: 404,
+        },
+        { status: 404 },
+      )
     }
     if (!favoriteIds.includes(id)) favoriteIds.unshift(id)
     return new HttpResponse(null, { status: 204 })
@@ -421,7 +560,14 @@ export const handlers = [
       return HttpResponse.json({ message: 'Ya existe una cuenta con este email.' }, { status: 409 })
     }
     return HttpResponse.json(
-      { id: 'mock-user', email, name: body.name, role: 'USER', isHost: false, createdAt: new Date().toISOString() },
+      {
+        id: 'mock-user',
+        email,
+        name: body.name,
+        role: 'USER',
+        isHost: false,
+        createdAt: new Date().toISOString(),
+      },
       { status: 201 },
     )
   }),

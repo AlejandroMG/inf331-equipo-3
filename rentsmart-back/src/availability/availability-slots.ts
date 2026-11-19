@@ -140,7 +140,7 @@ export const MAX_RANGE_MS = MAX_AVAILABILITY_DAYS * 24 * HOUR_MS;
 export interface RangeCheck {
   /** `HOUR` (por defecto): cada hora en el horario. `DAY`: el rango es exactamente el `fullDay` de un día de Chile. */
   unit?: BookingUnit;
-  /** Acepta un rango que ya empezó, mientras no haya terminado. Para RE-04: se paga a las 10:02 el bloque de 10:00. */
+  /** Acepta un rango que ya empezó, mientras no haya terminado. */
   allowStarted?: boolean;
 }
 
