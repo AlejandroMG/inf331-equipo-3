@@ -299,6 +299,8 @@ jobs:
           reporter: java-junit
           fail-on-error: false
           fail-on-empty: false
+          # Por defecto la acción escribe en el resumen de la ejecución; así crea además el check visible en el PR.
+          use-actions-summary: false
 
   # Empaquetado: solo corre si todas las pruebas pasaron. Genera los paquetes del back y del front listos para
   # desplegar, con un manifiesto de la versión, y los deja como artefacto de la ejecución (30 días). No hay un
