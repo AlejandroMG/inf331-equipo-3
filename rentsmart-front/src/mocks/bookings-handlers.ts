@@ -37,6 +37,8 @@ interface MockBooking extends Booking {
   /** Cuántas veces se consultó: así avanza de PENDING a PAID y a CONFIRMED. */
   polls: number
   paid: boolean
+  /** No pasa la validación automática (RE-04): de PAID va a CANCELLED con el total devuelto, en vez de a CONFIRMED. */
+  failsValidation?: boolean
 }
 
 const bookings: MockBooking[] = []
@@ -46,6 +48,12 @@ const schedules = new Map<string, ScheduleRule[]>()
 export function resetMockBookings() {
   bookings.length = 0
   schedules.clear()
+}
+
+/** Hace que esa reserva simulada no pase la validación automática (RE-04), para probar ese final. */
+export function failMockConfirmation(bookingId: string) {
+  const booking = bookings.find((item) => item.id === bookingId)
+  if (booking) booking.failsValidation = true
 }
 
 const error = (status: number, error: string, message: string) =>
@@ -297,15 +305,22 @@ export const bookingHandlers = [
     return HttpResponse.json({ bookingId: booking.id, checkoutUrl: `${origin}/bookings/${booking.id}?pago=ok` } satisfies BookingCheckout)
   }),
 
-  // Una reserva. Simula el pago y la confirmación: la primera consulta la ve PENDING, la segunda PAID y la tercera
-  // CONFIRMED, como cuando el front espera al webhook después de volver de Stripe.
+  // Una reserva. Simula el pago y la validación automática (RE-04): la primera consulta la ve PENDING, la segunda PAID
+  // y la tercera CONFIRMED (o CANCELLED con el total devuelto, con `failMockConfirmation`), como cuando el front espera
+  // al webhook después de volver de Stripe.
   http.get('*/api/bookings/:id', ({ params, request }) => {
     if (!hasSession(request)) return unauthorized()
     const booking = bookings.find((item) => item.id === params.id)
     if (!booking) return notFound('La reserva no existe')
     booking.polls += 1
-    if (booking.status === 'PAID') booking.status = 'CONFIRMED'
-    else if (booking.status === 'PENDING' && booking.polls >= 2) {
+    if (booking.status === 'PAID') {
+      if (booking.failsValidation) {
+        booking.status = 'CANCELLED'
+        booking.refundedAmount = booking.total
+      } else {
+        booking.status = 'CONFIRMED'
+      }
+    } else if (booking.status === 'PENDING' && booking.polls >= 2) {
       booking.status = 'PAID'
       booking.paid = true
     }

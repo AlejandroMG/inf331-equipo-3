@@ -2,7 +2,8 @@ import { ConflictException, Logger, NotFoundException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { BookingStatus } from '../generated/prisma/enums';
 import { PrismaService } from '../prisma/prisma.service';
-import { EXPIRED_REASON, FINISHED_REASON, BookingExpiryService } from './booking-expiry.service';
+import { BookingConfirmationService } from './booking-confirmation.service';
+import { EXPIRED_REASON, FINISHED_REASON, BookingExpiryService, STUCK_PAID_AFTER_MS } from './booking-expiry.service';
 import { BookingStateService } from './booking-state.service';
 
 // Reloj fijo: los límites se prueban contra esta hora, nunca contra la del sistema.
@@ -16,6 +17,8 @@ interface Row {
   status: BookingStatus;
   endAt: Date;
   expiresAt: Date | null;
+  /** Cuándo quedó el evento hacia `PAID`. Nulo si no hay evento. */
+  paidAt: Date | null;
 }
 
 interface FindManyArgs {
@@ -25,6 +28,7 @@ interface FindManyArgs {
     id?: { gt: string };
     endAt?: { lte: Date };
     expiresAt?: { lte: Date };
+    events?: { some: { toStatus: BookingStatus; createdAt: { lt: Date } } };
   };
   take?: number;
 }
@@ -43,6 +47,7 @@ describe('BookingExpiryService', () => {
         .filter((row) => !where.id || row.id > where.id.gt)
         .filter((row) => !where.endAt || row.endAt <= where.endAt.lte)
         .filter((row) => !where.expiresAt || (row.expiresAt !== null && row.expiresAt <= where.expiresAt.lte))
+        .filter((row) => !where.events || (row.paidAt !== null && row.paidAt < where.events.some.createdAt.lt))
         .sort((a, b) => a.id.localeCompare(b.id))
         .slice(0, take)
         .map((row) => ({ id: row.id }));
@@ -51,6 +56,7 @@ describe('BookingExpiryService', () => {
   const prisma = { booking: { findMany: fakeFindMany() } };
   // Por defecto la transición funciona y cambia la fila, como lo haría la base.
   const state = { transition: jest.fn() };
+  const confirmation = { confirm: jest.fn() };
 
   const row = (id: string, status: BookingStatus, extra: Partial<Row> = {}): Row => {
     const created: Row = {
@@ -59,6 +65,7 @@ describe('BookingExpiryService', () => {
       status,
       endAt: new Date(NOW.getTime() + HOUR),
       expiresAt: null,
+      paidAt: null,
       ...extra,
     };
     rows.push(created);
@@ -76,6 +83,11 @@ describe('BookingExpiryService', () => {
       target.status = to;
       return Promise.resolve({ ...target });
     });
+    confirmation.confirm.mockReset();
+    confirmation.confirm.mockImplementation((id: string) => {
+      rows.find((r) => r.id === id)!.status = 'CONFIRMED';
+      return Promise.resolve('confirmed');
+    });
     errorLog = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
     jest.spyOn(Logger.prototype, 'debug').mockImplementation(() => undefined);
     const module = await Test.createTestingModule({
@@ -83,6 +95,7 @@ describe('BookingExpiryService', () => {
         BookingExpiryService,
         { provide: PrismaService, useValue: prisma },
         { provide: BookingStateService, useValue: state },
+        { provide: BookingConfirmationService, useValue: confirmation },
       ],
     }).compile();
     service = module.get(BookingExpiryService);
@@ -170,6 +183,7 @@ describe('BookingExpiryService', () => {
       expect(result).toEqual({
         finished: { changed: 0, skipped: 0, failed: 0 },
         expired: { changed: 0, skipped: 0, failed: 0 },
+        stuckPaid: { changed: 0, skipped: 0, failed: 0 },
       });
     },
   );
@@ -182,6 +196,88 @@ describe('BookingExpiryService', () => {
     await service.sweep(NOW);
 
     expect(state.transition).not.toHaveBeenCalled();
+  });
+
+  describe('sweep: PAID atascadas (RE-04)', () => {
+    const paidAgo = (ms: number) => new Date(NOW.getTime() - ms);
+
+    it('valida con el reloj del barrido la que lleva más de 5 minutos, y no la que lleva justo 5 o menos', async () => {
+      row('stuck', 'PAID', { paidAt: paidAgo(STUCK_PAID_AFTER_MS + MS) });
+      row('at-limit', 'PAID', { paidAt: paidAgo(STUCK_PAID_AFTER_MS) });
+      row('recent', 'PAID', { paidAt: paidAgo(MS) });
+
+      const result = await service.sweep(NOW);
+
+      expect(confirmation.confirm).toHaveBeenCalledTimes(1);
+      expect(confirmation.confirm).toHaveBeenCalledWith('stuck', NOW);
+      expect(result.stuckPaid).toEqual({ changed: 1, skipped: 0, failed: 0 });
+      expect(state.transition).not.toHaveBeenCalled();
+    });
+
+    it('los 5 minutos valen 5 minutos', () => {
+      expect(STUCK_PAID_AFTER_MS).toBe(300_000);
+    });
+
+    it('busca por el evento hacia PAID, solo en las que siguen PAID', async () => {
+      await service.sweep(NOW);
+
+      expect(prisma.booking.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            status: 'PAID',
+            events: { some: { toStatus: 'PAID', createdAt: { lt: paidAgo(STUCK_PAID_AFTER_MS) } } },
+          },
+        }),
+      );
+    });
+
+    it('no toca una PAID sin evento hacia PAID', async () => {
+      row('no-event', 'PAID', { paidAt: null });
+
+      await service.sweep(NOW);
+
+      expect(confirmation.confirm).not.toHaveBeenCalled();
+    });
+
+    it('cuenta como cambiada la que se canceló y como saltada la que otra llamada resolvió', async () => {
+      ['b1', 'b2'].forEach((id) => row(id, 'PAID', { paidAt: paidAgo(HOUR) }));
+      confirmation.confirm.mockResolvedValueOnce('cancelled').mockResolvedValueOnce('skipped');
+
+      const result = await service.sweep(NOW);
+
+      expect(result.stuckPaid).toEqual({ changed: 1, skipped: 1, failed: 0 });
+    });
+
+    it('una que falla no detiene a las demás, y queda en el log', async () => {
+      ['b1', 'b2', 'b3'].forEach((id) => row(id, 'PAID', { paidAt: paidAgo(HOUR) }));
+      confirmation.confirm.mockRejectedValueOnce(new Error('se cayó la conexión'));
+
+      const result = await service.sweep(NOW);
+
+      expect(confirmation.confirm.mock.calls.map(([id]) => id as string)).toEqual(['b1', 'b2', 'b3']);
+      expect(result.stuckPaid).toEqual({ changed: 2, skipped: 0, failed: 1 });
+      expect(errorLog).toHaveBeenCalledTimes(1);
+      expect(String(errorLog.mock.calls[0][0])).toContain('b1');
+    });
+
+    it('lee de a batchSize, y termina aunque todas fallen', async () => {
+      ['b1', 'b2', 'b3'].forEach((id) => row(id, 'PAID', { paidAt: paidAgo(HOUR) }));
+      confirmation.confirm.mockRejectedValue(new Error('base caída'));
+
+      const result = await service.sweep(NOW, 2);
+
+      expect(result.stuckPaid).toEqual({ changed: 0, skipped: 0, failed: 3 });
+      expect(confirmation.confirm).toHaveBeenCalledTimes(3);
+    });
+
+    it('la segunda vez no vuelve a validar la que ya resolvió', async () => {
+      row('b1', 'PAID', { paidAt: paidAgo(HOUR) });
+      await service.sweep(NOW);
+
+      await service.sweep(NOW);
+
+      expect(confirmation.confirm).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe('un lote donde algunas fallan', () => {
@@ -241,8 +337,8 @@ describe('BookingExpiryService', () => {
       const result = await service.sweep(NOW, 2);
 
       expect(result.finished.changed).toBe(5);
-      // CONFIRMED: 2 + 2 + 1. PENDING: una consulta vacía.
-      expect(prisma.booking.findMany).toHaveBeenCalledTimes(4);
+      // CONFIRMED: 2 + 2 + 1. PENDING y PAID: una consulta vacía cada una.
+      expect(prisma.booking.findMany).toHaveBeenCalledTimes(5);
     });
 
     it('termina aunque todas fallen: no vuelve a leer las que quedaron atrás', async () => {

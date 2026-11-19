@@ -33,9 +33,9 @@ export interface AvailabilityOptions {
   now?: Date;
   /** `HOUR` (por defecto) o `DAY`: con `DAY` el rango debe ser exactamente el `fullDay` de ese día de Chile. */
   unit?: BookingUnit;
-  /** Ignora esa reserva al buscar traslapes: RE-04 valida una `PAID` que ocupa su propio horario. */
+  /** Ignora esa reserva al buscar traslapes. */
   excludeBookingId?: string;
-  /** Acepta un rango que ya empezó y no ha terminado: RE-04 confirma un pago que llegó a las 10:02 por el bloque de 10:00. */
+  /** Acepta un rango que ya empezó y no ha terminado. */
   allowStarted?: boolean;
 }
 
@@ -74,7 +74,7 @@ export class AvailabilityService {
    * Si se puede reservar [startAt, endAt) en el espacio: está `ACTIVE`, el rango no ha empezado, cabe en el horario
    * semanal (por hora o, con `unit: 'DAY'`, como el `fullDay` de ese día) y no lo traslapa una reserva `PENDING`
    * vigente, `PAID` o `CONFIRMED`. Nunca lanza. Con `tx` lee dentro de la transacción de quien llama (RE-02 al crear
-   * la reserva, RE-04 al confirmarla). La restricción `booking_no_overlap` sigue siendo la que impide dos reservas a
+   * la reserva). La restricción `booking_no_overlap` sigue siendo la que impide dos reservas a
    * la vez.
    */
   async isAvailable(
@@ -89,6 +89,21 @@ export class AvailabilityService {
     if (!(await this.isActive(db, spaceId))) return false;
     const { rules, busy } = await this.loadRange(db, spaceId, startAt, endAt, now, excludeBookingId);
     return isRangeAvailable(rules, startAt, endAt, busy, now, { unit, allowStarted });
+  }
+
+  /**
+   * Si otra reserva ocupa algo de [startAt, endAt), con la misma regla de estados y vencimiento que `isAvailable`. No
+   * mira el horario semanal ni el estado del espacio. RE-04 la usa para validar una `PAID`, que ocupa su propio horario
+   * (por eso `excludeBookingId`): el horario semanal solo afecta a reservas nuevas (enmienda a P-06).
+   */
+  async hasOverlap(
+    spaceId: string,
+    startAt: Date,
+    endAt: Date,
+    { tx, now = new Date(), excludeBookingId }: Pick<AvailabilityOptions, 'tx' | 'now' | 'excludeBookingId'> = {},
+  ): Promise<boolean> {
+    const busy = await this.loadBusy(tx ?? this.prisma, spaceId, startAt, endAt, now, excludeBookingId);
+    return busy.length > 0;
   }
 
   /** El horario de un espacio propio, también de un borrador, por día y hora de inicio. */
@@ -136,9 +151,7 @@ export class AvailabilityService {
   }
 
   /**
-   * El horario semanal y lo que está ocupado en [start, end), con una consulta cada uno: las reservas que se cruzan
-   * con el rango, en los estados que retienen el horario. Una `PENDING` vencida y la reserva `excludeBookingId` se
-   * descartan después, en código.
+   * El horario semanal y lo que está ocupado en [start, end), con una consulta cada uno.
    */
   private async loadRange(
     db: Db,
@@ -149,16 +162,31 @@ export class AvailabilityService {
     excludeBookingId?: string,
   ): Promise<{ rules: WeeklyRule[]; busy: BusyInterval[] }> {
     const rules = await db.availabilityRule.findMany({ where: { spaceId }, select: RULE_VIEW });
+    const busy = await this.loadBusy(db, spaceId, start, end, now, excludeBookingId);
+    return { rules, busy };
+  }
+
+  /**
+   * Las reservas que se cruzan con [start, end), en los estados que retienen el horario. Una `PENDING` vencida y la
+   * reserva `excludeBookingId` se descartan después, en código.
+   */
+  private async loadBusy(
+    db: Db,
+    spaceId: string,
+    start: Date,
+    end: Date,
+    now: Date,
+    excludeBookingId?: string,
+  ): Promise<BusyInterval[]> {
     const bookings = await db.booking.findMany({
       where: { spaceId, status: { in: HOLDING_STATUSES }, startAt: { lt: end }, endAt: { gt: start } },
       select: { id: true, startAt: true, endAt: true, status: true, expiresAt: true },
     });
     // DI-03 (#37): los bloqueos del propietario se sumarían aquí, como intervalos ocupados, con una consulta más
     // del mismo rango. Todavía no tienen modelo.
-    const busy = bookings.filter(
+    return bookings.filter(
       (booking) => (excludeBookingId === undefined || booking.id !== excludeBookingId) && isHolding(booking, now),
     );
-    return { rules, busy };
   }
 
   /** Comprueba que el espacio exista y sea del usuario: 404 si no existe, 403 si es de otro. */
