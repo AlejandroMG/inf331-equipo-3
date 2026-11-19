@@ -3532,3 +3532,186 @@ Permitir al arrendatario revisar sus reservas y pagos, retomar un pago pendiente
 - No se tocaron `schema.prisma` ni las migraciones.
 
 ---
+
+### 2026-11-17 · B (xReNatS) · Entrega 3: pruebas E2E/UI con Selenium integradas al CI
+
+**Issues:** #150 (QA-05), #151 (QA-06), #152 (QA-07), #153 (QA-08); aporta a #64 (QA-01)
+**Rama / PR:** `feature/QA-01-e2e-selenium` · sin PR todavía
+**Duración aproximada:** 5 h
+**Herramientas:** Claude Code
+
+#### Objetivo
+Cumplir la Entrega 3 (viernes 20 de noviembre): un set de pruebas E2E/UI con Selenium, integrado al pipeline con evidencia y aviso del resultado, y su documentación.
+
+#### Qué se hizo
+- Se creó el milestone «Entrega 3» y los issues QA-05 a QA-08 con su estimación en horas.
+- Proyecto nuevo `e2e-selenium/` (Selenium WebDriver + Mocha, Chrome headless): 23 pruebas en 5 archivos (catálogo, cuentas y permisos, panel del propietario, reservas, favoritos y perfil), contra PostgreSQL con seed, la API real y el front compilado. `BASE_URL`, `API_URL`, `HEADLESS` y `WAIT_MS` salen del entorno.
+- Al fallar una prueba se guardan screenshot, HTML y log de la consola; los reportes salen en HTML (Mochawesome), JSON y JUnit.
+- Job `e2e-selenium` en `.github/workflows/ci.yml`: PostgreSQL como servicio, migra, siembra, compila y levanta API y front, corre las pruebas, resume en el job y sube `selenium-report` y `selenium-screenshots`. Job `notify` que avisa a Discord si existe el secreto `DISCORD_WEBHOOK_URL`.
+- Documentación: `docs/entrega-3.md` (sigue el Anexo B), `e2e-selenium/README.md`, sección 5 y tabla del CI en `docs/plan-de-pruebas.md`, variables en `.env.example` y `docs/arquitectura.md`.
+
+#### Decisiones y por qué
+| Decisión | Alternativas consideradas | Por qué se eligió |
+|---|---|---|
+| Selenium y no Playwright para la entrega | Seguir con Playwright | La pauta solo permite otra herramienta si no se usó antes y Playwright ya está en la Entrega 2. Playwright queda como smoke |
+| Stack real sin Stripe (`STRIPE_SECRET_KEY` vacía) | Recorrer Stripe Checkout en modo test | Evita depender de la red y de claves en el CI; la reserva queda pendiente de pago. El pago sigue en QA-01 |
+| Reutilizar el token de cada usuario entre pruebas | Iniciar sesión por API en cada prueba | El login de la API limita 10 intentos por IP cada 15 minutos (CU-05); una corrida usa 7 |
+| GitHub Actions y Discord, no Jenkins y Slack | Instalar Jenkins | Se mantiene lo declarado en la Entrega 2 |
+| Un paquete aparte, `e2e-selenium/`, con su `package-lock.json` | Meterlo en `rentsmart-front` | No mezcla dependencias de Selenium con el front y el CI lo instala con `npm ci` |
+
+#### Archivos principales
+- `e2e-selenium/`: proyecto completo (`lib/` con driver, helpers y hooks de evidencia; `test/*.test.js`).
+- `.github/workflows/ci.yml`: jobs `e2e-selenium` y `notify` (**archivo de C, dueño del CI**).
+- `docs/entrega-3.md`, `docs/plan-de-pruebas.md`, `docs/arquitectura.md`, `.env.example`, `AGENTS.md`, `docs/README.md`.
+
+#### Cómo probarlo
+- Pasos en `e2e-selenium/README.md`. En resumen: base de datos migrada y sembrada, API en 3000, front compilado con `VITE_API_URL=http://localhost:4173` y `vite preview` en 4173, y `npm test` en `e2e-selenium`.
+
+#### Estado de verificación
+- Build: no aplica al código de la app; el back y el front compilan.
+- Lint: no aplica (el paquete nuevo no tiene linter).
+- Tests: ✅ 23 de 23 en local con Node 24, Chrome headless y el stack real. La segunda corrida seguida falla por el límite de login (hay que reiniciar la API). El job del CI todavía no corrió en GitHub: se verifica con el PR.
+
+#### Pendientes y bloqueos
+- Enlaces a una ejecución verde y a una roja en `docs/entrega-3.md` (marcador `PENDIENTE_`) y la página «Entrega 3» de la Wiki.
+- Confirmar con C que el aviso a Discord no duplica uno que ya exista (la Wiki habla de un webhook, pero no hay un paso en el workflow) y que el secreto `DISCORD_WEBHOOK_URL` esté creado.
+- Pago con Stripe y confirmación de la reserva en el E2E (QA-01), y el video.
+
+#### Para el resto del equipo
+- C (@gonzzza-lol): toqué `ci.yml` solo para agregar dos jobs al final; no cambié los existentes. Revisa los puertos y el aviso a Discord.
+- A (@AlejandroMG): el límite de login (`ThrottlerModule`, 10 por 15 min) obliga a la suite a reutilizar tokens. Una variable de entorno para el límite en pruebas lo simplificaría.
+- Antes de repetir la suite en local, reinicia la API.
+
+---
+
+### 2026-11-18 · B (xReNatS) · Entrega 3: revisión de C, evidencia del CI, Wiki e issues
+
+**Issues:** #151 (QA-06), #152 (QA-07), #153 (QA-08); además #26, #30, #32, #64 y #150 actualizados
+**Rama / PR:** `feature/QA-01-e2e-selenium` · PR #154
+**Duración aproximada:** 3 h
+**Herramientas:** Claude Code
+
+#### Objetivo
+Responder la revisión de C en el PR #154, dejar la evidencia de una ejecución verde y una roja del CI, publicar la página «Entrega 3» de la Wiki y poner al día los issues.
+
+#### Qué se hizo
+- Orden de merge de los PRs abiertos (#149, #156, #157, #155, #148 y #154 al final), simulado por pares con `git merge-tree`: entre ellos solo chocan archivos de docs.
+- Issues: cuerpos y comentarios de #32, #150 a #153, #64 y #30 al día; #26 (ES-07) cerrado porque sus tres criterios están en `develop`.
+- Pruebas nuevas, pedidas por C: OWN-02 publica desde el formulario (completa un borrador subiendo la foto y lo abre en el catálogo) y OWN-03 edita un espacio publicado. Quedan 25 pruebas.
+- OWN-04 (antes OWN-02) y FAV-01 crean sus datos por API en vez de modificar los del seed; CAT-05 comprueba el orden leyendo los precios de las tarjetas y CAT-02 el texto de cada tarjeta.
+- `engines` en `>=24.9` y sin la salida duplicada en la consola (Mochawesome ya imprime como `spec`).
+- Evidencia en el CI: una ejecución verde y una roja hecha a propósito (CAT-07 esperando un título que no existe, en un commit que se revirtió), enlazadas en `docs/entrega-3.md`.
+- Página «Entrega 3» de la Wiki publicada con el contenido de `docs/entrega-3.md`, y el README con el nivel de Selenium.
+
+#### Decisiones y por qué
+| Decisión | Alternativas consideradas | Por qué se eligió |
+|---|---|---|
+| OWN-02 parte de un borrador con datos y horario cargados por API y completa en la interfaz la foto y la publicación | Recorrer los cinco pasos en la interfaz | El horario semanal (de C) y el mapa son los pasos más frágiles de automatizar; la parte de publicar, que es la que pide QA-06, sí pasa por la interfaz |
+| Ejecución roja con un commit que se revierte | Un `workflow_dispatch` con un input para forzar la falla | `workflow_dispatch` solo se puede lanzar cuando el workflow está en la rama por defecto (`main`), y eso pasa recién con el release |
+| Espacios de las pruebas en Providencia y a $99.000 la hora | Usar la primera comuna y un precio cualquiera | No aparecen en la búsqueda «Las Condes» de CAT-02 ni alteran el orden por precio |
+
+#### Archivos principales
+- `e2e-selenium/test/owner.test.js`: OWN-01 a OWN-05.
+- `e2e-selenium/lib/api.js`: `createCompleteDraft`, `uploadPhoto` y `createPublishedSpace`.
+- `e2e-selenium/fixtures/espacio.png`: foto de prueba (64 × 48).
+- `docs/entrega-3.md`, `README.md`, `docs/plan-de-pruebas.md`, `e2e-selenium/README.md`.
+
+#### Cómo probarlo
+- Pasos en `e2e-selenium/README.md`; en el CI, el job «E2E (Selenium)» del PR #154.
+
+#### Estado de verificación
+- Build: no aplica (no cambia código de la app).
+- Lint: no aplica.
+- Tests: ✅ 25 de 25 en local con Node 24 y en el CI del PR #154.
+
+#### Pendientes y bloqueos
+- El aviso a Discord sigue sin enviarse: falta que A cree el secreto `DISCORD_WEBHOOK_URL` y relanzar el run.
+- BOK-04 (cancelar una reserva) lo agrega C en un PR aparte, junto con el diálogo de cancelación en la página de la reserva.
+- El video de la entrega.
+- Cerrar a mano #32 y #150 a #152 al mergear sus PRs: los PRs apuntan a `develop` y GitHub no los cierra solo.
+
+#### Para el resto del equipo
+- Orden de merge sugerido: #149, #156, #157 (cambiarle la base a `develop` después de #156; hasta entonces su CI no corre), #155, #148 y #154 al final, para que su CI pruebe todo junto.
+- Los espacios que crean las pruebas quedan en la base del CI, que se descarta en cada ejecución; en una base local se acumulan.
+
+---
+
+### 2026-11-19 · B (xReNatS) · Conflictos de PN-03 y RE-04 fuera de develop
+
+**Issues:** #50 (PN-03), #41 (RE-04)
+**Rama / PR:** merge en `feature/PN-03-panel-arrendatario` (PR #155, de A) · `feature/RE-04-integrar-en-develop` · PR #158
+**Duración aproximada:** 1 h
+**Herramientas:** Claude Code
+
+#### Objetivo
+Resolver los conflictos del PR #155 con `develop` después de los merges de #149 y #156.
+
+#### Qué se hizo
+- En la rama de #155 integré `develop` (commit c9143b0). Los conflictos eran solo de docs. En `docs/arquitectura.md` la fila del webhook quedó como en `develop` y la de `GET /api/payments/me` como en PN-03. En `docs/memory.md` se conservaron las dos entradas. El código de pagos se fusionó solo: `resumeSession` de PN-03 convive con PA-02.
+- Encontré que #157 (RE-04) se mergeó en `feature/PA-02-webhook-stripe` un minuto después de que #156 entrara a `develop`, así que RE-04 no llegó a `develop`. Abrí el PR #158, que es `develop` más esa rama, sin cambiar código. Su único conflicto fue `docs/memory.md`.
+- Comenté en #155 y #157 lo hecho, y pedí a C que revise #158.
+
+#### Decisiones y por qué
+| Decisión | Alternativas consideradas | Por qué se eligió |
+|---|---|---|
+| Rama nueva `feature/RE-04-integrar-en-develop` para #158 | Abrir el PR directo desde `feature/PA-02-webhook-stripe` | Ese PR habría chocado en `memory.md` y para resolverlo había que empujar a la rama de C; con una rama nueva su rama no se toca |
+
+#### Archivos principales
+- `docs/arquitectura.md` y `docs/memory.md` en la rama de #155.
+- `docs/memory.md` en la rama de #158.
+
+#### Cómo probarlo
+- `git log origin/develop..origin/feature/RE-04-integrar-en-develop` muestra solo los commits de RE-04 y el merge.
+
+#### Estado de verificación
+- Build: ✅ back y front en las dos ramas.
+- Lint: ✅ back (oxlint) y front (ESLint).
+- Tests: ✅ con Node 24. Front: 766 de 766 en #155 y 768 de 768 en #158. Back unitarias: 704 de 705 y 747 de 748; el que falla es `prisma.service.spec`, que necesita base de datos (Docker Desktop no arrancó). En el CI de #155 pasaron Backend, con los e2e de la API, y Frontend.
+
+#### Pendientes y bloqueos
+- #155 y #158 chocan entre sí solo en `docs/memory.md`. El que se mergee segundo necesita el mismo arreglo.
+- Orden sugerido ahora: #158, #155, #148 y #154 al final.
+- Cerrar a mano #41 y #50 al mergear, porque los PRs apuntan a `develop`.
+
+#### Para el resto del equipo
+- Con PRs apilados: después de mergear el de abajo, cambien la base del de arriba a `develop` antes de mergearlo. Si no, el merge se queda en la rama intermedia.
+
+---
+
+### 2026-11-19 · B (xReNatS) · Merges de #155, #148 y #154
+
+**Issues:** #50 (PN-03), #52 y #53 (IA-01 e IA-02), #150 a #152 (QA-05 a QA-07)
+**Rama / PR:** `feature/QA-01-e2e-selenium` · PR #154 (con #155 y #148 mergeados antes)
+**Duración aproximada:** 1 h
+**Herramientas:** Claude Code
+
+#### Objetivo
+Dejar `develop` con todos los PRs de la Entrega 3 y comprobar que las pruebas de Selenium siguen pasando sobre todo integrado.
+
+#### Qué se hizo
+- #158 (RE-04) ya estaba en `develop`. Resolví el conflicto de `docs/memory.md` de #155 y lo mergeé; revisé #148 (sin conflictos, CI verde, sin secretos, migraciones sin borrados de datos y con fechas posteriores a las existentes, mock de IA por defecto) y lo mergeé.
+- Integré `develop` en #154: conflictos en `.env.example` (se conservan la nota de develop y la sección de Selenium) y en `docs/memory.md` (se conservan todas las entradas).
+
+#### Decisiones y por qué
+| Decisión | Alternativas consideradas | Por qué se eligió |
+|---|---|---|
+| Mergear con merge commit | Squash | Es lo que usa el historial del repo (T-05) |
+| Mergear #154 al final | Antes | Su CI corre las 25 pruebas sobre todo lo demás ya integrado |
+
+#### Archivos principales
+- `.env.example` y `docs/memory.md` en la rama de #154.
+
+#### Cómo probarlo
+- Job «E2E (Selenium)» del PR #154.
+
+#### Estado de verificación
+- Build, lint y tests: ✅ en el CI de cada PR.
+
+#### Pendientes y bloqueos
+- Cerrar a mano los issues #41, #50, #52, #53, #32 y #150 a #152, porque los PRs apuntan a `develop`.
+- Secreto `DISCORD_WEBHOOK_URL` y video.
+
+#### Para el resto del equipo
+- `develop` ya trae la IA (#148): publicar con una descripción generada exige confirmar su revisión; con descripción manual no cambia nada.
+
+---

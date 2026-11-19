@@ -19,7 +19,8 @@ La página [Estrategia de pruebas](https://github.com/AlejandroMG/inf331-equipo-
 | Unitarias del back | Jest + `@nestjs/testing` | `rentsmart-back/src/**/*.spec.ts` | `npm test` · `npm run test:cov` | Backend (NestJS) |
 | Integración de la API | Jest + Supertest + PostgreSQL de test | `rentsmart-back/test/*.e2e-spec.ts` | `npm run test:e2e` | Backend (NestJS) |
 | Front: componentes y lógica | Vitest + React Testing Library + user-event + MSW | `rentsmart-front/src/**/*.test.ts(x)` | `npm test` | Frontend (React) |
-| E2E con navegador | Playwright (Chromium) | `rentsmart-front/e2e/*.spec.ts` | `npm run test:e2e` | E2E (Playwright) |
+| E2E con navegador (smoke, API simulada) | Playwright (Chromium) | `rentsmart-front/e2e/*.spec.ts` | `npm run test:e2e` | E2E (Playwright) |
+| E2E/UI del stack real (Entrega 3) | Selenium WebDriver + Mocha (Chrome headless) | `e2e-selenium/test/*.test.js` | `npm test` en `e2e-selenium` | E2E (Selenium) |
 
 Además, el CI corre la calidad estática antes de las pruebas: oxlint con tipos en el back, ESLint en el front y la compilación de TypeScript en ambos (`npm run build`).
 
@@ -72,6 +73,15 @@ Además, el CI corre la calidad estática antes de las pruebas: oxlint con tipos
 
   Los informes quedan en `playwright-report/` y `test-results/`, que están en el `.gitignore`.
 
+## 5. E2E/UI con Selenium (Entrega 3)
+
+- **Qué se prueba:** 25 flujos críticos con Chrome headless contra el stack real (PostgreSQL con seed, API de NestJS y front compilado, sin mocks): catálogo y búsqueda, registro y login con sus validaciones, rutas protegidas y permisos de administrador, panel del propietario (publicar, editar, activar y desactivar, eliminar), reserva, favoritos y perfil. El listado caso por caso está en [`entrega-3.md`](entrega-3.md#set-de-pruebas).
+- **Por qué Selenium además de Playwright:** la pauta de la Entrega 3 pide Selenium y solo deja usar otra herramienta si no se usó antes; Playwright ya estaba en la Entrega 2. El smoke de Playwright se mantiene: es rápido, no necesita base de datos y detecta que la app arranca. Selenium cubre los flujos completos.
+- **Cómo se buscan los elementos:** Selenium no tiene `getByRole`, así que se localiza por lo que ve la persona: el `name` de un campo, el texto de un botón o encabezado y los `aria-label`. No se usan clases CSS ni `data-testid`.
+- **Datos:** cada prueba crea por API sus cuentas (con email único) y sus espacios, y las reservas eligen un horario al azar; las cuentas y los espacios del seed solo se leen.
+- **Evidencia:** al fallar una prueba se guarda un screenshot, el HTML y el log de la consola del navegador. El CI sube además el reporte HTML (Mochawesome), el JUnit y los logs de la API y del front.
+- **Dónde y cómo se corre:** [`e2e-selenium/README.md`](../e2e-selenium/README.md).
+
 ## Qué corre el CI
 
 El workflow [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) corre en cada push a `main` y `develop` y en cada pull request hacia `main`, `develop` o una rama `release/**`.
@@ -81,8 +91,10 @@ El workflow [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) corre en c
 | **Backend (NestJS)** | Levanta PostgreSQL 17 como servicio (puerto 5433), genera el cliente de Prisma, aplica las migraciones, corre oxlint, las unitarias con cobertura (`npm run test:cov`), los tests de integración (`npm run test:e2e`) y el build. Publica la tabla de cobertura en el resumen del job y sube `rentsmart-back/coverage/` como artefacto `backend-coverage-report` (7 días). |
 | **Frontend (React)** | ESLint, `npm test` (Vitest) y el build. |
 | **E2E (Playwright)** | Instala Chromium con `npx playwright install --with-deps chromium` y corre `npm run test:e2e`. Si falla, sube `playwright-report/` y `test-results/` como artefacto `playwright-report` (7 días). |
+| **E2E (Selenium)** | Levanta PostgreSQL 17 como servicio (puerto 5434), migra y siembra la base, compila y arranca la API (3000) y el front con `vite preview` (4173), y corre `npm test` en `e2e-selenium` con `BASE_URL=http://localhost:4173`. Resume los resultados en el job y sube `selenium-report` (reporte HTML, JUnit y logs) siempre, y `selenium-screenshots` si algo falló (14 días). |
+| **Notificar a Discord** | Avisa si el pipeline pasó o falló. Solo corre si el secreto `DISCORD_WEBHOOK_URL` está configurado; sin él se omite. |
 
-Los nombres «Backend (NestJS)» y «Frontend (React)» son checks obligatorios del ruleset de `main`: no se cambian. «E2E (Playwright)» todavía no es obligatorio; conviene agregarlo al ruleset cuando lleve algunas semanas estable.
+Los nombres «Backend (NestJS)» y «Frontend (React)» son checks obligatorios del ruleset de `main`: no se cambian. «E2E (Playwright)» y «E2E (Selenium)» todavía no son obligatorios; conviene agregarlo al ruleset cuando lleve algunas semanas estable.
 
 ## Estado actual
 
@@ -93,7 +105,8 @@ Archivos de test en el repo al 24-10-2026, contados con `git ls-files` (son arch
 | Unitarias del back (`rentsmart-back/src/**/*.spec.ts`) | 25 |
 | Integración de la API (`rentsmart-back/test/*.e2e-spec.ts`) | 22 |
 | Front (`rentsmart-front/src/**/*.test.ts(x)`) | 50 |
-| E2E con navegador (`rentsmart-front/e2e/*.spec.ts`) | 1 |
+| E2E con navegador, Playwright (`rentsmart-front/e2e/*.spec.ts`) | 1 |
+| E2E/UI con Selenium (`e2e-selenium/test/*.test.js`) | 5 (25 casos) |
 
 **Cobertura del back.** La cobertura que mide el CI es la de las unitarias (`npm run test:cov` en el job Backend); los tests de integración todavía no suman a ese informe. El valor de cada ejecución se ve en el resumen del job Backend («Cobertura del Backend») y en el artefacto `backend-coverage-report`, que trae el informe HTML por archivo. En la Entrega 1 fue de 45,6 % de líneas ([Wiki](https://github.com/AlejandroMG/inf331-equipo-3/wiki/Proyecto-Estrategia-de-pruebas#resultados-entrega-1)). El front no mide cobertura todavía.
 
@@ -111,7 +124,7 @@ Cuando llegue la respuesta:
 
 ## Flujo completo con Playwright (QA-01, trabajo futuro)
 
-[QA-01](https://github.com/AlejandroMG/inf331-equipo-3/issues/64) prueba el flujo completo en un navegador contra el back real. No está implementado; esta sección deja el diseño para cuando se tome.
+[QA-01](https://github.com/AlejandroMG/inf331-equipo-3/issues/64) prueba el flujo completo en un navegador contra el back real. La suite de Selenium (sección 5) ya recorre el stack real, pero no el pago con Stripe ni la confirmación; esa parte sigue sin implementar y esta sección deja el diseño para cuando se tome.
 
 - **Flujo:** registro → publicar un espacio → buscarlo en el catálogo → reservar → pagar con la tarjeta de prueba de Stripe (`4242 4242 4242 4242`) → ver la reserva `Confirmada`. El issue menciona «aceptar», pero con la reserva inmediata ([P-05](decisiones.md#p-05--reserva-inmediata)) el propietario no aprueba nada: en su lugar se comprueba que la validación automática deja la reserva en `Confirmada` y que el detalle privado de la dirección aparece solo entonces.
 - **Cada integrante escribe su tramo:** A el registro y el inicio de sesión, B publicar y buscar, C reservar y pagar. Conviene un helper por tramo en `e2e/` (por ejemplo `registerUser`, `publishSpace`, `bookAndPay`) para que cada uno lo mantenga sin pisar el de otro.

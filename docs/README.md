@@ -7,7 +7,8 @@
 | [decisiones.md](decisiones.md) | Qué se decidió, por qué y qué alternativas se descartaron; también las decisiones que siguen abiertas |
 | [plan.md](plan.md) | Sprints, qué hace cada integrante y qué se entregan entre sí |
 | [flujo-de-trabajo.md](flujo-de-trabajo.md) | Ramas, commits, pull requests, revisiones y definición de terminado |
-| [plan-de-pruebas.md](plan-de-pruebas.md) | Qué se prueba en cada nivel (unitarias, integración, E2E con Playwright), cómo se corre, qué corre el CI y la meta de cobertura |
+| [plan-de-pruebas.md](plan-de-pruebas.md) | Qué se prueba en cada nivel (unitarias, integración, E2E con Playwright y Selenium), cómo se corre, qué corre el CI y la meta de cobertura |
+| [entrega-3.md](entrega-3.md) | Entrega 3: pruebas de interfaz con Selenium, cómo se ejecutan, integración con el CI, evidencias, problemas y pendientes |
 | [memory.md](memory.md) | Bitácora de sesiones de trabajo. Cada integrante agrega una entrada por sesión con la plantilla |
 
 Las instrucciones para agentes de IA están en [`AGENTS.md`](../AGENTS.md), en la raíz del repo.
