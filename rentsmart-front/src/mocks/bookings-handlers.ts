@@ -288,7 +288,21 @@ export const bookingHandlers = [
   // Mis reservas, las más recientes primero. Va antes que ':id' para que "me" no se tome por un id.
   http.get('*/api/bookings/me', ({ request }) => {
     if (!hasSession(request)) return unauthorized()
-    return HttpResponse.json(pageOf(request, [...bookings].reverse().map(toBooking)))
+    const url = new URL(request.url)
+    const status = url.searchParams.get('status')
+    const filtered = [...bookings].reverse().filter((booking) => !status || booking.status === status)
+    return HttpResponse.json(pageOf(request, filtered.map(toBooking)))
+  }),
+
+  http.get('*/api/bookings/:id/checkout', ({ params, request }) => {
+    if (!hasSession(request)) return unauthorized()
+    const booking = bookings.find((item) => item.id === params.id)
+    if (!booking) return notFound('La reserva no existe')
+    if (booking.status !== 'PENDING' || Date.parse(booking.expiresAt ?? '') <= Date.now()) {
+      return conflict('La reserva ya no está pendiente de pago')
+    }
+    const origin = typeof location === 'undefined' ? '' : location.origin
+    return HttpResponse.json({ bookingId: booking.id, checkoutUrl: `${origin}/bookings/${booking.id}?pago=ok` } satisfies BookingCheckout)
   }),
 
   // Una reserva. Simula el pago y la validación automática (RE-04): la primera consulta la ve PENDING, la segunda PAID

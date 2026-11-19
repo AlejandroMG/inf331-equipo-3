@@ -20,6 +20,7 @@ function linksFor(loggedIn: boolean, isAdmin: boolean): NavItem[] {
     ...(loggedIn
       ? [
           { to: paths.profile, label: 'Mi perfil', end: false },
+          { to: paths.renterBookings, label: 'Mis reservas', end: false },
           { to: paths.ownerSpaces, label: 'Mis espacios', end: false },
           { to: paths.favorites, label: 'Favoritos', end: false },
         ]

@@ -3479,3 +3479,56 @@ Que una reserva pagada salga sola de `PAID`: a `CONFIRMED` si el espacio sigue a
 - `BookingExpiryService` ahora depende de `BookingConfirmationService`. No hay ciclo, porque la confirmación no conoce el barrido.
 
 ---
+
+### 2026-11-18 · A (@AlejandroMG) · PN-03 panel del arrendatario
+
+**Issues:** #50 (PN-03)
+**Rama / PR:** `feature/PN-03-panel-arrendatario` · sin PR todavía
+**Duración aproximada:** No registrada
+**Herramientas:** Copilot
+
+#### Objetivo
+Permitir al arrendatario revisar sus reservas y pagos, retomar un pago pendiente, cancelar reservas y consultar un comprobante informativo.
+
+#### Qué se hizo
+- Se agregó el panel de reservas y pagos del arrendatario, con filtro de estado, paginación, acciones disponibles, cancelación y comprobante imprimible.
+- `GET /api/bookings/me` acepta filtro opcional por estado y lo aplica antes de paginar.
+- Se agregó `GET /api/bookings/:id/checkout` para retomar un checkout de una reserva propia que siga `PENDING` y no haya vencido. Stripe devuelve el enlace solo si la sesión sigue abierta.
+- Se conectaron las rutas, navegación y mocks del front, y se documentó el contrato en `arquitectura.md`.
+- El lint encontró una lectura de `Date.now()` durante render; se cambió por un reloj actualizado en un efecto.
+
+#### Decisiones y por qué
+| Decisión | Alternativas consideradas | Por qué se eligió |
+|---|---|---|
+| Filtrar reservas en el servidor antes de paginar | Filtrar solo la página cargada en el front | El resultado paginado debe reflejar todas las reservas del estado seleccionado |
+| Recuperar el checkout mediante un endpoint protegido | Guardar el enlace de Stripe en el front | El servidor puede comprobar propiedad, estado, vencimiento y vigencia de la sesión |
+| El comprobante del panel es informativo e imprimible | Presentarlo como comprobante tributario | No reemplaza el comprobante emitido por el proveedor de pago |
+
+#### Archivos principales
+- `rentsmart-front/src/features/bookings/RenterBookingsPage.tsx` y `RenterBookingsPage.test.tsx`: panel, acciones e historial.
+- `rentsmart-front/src/features/bookings/bookings-api.ts`, `src/routes.tsx`, `src/components/Navbar.tsx` y `src/mocks/bookings-handlers.ts`: integración del front.
+- `rentsmart-back/src/bookings/`: filtro de estado y endpoint para retomar checkout.
+- `rentsmart-back/src/payments/`: recuperación de sesiones abiertas en el gateway Stripe.
+- `rentsmart-back/test/booking-create.e2e-spec.ts` y `test/booking-contract.e2e-spec.ts`: cobertura del contrato.
+- `docs/arquitectura.md`.
+
+#### Cómo probarlo
+- Front, en `rentsmart-front`: `npm run build`, `npm run lint` y `npm test -- --run src/features/bookings/RenterBookingsPage.test.tsx src/features/bookings/bookings-api.test.ts src/features/bookings/BookingPage.test.tsx src/features/bookings/CancelBookingDialog.test.tsx`.
+- Back: `npm run test:e2e -- --runInBand test/booking-create.e2e-spec.ts test/booking-contract.e2e-spec.ts` con `DATABASE_TEST_URL` apuntando a una base de pruebas migrada.
+
+#### Estado de verificación
+- Build: ✅ back y front.
+- Lint: ✅ back y front.
+- Tests: ✅ 96 pruebas unitarias focalizadas del back y 46 pruebas focalizadas del front. ⚠️ Los e2e focalizados no pudieron completar su preparación porque la base local no tiene disponible la tabla `User`; no se ejecutaron migraciones al no confirmar el destino de esa base.
+- `git diff --check`: ✅.
+
+#### Pendientes y bloqueos
+- Repetir los e2e del back con una base de pruebas que tenga el esquema migrado.
+- Revisar visualmente el panel en móvil (375 px) y escritorio.
+
+#### Para el resto del equipo
+- El nuevo filtro de `GET /bookings/me` ocurre en el servidor; se conserva la paginación existente.
+- El endpoint de checkout verifica pertenencia y reserva pendiente no vencida; no expone enlaces a sesiones cerradas.
+- No se tocaron `schema.prisma` ni las migraciones.
+
+---
