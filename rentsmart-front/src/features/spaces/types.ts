@@ -18,6 +18,9 @@ export interface OwnerSpace {
   name: string
   typeId: number | null
   description: string | null
+  aiDescriptionGenerated: boolean
+  aiDescriptionNeedsReview: boolean
+  aiDescriptionAttempts: number
   capacity: number | null
   pricePerHour: number | null
   pricePerDay: number | null

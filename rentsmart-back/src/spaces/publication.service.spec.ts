@@ -19,12 +19,14 @@ const complete = {
   pricePerHour: 9000,
   pricePerDay: null,
   _count: { photos: 1, rulesWeek: 5 },
+  aiSpaceGenerations: [],
 };
 
 describe('PublicationService', () => {
   let service: PublicationService;
   const tx = {
     space: { updateMany: jest.fn() },
+    aiSpaceGeneration: { findUnique: jest.fn() },
     user: { update: jest.fn() },
   };
   const prisma = {
@@ -42,6 +44,7 @@ describe('PublicationService', () => {
       fn(tx),
     );
     tx.space.updateMany.mockResolvedValue({ count: 1 });
+    tx.aiSpaceGeneration.findUnique.mockResolvedValue(null);
     spaces.findOne.mockResolvedValue({ id: 's1', status: 'ACTIVE' });
     const module = await Test.createTestingModule({
       providers: [
@@ -56,10 +59,14 @@ describe('PublicationService', () => {
   describe('publish', () => {
     it('lanza 404 si no existe y 403 si es de otro', async () => {
       prisma.space.findUnique.mockResolvedValue(null);
-      await expect(service.publish('u1', 'x')).rejects.toThrow(NotFoundException);
+      await expect(service.publish('u1', 'x')).rejects.toThrow(
+        NotFoundException,
+      );
 
       given({ ownerId: 'otro' });
-      await expect(service.publish('u1', 's1')).rejects.toThrow(ForbiddenException);
+      await expect(service.publish('u1', 's1')).rejects.toThrow(
+        ForbiddenException,
+      );
       expect(prisma.$transaction).not.toHaveBeenCalled();
     });
 
@@ -76,6 +83,37 @@ describe('PublicationService', () => {
         where: { id: 'u1' },
         data: { isHost: true },
       });
+    });
+
+    it('no publica una descripción IA que todavía no confirmó el propietario', async () => {
+      given({
+        aiSpaceGenerations: [
+          {
+            description: 'Sugerencia IA',
+            reviewedAt: null,
+            leaseExpiresAt: new Date('2020-01-01T00:00:00.000Z'),
+          },
+        ],
+      });
+
+      await expect(service.publish('u1', 's1')).rejects.toThrow(
+        'Revisa la descripción generada con IA antes de publicar.',
+      );
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('permite publicar la descripción IA después de revisarla', async () => {
+      given({
+        aiSpaceGenerations: [
+          {
+            description: 'Sugerencia IA',
+            reviewedAt: new Date(),
+            leaseExpiresAt: new Date('2020-01-01T00:00:00.000Z'),
+          },
+        ],
+      });
+
+      await expect(service.publish('u1', 's1')).resolves.toBeDefined();
     });
 
     it('si falta algo responde 409 con la lista y no cambia nada', async () => {
@@ -107,7 +145,24 @@ describe('PublicationService', () => {
       given();
       tx.space.updateMany.mockResolvedValue({ count: 0 });
 
-      await expect(service.publish('u1', 's1')).rejects.toThrow(ConflictException);
+      await expect(service.publish('u1', 's1')).rejects.toThrow(
+        ConflictException,
+      );
+      expect(tx.user.update).not.toHaveBeenCalled();
+    });
+
+    it('vuelve a comprobar la revisión en la transacción para evitar una carrera', async () => {
+      given();
+      tx.aiSpaceGeneration.findUnique.mockResolvedValueOnce({
+        description: 'Sugerencia IA',
+        reviewedAt: null,
+        leaseExpiresAt: new Date('2020-01-01T00:00:00.000Z'),
+      });
+
+      await expect(service.publish('u1', 's1')).rejects.toThrow(
+        'Revisa la descripción generada con IA antes de publicar.',
+      );
+      expect(tx.space.updateMany).toHaveBeenCalled();
       expect(tx.user.update).not.toHaveBeenCalled();
     });
   });

@@ -19,12 +19,14 @@ import {
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
+  ApiTooManyRequestsResponse,
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
 import type { AuthUser } from '../common/auth/auth-user';
 import { CurrentUser } from '../common/auth/current-user.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { GenerateSpaceDescriptionService } from '../ai/generate-space-description.service';
 import { CreateSpaceDto } from './dto/create-space.dto';
 import { ChangeStatusDto } from './dto/change-status.dto';
 import { OwnerSpaceSummaryDto } from './dto/owner-space-summary.dto';
@@ -44,16 +46,23 @@ export class SpacesController {
     private readonly service: SpacesService,
     private readonly publication: PublicationService,
     private readonly removal: SpaceRemovalService,
+    private readonly generateDescription: GenerateSpaceDescriptionService,
   ) {}
 
   @Post()
   @ApiOperation({
     summary: 'Crea un espacio en borrador',
-    description: 'Solo el nombre es obligatorio; el resto se guarda a medida que avanza el formulario.',
+    description:
+      'Solo el nombre es obligatorio; el resto se guarda a medida que avanza el formulario.',
   })
   @ApiCreatedResponse({ type: SpaceDto })
-  @ApiBadRequestResponse({ description: 'Datos inválidos o referencias que no existen' })
-  create(@CurrentUser() user: AuthUser, @Body() dto: CreateSpaceDto): Promise<SpaceDto> {
+  @ApiBadRequestResponse({
+    description: 'Datos inválidos o referencias que no existen',
+  })
+  create(
+    @CurrentUser() user: AuthUser,
+    @Body() dto: CreateSpaceDto,
+  ): Promise<SpaceDto> {
     return this.service.create(user.id, dto);
   }
 
@@ -61,11 +70,66 @@ export class SpacesController {
   @Get('me')
   @ApiOperation({
     summary: 'Mis espacios',
-    description: 'Los espacios del usuario, de cualquier estado, con lo que le falta a cada uno. Los modificados más recientemente primero.',
+    description:
+      'Los espacios del usuario, de cualquier estado, con lo que le falta a cada uno. Los modificados más recientemente primero.',
   })
   @ApiOkResponse({ type: [OwnerSpaceSummaryDto] })
   findMine(@CurrentUser() user: AuthUser): Promise<OwnerSpaceSummaryDto[]> {
     return this.service.findMine(user.id);
+  }
+
+  @Post(':id/generate-description')
+  @HttpCode(200)
+  @ApiOperation({
+    summary: 'Genera una descripción editable para un borrador propio',
+    description:
+      'Usa las fotos y los datos guardados. La descripción se guarda en el borrador para que el propietario la edite y revise. Permite hasta cinco intentos por publicación y quince intentos por usuario cada 24 horas. La respuesta incluye attemptsUsed.',
+  })
+  @ApiOkResponse({
+    schema: {
+      properties: {
+        description: { type: 'string' },
+        source: { type: 'string', enum: ['gemini', 'mock', 'fallback'] },
+        attemptsUsed: { type: 'integer', minimum: 1, maximum: 5 },
+      },
+    },
+  })
+  @ApiBadRequestResponse({
+    description: 'El espacio no es borrador o no tiene fotos válidas',
+  })
+  @ApiConflictResponse({
+    description: 'Hay otra generación en curso para este espacio',
+  })
+  @ApiTooManyRequestsResponse({
+    description:
+      'Se alcanzó el límite diario o de generaciones de esta publicación',
+  })
+  @ApiForbiddenResponse({ description: 'El espacio es de otro usuario' })
+  @ApiNotFoundResponse({ description: 'El espacio no existe' })
+  @ApiUnauthorizedResponse({ description: 'Sin sesión' })
+  generateSpaceDescription(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+  ) {
+    return this.generateDescription.generate(user.id, id);
+  }
+
+  @Post(':id/review-description')
+  @HttpCode(204)
+  @ApiOperation({
+    summary: 'Confirma que el propietario revisó la descripción generada',
+  })
+  @ApiNoContentResponse({ description: 'Descripción revisada' })
+  @ApiBadRequestResponse({
+    description: 'No hay una descripción generada para revisar',
+  })
+  @ApiForbiddenResponse({ description: 'El espacio es de otro usuario' })
+  @ApiNotFoundResponse({ description: 'El espacio no existe' })
+  async reviewSpaceDescription(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+  ): Promise<void> {
+    await this.generateDescription.markReviewed(user.id, id);
   }
 
   @Get(':id')
@@ -73,17 +137,23 @@ export class SpacesController {
   @ApiOkResponse({ type: SpaceDto })
   @ApiForbiddenResponse({ description: 'El espacio es de otro usuario' })
   @ApiNotFoundResponse({ description: 'El espacio no existe' })
-  findOne(@CurrentUser() user: AuthUser, @Param('id') id: string): Promise<SpaceDto> {
+  findOne(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+  ): Promise<SpaceDto> {
     return this.service.findOne(user.id, id);
   }
 
   @Patch(':id')
   @ApiOperation({
     summary: 'Actualiza un espacio propio',
-    description: 'Parcial: lo que no se manda no cambia y `null` borra un campo opcional. El estado no se cambia aquí.',
+    description:
+      'Parcial: lo que no se manda no cambia y `null` borra un campo opcional. El estado no se cambia aquí.',
   })
   @ApiOkResponse({ type: SpaceDto })
-  @ApiBadRequestResponse({ description: 'Datos inválidos o referencias que no existen' })
+  @ApiBadRequestResponse({
+    description: 'Datos inválidos o referencias que no existen',
+  })
   @ApiForbiddenResponse({ description: 'El espacio es de otro usuario' })
   @ApiNotFoundResponse({ description: 'El espacio no existe' })
   update(
@@ -106,9 +176,15 @@ export class SpacesController {
     description:
       'Faltan datos (`missing` lista cuáles: type, description, capacity, commune, price, photos, schedule) o el espacio ya no es un borrador',
   })
-  @ApiForbiddenResponse({ description: 'El espacio es de otro usuario o está bloqueado por un administrador' })
+  @ApiForbiddenResponse({
+    description:
+      'El espacio es de otro usuario o está bloqueado por un administrador',
+  })
   @ApiNotFoundResponse({ description: 'El espacio no existe' })
-  publish(@CurrentUser() user: AuthUser, @Param('id') id: string): Promise<SpaceDto> {
+  publish(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+  ): Promise<SpaceDto> {
     return this.publication.publish(user.id, id);
   }
 
@@ -120,8 +196,13 @@ export class SpacesController {
   })
   @ApiOkResponse({ type: SpaceDto })
   @ApiBadRequestResponse({ description: 'Solo se acepta ACTIVE o INACTIVE' })
-  @ApiConflictResponse({ description: 'Es un borrador, o al activarlo falta algo (`missing`)' })
-  @ApiForbiddenResponse({ description: 'El espacio es de otro usuario o está bloqueado por un administrador' })
+  @ApiConflictResponse({
+    description: 'Es un borrador, o al activarlo falta algo (`missing`)',
+  })
+  @ApiForbiddenResponse({
+    description:
+      'El espacio es de otro usuario o está bloqueado por un administrador',
+  })
   @ApiNotFoundResponse({ description: 'El espacio no existe' })
   changeStatus(
     @CurrentUser() user: AuthUser,
@@ -139,10 +220,18 @@ export class SpacesController {
       'Borra el espacio con sus fotos, equipamiento, horario y favoritos. Solo se puede si nunca tuvo reservas; si tiene, hay que desactivarlo para conservar el historial.',
   })
   @ApiNoContentResponse({ description: 'Eliminado' })
-  @ApiConflictResponse({ description: 'El espacio tiene reservas: se desactiva en vez de eliminarse' })
-  @ApiForbiddenResponse({ description: 'El espacio es de otro usuario o está bloqueado por un administrador' })
+  @ApiConflictResponse({
+    description: 'El espacio tiene reservas: se desactiva en vez de eliminarse',
+  })
+  @ApiForbiddenResponse({
+    description:
+      'El espacio es de otro usuario o está bloqueado por un administrador',
+  })
   @ApiNotFoundResponse({ description: 'El espacio no existe' })
-  remove(@CurrentUser() user: AuthUser, @Param('id') id: string): Promise<void> {
+  remove(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+  ): Promise<void> {
     return this.removal.remove(user.id, id);
   }
 }

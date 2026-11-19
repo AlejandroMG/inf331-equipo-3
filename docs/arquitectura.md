@@ -590,9 +590,11 @@ Requieren sesión y ser el dueño del espacio (403 si es de otro, 404 si no exis
 
 ### IA
 
-- Interfaz `AiProvider` con `describeSpace(fotos, datos)`. Una implementación real (proveedor según P-15) y un mock determinista para tests.
-- Timeout, límite de usos por usuario y un mensaje de respaldo si el proveedor falla.
-- El texto generado siempre queda editable y el propietario lo revisa antes de publicar.
+- `AiModule` exporta `GenerateSpaceDescriptionService` y `SpaceDescriptionAiService`. `POST /api/spaces/:id/generate-description` usa los datos, reglas, precios, horario semanal y fotos ya guardados de un borrador propio (JPG, PNG o WebP; máximo conjunto de 15 MB); el cliente no envía rutas ni URLs de fotos. Solo se comparte la dirección pública, no las indicaciones privadas ni las coordenadas exactas.
+- Las fotos se transmiten a Gemini para inferencia y no se guardan en la tabla de cuota; su retención/uso queda sujeto a los términos del proveedor. La salida indica si vino de Gemini, del mock o del respaldo.
+- El timeout es de 15 s por defecto (configurable entre 1 y 60 s). PostgreSQL permite hasta 5 intentos por publicación y 15 por usuario en una ventana móvil de 24 h; los fallos con fallback consumen ambos límites. El contador de publicación es permanente; los intentos simultáneos para el mismo espacio se bloquean y, si un proceso cae, una reserva vence para permitir reintentar.
+- Si Gemini falla o vence el timeout, el servicio registra una advertencia y arma un texto de respaldo usando solo los datos básicos del espacio. El texto se guarda en el borrador y sigue siendo editable.
+- `POST /api/spaces/:id/review-description` registra la confirmación explícita del propietario. Publicar o reactivar queda bloqueado mientras la sugerencia no esté revisada; editarla después de revisarla vuelve a exigir confirmación.
 
 ## Variables de entorno
 
@@ -614,7 +616,9 @@ Solo `PORT`, `VITE_API_URL` y `VITE_USE_MOCKS` existen hoy. Las demás se agrega
 | `STRIPE_WEBHOOK_SECRET` | back | Secreto con que se verifica la firma del webhook (`whsec_...`). Opcional; se valida su formato desde PA-01 y lo usa el webhook desde PA-02: sin ella, o sin `STRIPE_SECRET_KEY`, el webhook responde 503. En local lo imprime `stripe listen --forward-to localhost:3000/api/payments/webhook`; en un despliegue, el endpoint del webhook en *Developers → Webhooks* del dashboard | PA-02 |
 | `BOOKING_SWEEP_ENABLED` | back | `false` apaga la tarea periódica de vencimientos de reservas, que también reintenta las `PAID` atascadas; si no se define, está encendida. Los e2e siempre la apagan | RE-06, RE-04 |
 | `BOOKING_SWEEP_INTERVAL_MS` | back | Cada cuántos milisegundos corre esa tarea (de 1000 a 2 147 483 647, el máximo de `setInterval`; por defecto 60 000) | RE-06 |
-| `AI_API_KEY`, `AI_MODEL` | back | Proveedor de IA (depende de P-15) | IA-01 |
+| `AI_PROVIDER` | back | `mock` por defecto o `gemini` para habilitar el proveedor real | IA-01 |
+| `AI_API_KEY`, `AI_MODEL` | back | Clave de Gemini (obligatoria con `AI_PROVIDER=gemini`) y modelo (por defecto `gemini-2.5-flash`) | IA-01 |
+| `AI_TIMEOUT_MS`, `AI_MAX_USES_PER_24H` | back | Timeout del proveedor (15 000 ms) y cuota por usuario (15 intentos en 24 h); cada publicación permite 5 generaciones | IA-01 |
 
 ## Pruebas
 

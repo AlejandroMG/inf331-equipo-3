@@ -124,7 +124,7 @@ export type MissingField = 'type' | 'description' | 'capacity' | 'commune' | 'pr
 /** Cada requisito para publicar, con su nombre y el paso del formulario donde se completa (P-18). */
 export const REQUIREMENTS: Record<MissingField, { label: string; step: number }> = {
   type: { label: 'Tipo de espacio', step: 1 },
-  description: { label: 'Descripción', step: 1 },
+  description: { label: 'Descripción', step: 5 },
   capacity: { label: 'Capacidad', step: 1 },
   commune: { label: 'Comuna', step: 2 },
   price: { label: 'Precio por hora o por día', step: 3 },
