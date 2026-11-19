@@ -74,7 +74,7 @@ Decisiones abiertas: ver [al final](#decisiones-abiertas).
 
 ## P-06 · Pendiente → Pagada → Confirmada
 
-- **Estado:** Decidida, 25-09-2026; enmendada el 29-10-2026 (retención de 31 minutos, [ver abajo](#enmienda-del-29-10-2026-retención-de-31-minutos)) y el 02-11-2026 (pago sobre una reserva cancelada, [ver abajo](#enmienda-del-02-11-2026-pago-recibido-sobre-una-reserva-cancelada)) · Issue [#73](https://github.com/AlejandroMG/inf331-equipo-3/issues/73)
+- **Estado:** Decidida, 25-09-2026; enmendada el 29-10-2026 (retención de 31 minutos, [ver abajo](#enmienda-del-29-10-2026-retención-de-31-minutos)) y el 02-11-2026 (pago sobre una reserva cancelada, [ver abajo](#enmienda-del-02-11-2026-pago-recibido-sobre-una-reserva-cancelada); «horario libre» es sin traslape, [ver abajo](#enmienda-del-02-11-2026-horario-libre-es-sin-traslape)) · Issue [#73](https://github.com/AlejandroMG/inf331-equipo-3/issues/73)
 - **Contexto:** con reserva inmediata había que definir los estados y qué pasa con el horario mientras la persona paga.
 - **Decisión:**
   - La reserva nace en **Pendiente** y retiene el horario **31 minutos** (eran 30 hasta la enmienda), y la sesión de Stripe Checkout vence en el mismo instante.
@@ -103,6 +103,14 @@ Decisiones abiertas: ver [al final](#decisiones-abiertas).
 - **Alcance:** esta regla es solo para el pago que llega tarde. Si la reserva sí llegó a `Pagada` y se canceló después, lo que se devuelve lo decide la política de cancelación ([P-14](#p-14--cancelación-gratis-hasta-24-horas-antes)), y un evento repetido no reembolsa nada: el webhook lo distingue porque en el historial hay un `BookingEvent` hacia `PAID`. Por lo mismo, **reenviar el evento no repara el reembolso fallido de una cancelación con evento hacia `PAID`**: ese reembolso es de quien cancela (PA-03) y hay que repararlo por otra vía.
 - **Alternativas descartadas:** dejar el cobro para un reembolso manual (es dinero del arrendatario sin servicio, y depende de que alguien mire el log).
 - **Consecuencias:** `PaymentsService` trata igual las dos reservas que ya no siguen en pie. La idempotencia se basa en el estado de la reserva y del pago, sin tabla de eventos procesados: `schema.prisma` no cambia.
+
+### Enmienda del 02-11-2026: «horario libre» es sin traslape
+
+- **Estado:** Decidida, 02-11-2026 (aprobada por C) · RE-04 ([#41](https://github.com/AlejandroMG/inf331-equipo-3/issues/41))
+- **Contexto:** la validación automática revisa que el espacio siga activo y el horario libre. Faltaba decir si «horario libre» incluye el horario semanal, que el propietario puede cambiar mientras el arrendatario paga.
+- **Decisión:** «horario libre» significa **sin traslape con otra reserva**. El horario semanal solo afecta a reservas nuevas.
+- **Alternativas descartadas:** revisar también el horario semanal.
+- **Consecuencias:** si el propietario quitó esas horas durante el pago, la reserva se confirma y, si no puede atender, cancela él con reembolso total ([P-14](#p-14--cancelación-gratis-hasta-24-horas-antes)).
 
 ## P-07 · Por hora y/o por día, en bloques de 1 hora
 

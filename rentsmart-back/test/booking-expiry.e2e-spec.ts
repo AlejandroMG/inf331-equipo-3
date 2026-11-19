@@ -1,8 +1,16 @@
-import { INestApplication } from '@nestjs/common';
+import { INestApplication, Logger } from '@nestjs/common';
 import { App } from 'supertest/types';
-import { EXPIRED_REASON, FINISHED_REASON, BookingExpiryService } from '../src/bookings/booking-expiry.service';
+import { SPACE_UNAVAILABLE_REASON, BookingConfirmationService } from '../src/bookings/booking-confirmation.service';
+import {
+  EXPIRED_REASON,
+  FINISHED_REASON,
+  STUCK_PAID_AFTER_MS,
+  BookingExpiryService,
+} from '../src/bookings/booking-expiry.service';
 import { BookingStatus } from '../src/generated/prisma/enums';
+import { PAYMENT_REFUNDER } from '../src/payments/payment-refunder';
 import { PrismaService } from '../src/prisma/prisma.service';
+import { bookingWeek } from './utils/booking-dates';
 import { createTestApp } from './utils/create-test-app';
 
 // RE-06: vencimientos automáticos contra la base de test. No tiene endpoints, así que se prueba el servicio.
@@ -20,6 +28,8 @@ describe('Vencimientos automáticos (e2e)', () => {
   let userId: string;
   let spaceId: string;
   let otherSpaceId: string;
+  let activeSpaceId: string;
+  const refunder = { refundBooking: jest.fn<Promise<void>, [string, number, string]>() };
 
   const booking = (
     status: BookingStatus,
@@ -50,7 +60,7 @@ describe('Vencimientos automáticos (e2e)', () => {
     });
 
   beforeAll(async () => {
-    app = await createTestApp();
+    app = await createTestApp((builder) => builder.overrideProvider(PAYMENT_REFUNDER).useValue(refunder));
     prisma = app.get(PrismaService);
     expiry = app.get(BookingExpiryService);
     const user = await prisma.user.create({
@@ -62,11 +72,26 @@ describe('Vencimientos automáticos (e2e)', () => {
     otherSpaceId = (
       await prisma.space.create({ data: { ownerId: userId, name: `Otra sala ${SUFFIX}`, status: 'INACTIVE' } })
     ).id;
+    // Activo porque RE-04 lo exige para confirmar; todos los días de 09:00 a 21:00.
+    activeSpaceId = (
+      await prisma.space.create({
+        data: {
+          ownerId: userId,
+          name: `Sala activa ${SUFFIX}`,
+          status: 'ACTIVE',
+          rulesWeek: {
+            create: [0, 1, 2, 3, 4, 5, 6].map((weekday) => ({ weekday, startTime: '09:00', endTime: '21:00' })),
+          },
+        },
+      })
+    ).id;
   });
 
   afterAll(async () => {
-    await prisma.booking.deleteMany({ where: { spaceId: { in: [spaceId, otherSpaceId] } } });
-    await prisma.space.deleteMany({ where: { id: { in: [spaceId, otherSpaceId] } } });
+    const spaces = [spaceId, otherSpaceId, activeSpaceId];
+    await prisma.payment.deleteMany({ where: { booking: { spaceId: { in: spaces } } } });
+    await prisma.booking.deleteMany({ where: { spaceId: { in: spaces } } });
+    await prisma.space.deleteMany({ where: { id: { in: spaces } } });
     await prisma.user.delete({ where: { id: userId } });
     await app.close();
   });
@@ -115,6 +140,7 @@ describe('Vencimientos automáticos (e2e)', () => {
     expect(second).toEqual({
       finished: { changed: 0, skipped: 0, failed: 0 },
       expired: { changed: 0, skipped: 0, failed: 0 },
+      stuckPaid: { changed: 0, skipped: 0, failed: 0 },
     });
     expect(await eventsOf(ended)).toHaveLength(1);
     expect(await eventsOf(stale)).toHaveLength(1);
@@ -180,6 +206,107 @@ describe('Vencimientos automáticos (e2e)', () => {
 
       expect(await statusOf(stale)).toBe('PENDING');
       expect(await eventsOf(stale)).toEqual([]);
+    });
+  });
+
+  // RE-04. Las fechas salen de `bookingWeek` con el reloj de este archivo. El evento hacia `PAID` lleva una fecha del
+  // año 2000, así el barrido de este archivo no alcanza las `PAID` de otros e2e, ni el de otros las de este.
+  describe('PAID atascadas', () => {
+    const FUTURE = bookingWeek(1, NOW);
+    const TOTAL = 26400;
+    let day = 0;
+
+    /** Una `PAID` con su pago, y su evento hacia `PAID` hace `paidAgo` ms. */
+    const stuck = async (paidAgo: number, space = activeSpaceId) => {
+      day += 1;
+      const id = await booking('PAID', new Date(FUTURE(day, 10)), { space });
+      await prisma.bookingEvent.create({
+        data: {
+          bookingId: id,
+          fromStatus: 'PENDING',
+          toStatus: 'PAID',
+          actorId: null,
+          createdAt: new Date(NOW.getTime() - paidAgo),
+        },
+      });
+      await prisma.payment.create({
+        data: {
+          bookingId: id,
+          stripeSessionId: `cs_test_${SUFFIX}_${id}`,
+          stripePaymentIntentId: `pi_test_${SUFFIX}_${id}`,
+          amount: TOTAL,
+          status: 'SUCCEEDED',
+        },
+      });
+      return id;
+    };
+    const OVERDUE = STUCK_PAID_AFTER_MS + 1;
+
+    beforeEach(() => {
+      refunder.refundBooking.mockReset();
+      refunder.refundBooking.mockResolvedValue(undefined);
+    });
+
+    it('resuelve la que lleva más de 5 minutos, con el reloj del barrido, y no la más reciente', async () => {
+      const old = await stuck(OVERDUE);
+      const recent = await stuck(STUCK_PAID_AFTER_MS - 60_000);
+
+      const result = await expiry.sweep(NOW);
+
+      expect(await statusOf(old)).toBe('CONFIRMED');
+      expect(await statusOf(recent)).toBe('PAID');
+      expect(await eventsOf(recent)).toHaveLength(1);
+      expect(result.stuckPaid).toEqual({ changed: 1, skipped: 0, failed: 0 });
+      expect(refunder.refundBooking).not.toHaveBeenCalled();
+      expect((await expiry.sweep(NOW)).stuckPaid.changed).toBe(0);
+    });
+
+    it('una que no pasa la validación queda CANCELLED con reembolso del total', async () => {
+      const id = await stuck(OVERDUE, spaceId);
+
+      await expiry.sweep(NOW);
+
+      expect(await statusOf(id)).toBe('CANCELLED');
+      expect((await eventsOf(id)).at(-1)).toEqual({
+        fromStatus: 'PAID',
+        toStatus: 'CANCELLED',
+        actorId: null,
+        reason: SPACE_UNAVAILABLE_REASON,
+      });
+      expect(refunder.refundBooking).toHaveBeenCalledTimes(1);
+      expect(refunder.refundBooking).toHaveBeenCalledWith(id, TOTAL, expect.any(String));
+    });
+
+    it('una que falla no detiene a la siguiente, y el próximo barrido la resuelve', async () => {
+      const ids = [await stuck(OVERDUE), await stuck(OVERDUE)].sort();
+      const confirmation = app.get(BookingConfirmationService);
+      const real = confirmation.confirm.bind(confirmation);
+      const log = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+      // La primera que lee el barrido, que va por id.
+      const spy = jest
+        .spyOn(confirmation, 'confirm')
+        .mockImplementation((id, now) => (id === ids[0] ? Promise.reject(new Error('se cayó la base')) : real(id, now)));
+
+      const result = await expiry.sweep(NOW);
+
+      spy.mockRestore();
+      log.mockRestore();
+      expect(result.stuckPaid).toEqual({ changed: 1, skipped: 0, failed: 1 });
+      expect(await statusOf(ids[0])).toBe('PAID');
+      expect(await statusOf(ids[1])).toBe('CONFIRMED');
+
+      expect((await expiry.sweep(NOW)).stuckPaid).toEqual({ changed: 1, skipped: 0, failed: 0 });
+      expect(await statusOf(ids[0])).toBe('CONFIRMED');
+    });
+
+    it('barridos simultáneos resuelven cada una una sola vez', async () => {
+      const id = await stuck(OVERDUE, spaceId);
+
+      await Promise.all([expiry.sweep(NOW), expiry.sweep(NOW)]);
+
+      expect(await statusOf(id)).toBe('CANCELLED');
+      expect((await eventsOf(id)).filter((event) => event.toStatus === 'CANCELLED')).toHaveLength(1);
+      expect(refunder.refundBooking).toHaveBeenCalledTimes(1);
     });
   });
 

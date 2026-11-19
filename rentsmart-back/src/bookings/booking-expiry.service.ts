@@ -1,10 +1,14 @@
 import { ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { BookingStatus, Prisma } from '../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { BookingConfirmationService } from './booking-confirmation.service';
 import { BookingStateService } from './booking-state.service';
 
 /** Cuántas reservas vencidas se leen por consulta en el barrido. */
 export const SWEEP_BATCH_SIZE = 100;
+
+/** Una `PAID` que lleva más de esto sin resolverse quedó atascada: el webhook no alcanzó a confirmarla (RE-04). */
+export const STUCK_PAID_AFTER_MS = 5 * 60_000;
 
 /** Motivos que quedan en el `BookingEvent` de cada cambio automático (con `actorId` nulo). */
 export const FINISHED_REASON = 'Sistema: terminó el horario de la reserva';
@@ -20,6 +24,8 @@ export interface SweepCount {
 export interface SweepResult {
   finished: SweepCount;
   expired: SweepCount;
+  /** Las `PAID` atascadas: `changed` son las que `confirm` resolvió, a `CONFIRMED` o a `CANCELLED`. */
+  stuckPaid: SweepCount;
 }
 
 /** Una transición automática: desde qué estado, a cuál, cuándo vence y con qué motivo. */
@@ -49,6 +55,10 @@ const EXPIRE: ExpiryRule = {
  * Vencimientos automáticos (RE-06): `CONFIRMED` cuyo horario terminó → `FINISHED`, y `PENDING` cuyo plazo de pago
  * pasó → `EXPIRED`. Cada cambio pasa por `BookingStateService.transition`, condicionado al estado de origen: si el
  * webhook pagó la reserva entre la búsqueda y el cambio, esa reserva se salta y el barrido sigue con las demás.
+ *
+ * También reintenta la validación de las `PAID` atascadas (RE-04): nada más las saca de ahí, porque no se pueden
+ * cancelar, no finalizan y retienen el horario sin plazo. Una `CANCELLED` que no alcanzó a pedir su reembolso por un
+ * corte del proceso **no** la cubre este barrido: ya no está `PAID`, y el barrido de reembolsos no existe.
  */
 @Injectable()
 export class BookingExpiryService {
@@ -57,6 +67,7 @@ export class BookingExpiryService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly state: BookingStateService,
+    private readonly confirmation: BookingConfirmationService,
   ) {}
 
   /**
@@ -66,7 +77,8 @@ export class BookingExpiryService {
   async sweep(now: Date, batchSize = SWEEP_BATCH_SIZE): Promise<SweepResult> {
     const finished = await this.sweepRule(FINISH, now, batchSize);
     const expired = await this.sweepRule(EXPIRE, now, batchSize);
-    return { finished, expired };
+    const stuckPaid = await this.sweepStuckPaid(now, batchSize);
+    return { finished, expired, stuckPaid };
   }
 
   /**
@@ -88,23 +100,48 @@ export class BookingExpiryService {
     return count;
   }
 
-  private async sweepRule(rule: ExpiryRule, now: Date, batchSize: number): Promise<SweepCount> {
+  private sweepRule(rule: ExpiryRule, now: Date, batchSize: number): Promise<SweepCount> {
+    return this.sweepBatches(
+      { status: rule.from, ...rule.due(now) },
+      batchSize,
+      (id) => this.apply(rule, id),
+      (id) => `No se pudo pasar la reserva ${id} a ${rule.to}`,
+    );
+  }
+
+  /** Las `PAID` cuyo evento hacia `PAID` tiene más de `STUCK_PAID_AFTER_MS`. Las resuelve la misma validación del webhook. */
+  private sweepStuckPaid(now: Date, batchSize: number): Promise<SweepCount> {
+    const cutoff = new Date(now.getTime() - STUCK_PAID_AFTER_MS);
+    return this.sweepBatches(
+      { status: BookingStatus.PAID, events: { some: { toStatus: BookingStatus.PAID, createdAt: { lt: cutoff } } } },
+      batchSize,
+      async (id) => ((await this.confirmation.confirm(id, now)) === 'skipped' ? 'skipped' : 'changed'),
+      (id) => `No se pudo validar la reserva pagada ${id}`,
+    );
+  }
+
+  private async sweepBatches(
+    where: Prisma.BookingWhereInput,
+    batchSize: number,
+    process: (id: string) => Promise<'changed' | 'skipped'>,
+    failure: (id: string) => string,
+  ): Promise<SweepCount> {
     const count = emptyCount();
     // Se avanza por id (keyset): una reserva que falla queda atrás y no se vuelve a leer en este barrido.
     let after: string | undefined;
     for (;;) {
       const batch = await this.prisma.booking.findMany({
-        where: { status: rule.from, ...rule.due(now), ...(after ? { id: { gt: after } } : {}) },
+        where: { ...where, ...(after ? { id: { gt: after } } : {}) },
         select: { id: true },
         orderBy: { id: 'asc' },
         take: batchSize,
       });
       for (const { id } of batch) {
         try {
-          count[await this.apply(rule, id)] += 1;
+          count[await process(id)] += 1;
         } catch (error) {
           count.failed += 1;
-          this.logger.error(`No se pudo pasar la reserva ${id} a ${rule.to}`, error instanceof Error ? error.stack : error);
+          this.logger.error(failure(id), error instanceof Error ? error.stack : error);
         }
       }
       if (batch.length < batchSize) return count;
