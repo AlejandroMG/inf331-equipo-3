@@ -3406,3 +3406,76 @@ Mostrar en el detalle del espacio una vista semanal con los bloques libres y los
 - C (@gonzzza-lol): toqué `BookingWidget.tsx` (prop opcional `preselection`, sin cambiar lo demás) y `SpaceDetailPage.tsx`. Revisa que la prop te parezca bien.
 
 ---
+
+### 2026-11-02 · C (@gonzzza-lol) · RE-04: confirmar automáticamente una reserva pagada
+
+**Issues:** #41 (RE-04), #73 (P-06)
+**Rama / PR:** `feature/RE-04-confirmar-reserva` · sin PR todavía. **Se apila sobre PA-02 y PA-03:** parte de la rama local `feature/PA-02-webhook-stripe`, que todavía no está en `develop`, así que su PR se abre o se actualiza después de que esas dos entren.
+**Duración aproximada:** 2 h
+**Herramientas:** Claude Code
+
+#### Objetivo
+Que una reserva pagada salga sola de `PAID`: a `CONFIRMED` si el espacio sigue activo y el horario libre, o a `CANCELLED` con reembolso del total. Resuelve también las `PAID` atascadas que PA-02 dejó como requisito.
+
+#### Qué se hizo
+- `BookingConfirmationService.confirm(bookingId, now?)` deja de estar vacío. Lee la reserva; en una transacción toma `lockSpaceForBooking`, vuelve a leer, revisa el espacio, `endAt` y el traslape con otra reserva (`AvailabilityService.hasOverlap`, nueva, con la misma regla de la disponibilidad), y hace la transición con `actorId` nulo. Si canceló, después del COMMIT reembolsa con `PAYMENT_REFUNDER`. Devuelve `'confirmed'`, `'cancelled'` o `'skipped'`.
+- `BookingExpiryService.sweep` reintenta `confirm` en las `PAID` cuyo evento hacia `PAID` tiene más de 5 minutos, y suma `stuckPaid` al resultado. `sweepRule` y este barrido comparten `sweepBatches`. `BookingExpiryScheduler` lo informa en el log.
+- `BookingPage`: con `?pago=ok` y la reserva `CANCELLED`, avisa que no se pudo confirmar y que se reembolsa el total, y solo dice que ya se devolvió si `refundedAmount > 0`. El sondeo ya se detenía en `CONFIRMED` y `CANCELLED`, y el detalle de la dirección ya se mostraba con lo que entrega la API: se agregaron los tests.
+- Mock de MSW: `failMockConfirmation(id)` lleva una reserva de `PAID` a `CANCELLED` con el total devuelto.
+- `test/payments-webhook.e2e-spec.ts`: `confirm` queda apagado en ese archivo, que prueba el webhook hasta `PAID`. La validación real se prueba en el nuevo `test/booking-confirmation.e2e-spec.ts`.
+- Docs: `decisiones.md` (enmienda a P-06), `arquitectura.md` (sección de RE-04, barrido, flujo de pago, webhook), `.env.example`, Swagger del webhook.
+
+#### Decisiones y por qué
+| Decisión | Alternativas consideradas | Por qué se eligió |
+|---|---|---|
+| Al confirmar se revisa solo el traslape, no el horario semanal ([enmienda a P-06](decisiones.md#enmienda-del-02-11-2026-horario-libre-es-sin-traslape)) | `isAvailable`, que también revisa el horario | Decisión de C en la revisión: reemplaza lo que pedía el brief. El horario semanal solo afecta a reservas nuevas |
+| Transacción de 20 s en `confirm` | Los 5 s por defecto de Prisma | `BookingsService.create` retiene el mismo lock hasta 15 s mientras llama a Stripe. Con 5 s, un solo `create` del mismo espacio podía hacer fallar `confirm`. Una cola mayor igual la hace fallar: sigue `PAID` y la resuelve el barrido |
+| El monto del reembolso se lee bajo el lock, junto con la reserva | Leer el pago después del COMMIT | Una lectura que falla después del COMMIT dejaría la reserva `CANCELLED` sin reembolso y con un error que `confirm` no debe propagar |
+| `confirm` devuelve un resultado | Seguir con `Promise<void>` y contar todo como cambiado | El barrido cuenta `changed` y `skipped` igual que las otras reglas. El webhook lo ignora |
+| Una violación de `booking_no_overlap` deja la reserva `PAID`, con `logger.error`, sin lanzar y sin cancelar | Cancelar y reembolsar | No debería ocurrir: la fila `PAID` ya cumple la restricción. Si pasa, el barrido la reintenta; devolver dinero por una inferencia sobre algo imposible es peor |
+| El barrido exige más de 5 minutos (`lt`), y una `PAID` sin evento no se toca | `lte`; buscar por `updatedAt` | «Más de 5 minutos», como pide la decisión de C. `transition` siempre deja el evento, así que toda `PAID` real lo tiene |
+| El e2e del barrido va en `booking-expiry.e2e-spec.ts`, con el reloj del año 2000 | Un archivo nuevo con el reloj real | Los e2e corren en paralelo: un `sweep` con la hora real finalizaría las reservas del año 2000 de ese archivo. Este archivo ya aísla su reloj, y los eventos antiguos de sus `PAID` solo los alcanza su propio barrido |
+| El aviso de `CANCELLED` se muestra con `?pago=ok` también en la primera carga | Solo si el sondeo vio el cambio | El webhook suele ganarle a la redirección de Stripe, y entonces la primera carga ya la trae `CANCELLED` |
+
+#### Archivos principales
+- `rentsmart-back/src/bookings/booking-confirmation.service.ts` (+ `.spec.ts` nuevo): la validación.
+- `rentsmart-back/src/bookings/booking-expiry.service.ts`, `booking-expiry.scheduler.ts` y sus specs: el barrido.
+- `rentsmart-back/test/booking-confirmation.e2e-spec.ts` (nuevo), `booking-expiry.e2e-spec.ts`, `payments-webhook.e2e-spec.ts`.
+- `rentsmart-back/src/availability/availability.service.ts`: `hasOverlap`. `rentsmart-back/src/payments/payments.controller.ts` (Swagger), `bookings.module.ts` (comentario).
+- `docs/decisiones.md`: enmienda a P-06.
+- `rentsmart-front/src/features/bookings/BookingPage.tsx` (+ test), `useConfirmationPolling.ts` (comentario); `src/mocks/bookings-handlers.ts` (+ test).
+- `docs/arquitectura.md`, `.env.example`.
+
+#### Cómo probarlo
+- Back: `npm test -- src/bookings/booking-confirmation src/bookings/booking-expiry` y `npm run test:e2e -- booking-confirmation booking-expiry payments-webhook`, con `DATABASE_TEST_URL` a una base de test. Ningún test llama a Stripe.
+- Front: `npm test -- --run src/features/bookings/BookingPage src/mocks/bookings-handlers`.
+- A mano, en modo test: `stripe listen --forward-to localhost:3000/api/payments/webhook`, reservar y pagar con `4242 4242 4242 4242`; la reserva debe quedar `CONFIRMED`. **Esta prueba con Stripe real no se hizo en esta sesión.**
+
+#### Estado de verificación
+- Build: ✅ back y front.
+- Lint: ✅ back y front.
+- Tests: ✅ back, unitarias 38 suites y 748 tests; e2e 33 suites y 608 tests. ✅ front, Vitest 56 archivos y 741 tests; Playwright 3 de 3.
+- 375 px y escritorio: revisado en Chromium con el mock real, a 375 y 1280 px, en `CONFIRMED` y en `CANCELLED`, sin scroll horizontal. El aviso con `refundedAmount` en 0 tiene un largo parecido y no se miró en pantalla.
+- `npx tsc --noEmit` marca un error en `src/spaces/spaces.service.spec.ts`, un archivo de B que no se tocó. `npm run build` no incluye los specs y pasa.
+- **No probado contra Stripe de verdad:** todo usa dobles.
+
+#### Pendientes y bloqueos
+- **Resuelve lo que PA-02 pedía a RE-04:** toda reserva pagada sale de `PAID`, y las atascadas las reintenta el barrido, incluidas las que existan al desplegar.
+- **Un corte del proceso entre el COMMIT y el reembolso deja una `CANCELLED` sin devolver y sin log.** No la repara ni el reenvío del evento (hay un evento hacia `PAID`) ni este barrido (ya no está `PAID`). Tampoco se reintenta un reembolso que falla: mismo tratamiento que PA-03, log y reparación manual. El barrido de reembolsos no es de esta historia.
+- **Si `confirm` falla, Stripe no reenvía solo,** porque el webhook responde 200. El reintento automático es el barrido, y con `BOOKING_SWEEP_ENABLED=false` no hay ninguno; un reenvío manual desde el dashboard también sirve.
+- **Riesgo conocido:** una `PAID` atascada a la que le queda poco tiempo igual se confirma.
+- `allowStarted` y `excludeBookingId` de `isAvailable` se hicieron para RE-04 y hoy ningún código de producción los pasa. No se quitaron en esta historia.
+- **El aviso de `?pago=ok` supone que corresponde devolver el total.** Es falso si alguien vuelve a esa misma URL de una reserva que él canceló con menos de 24 horas. Hoy no se llega desde el front, porque `CancelBookingDialog` no está montado; **quien lo monte debe revisarlo**, porque la URL conserva `?pago=ok`.
+- **`BookingEvent` no se ve en ninguna pantalla:** la API no lo expone, ni en la reserva ni en el panel. «Avisar a ambas partes» hoy es el estado. Los emails son de RE-07.
+- El issue #41 hay que cerrarlo a mano al mergear a `develop` (T-05).
+- El PR pasa de las 400 líneas, sobre todo por los tests.
+
+#### Para el resto del equipo
+- Nada cambia en `schema.prisma`, las migraciones ni la máquina de estados. No hay variables de entorno nuevas.
+- **B:** no se tocó su módulo. `/owner/bookings` muestra `CONFIRMED` con su etiqueta y el contacto. Se comprobó tu aviso de #41: `subtotal` se guarda sin comisión, y `OwnerMetricsService` cuenta `CONFIRMED` y `FINISHED` como ingreso. Un e2e lee el panel con una reserva confirmada.
+- **A:** no se tocó su módulo.
+- `SweepResult` suma `stuckPaid`: quien arme uno en un test debe incluirlo.
+- Un e2e que use el webhook verá la reserva `CONFIRMED`, no `PAID`, si el espacio está `ACTIVE`. Para quedarse en `PAID`, apaga `confirm` con un `jest.spyOn` como `payments-webhook.e2e-spec.ts`.
+- `BookingExpiryService` ahora depende de `BookingConfirmationService`. No hay ciclo, porque la confirmación no conoce el barrido.
+
+---

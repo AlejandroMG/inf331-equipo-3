@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Availability, Booking, BookingCheckout, BookingsPage, PaymentsPage, Schedule } from '../features/bookings/types'
 import { http } from '../lib/http'
 import { clearToken, setToken } from '../lib/token'
+import { failMockConfirmation } from './bookings-handlers'
 
 // F-05: el contrato de disponibilidad, reservas y pagos, simulado con MSW. El cliente real llama a la API y
 // recibe las respuestas de bookings-handlers.ts sin que exista el back.
@@ -181,6 +182,22 @@ describe('reservas simuladas', () => {
 
     expect(seen.map((item) => item.status)).toEqual(['PENDING', 'PAID', 'CONFIRMED', 'CONFIRMED'])
     expect(seen.map((item) => item.space.addressDetail)).toEqual([null, null, expect.any(String), expect.any(String)])
+  })
+
+  it('si no pasa la validación automática (RE-04) termina CANCELLED, con el total devuelto y sin detalle de la dirección', async () => {
+    const { bookingId } = await book()
+    failMockConfirmation(bookingId)
+
+    const seen = [await booking(bookingId), await booking(bookingId), await booking(bookingId), await booking(bookingId)]
+
+    expect(seen.map((item) => item.status)).toEqual(['PENDING', 'PAID', 'CANCELLED', 'CANCELLED'])
+    expect(seen.map((item) => item.refundedAmount)).toEqual([0, 0, 26400, 26400])
+    expect(seen.map((item) => item.space.addressDetail)).toEqual([null, null, null, null])
+    const { items } = await http.get<PaymentsPage>('/payments/me')
+    expect(items[0]).toMatchObject({ bookingId, refundedAmount: 26400, status: 'REFUNDED' })
+    // Una cancelada ya no ocupa el horario.
+    const { days } = await availability('2026-10-12', '2026-10-12')
+    expect(days[0].slots.map((slot) => slot.startAt)).toContain(MONDAY_10_TO_12.startAt)
   })
 
   it('lista mis reservas paginadas, la más reciente primero, y "me" no se toma por un id', async () => {

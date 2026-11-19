@@ -13,7 +13,7 @@ const AWAITING: BookingStatus[] = ['PENDING', 'PAID']
 /**
  * Después de pagar, Stripe devuelve a `/bookings/<id>?pago=ok` antes de que el webhook confirme la reserva (PA-02,
  * RE-04). Si `enabled`, consulta la reserva cada `POLL_INTERVAL_MS`, hasta `POLL_MAX_ATTEMPTS` veces, mientras siga
- * `PENDING` o `PAID`; se detiene al ver `CONFIRMED` u otro estado final. Cada consulta se programa al terminar la
+ * `PENDING` o `PAID`; se detiene al ver `CONFIRMED`, `CANCELLED` u otro estado final. Cada consulta se programa al terminar la
  * anterior, así nunca hay dos a la vez, y el temporizador y la petición en curso se cancelan al desmontar.
  *
  * Devuelve la reserva más reciente, si sigue consultando (`polling`) y si se agotaron los intentos (`exhausted`).
