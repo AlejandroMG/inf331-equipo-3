@@ -1,0 +1,68 @@
+# Producción en una sola VM (QA-03, P-17): PostgreSQL, la API y Caddy (SPA + proxy + HTTPS).
+# Uso, desde la raíz del repo y con .env.prod completo (ver .env.prod.example):
+#   docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
+# Para desarrollo sigue usándose docker-compose.yml (solo las bases de datos).
+name: rentsmart-prod
+
+services:
+  db:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: rentsmart
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Falta POSTGRES_PASSWORD en .env.prod}
+      POSTGRES_DB: rentsmart
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rentsmart -d rentsmart"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  back:
+    build: ./rentsmart-back
+    restart: unless-stopped
+    env_file: .env.prod
+    environment:
+      DATABASE_URL: postgresql://rentsmart:${POSTGRES_PASSWORD}@db:5432/rentsmart
+      FRONTEND_URL: ${PUBLIC_URL:?Falta PUBLIC_URL en .env.prod}
+      STORAGE_DRIVER: ${STORAGE_DRIVER:-local}
+      UPLOADS_DIR: /app/uploads
+    volumes:
+      - uploads:/app/uploads
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS 'http://localhost:3000/api/catalog?page=1&pageSize=1' > /dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+
+  web:
+    build:
+      context: ./rentsmart-front
+      args:
+        VITE_API_URL: ${PUBLIC_URL}
+    restart: unless-stopped
+    environment:
+      PUBLIC_URL: ${PUBLIC_URL}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      back:
+        condition: service_healthy
+
+volumes:
+  db-data:
+  uploads:
+  caddy-data:
+  caddy-config:
