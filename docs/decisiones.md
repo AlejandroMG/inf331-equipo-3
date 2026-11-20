@@ -20,6 +20,7 @@ Cada decisión del producto tiene un ID `P-xx` que coincide con su issue en GitH
 | [P-13](#p-13--comisión-del-10--sumada-al-arrendatario) | Comisión del 10 % sumada al arrendatario | Decidida | 27-10-2026 |
 | [P-14](#p-14--cancelación-gratis-hasta-24-horas-antes) | Cancelación gratis hasta 24 horas antes | Decidida | 08-10-2026 |
 | [P-15](https://github.com/AlejandroMG/inf331-equipo-3/issues/82) | Gemini como proveedor| Parcial | 16-11-2026 |
+| [P-17](#p-17--despliegue-en-una-vm-de-azure-con-docker-compose) | Despliegue en una VM de Azure con docker compose | Decidida | 19-11-2026 |
 | [P-18](#p-18--tipo-y-comuna-también-son-obligatorios-para-publicar) | Tipo y comuna también son obligatorios para publicar | Decidida | 05-10-2026 |
 | [P-19](#p-19--ubicación-en-el-mapa-el-propietario-marca-el-punto-y-el-público-ve-una-zona-aproximada) | Ubicación en el mapa con zona aproximada | Decidida | 06-10-2026 |
 | [P-20](#p-20--un-espacio-con-reservas-no-se-elimina-se-desactiva) | Un espacio con reservas no se elimina, se desactiva | Decidida | 07-10-2026 |
@@ -177,6 +178,14 @@ Decisiones abiertas: ver [al final](#decisiones-abiertas).
 - **Alternativas descartadas:** acoplar la lógica de negocio al SDK de un único proveedor; `AiProvider` aísla el proveedor y permite sustituirlo.
 - **Consecuencias:** la clave se configura como `AI_API_KEY` solo en el backend. `AI_PROVIDER=mock` mantiene local y CI sin llamadas externas. La cuota se guarda en PostgreSQL.
 
+## P-17 · Despliegue en una VM de Azure con docker compose
+
+- **Estado:** Decidida, 19-11-2026 (C) · Issue [#84](https://github.com/AlejandroMG/inf331-equipo-3/issues/84) · Implementa QA-03 ([#66](https://github.com/AlejandroMG/inf331-equipo-3/issues/66))
+- **Contexto:** la API necesita un proceso siempre encendido (el barrido de vencimientos de RE-06 corre cada minuto), una URL pública con HTTPS para el webhook de Stripe y un lugar persistente para las fotos. El front es una SPA con rutas reales (`createBrowserRouter`) que fija `VITE_API_URL` al compilar. Se necesita la app desplegada por un día para la demo, con créditos de Azure for Students.
+- **Decisión:** una sola VM Linux x64 en Azure (por ejemplo B2als v2, 2 vCPU y 4 GB) con `docker-compose.prod.yml`: PostgreSQL, la API y Caddy, que sirve la SPA, reenvía `/api` y `/docs` a la API y saca el certificado HTTPS de Let's Encrypt para el nombre DNS gratuito de la IP de Azure (`<nombre>.<región>.cloudapp.azure.com`). Front y API comparten origen. El workflow `deploy.yml` despliega por SSH en cada push a `main` y a mano desde Actions.
+- **Alternativas descartadas:** Vercel + Render + Neon (la recomendación original: el plan gratuito de Render duerme el proceso y con él el barrido y el webhook); front en GitHub Pages (no tiene rewrites para las rutas del SPA y obliga a servir bajo `/inf331-equipo-3/`); VM para la API y Vercel para el front (dos proveedores, dos pipelines y CORS sin ganar nada para una demo).
+- **Consecuencias:** sin CORS entre front y API y un solo pipeline. Las fotos quedan por defecto en un volumen de la VM (`STORAGE_DRIVER=local`); P-10 sigue en pie y Supabase se activa con sus variables en `.env.prod`. Los secretos viven solo en el `.env.prod` de la VM y en los secretos de Actions (`DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_SSH_KEY`, que crea un admin). La VM se borra al terminar la demo: borrar su grupo de recursos elimina la BD con ella.
+
 ## P-18 · Tipo y comuna también son obligatorios para publicar
 
 - **Estado:** Decidida, 05-10-2026 · Sin issue todavía
@@ -242,7 +251,6 @@ Decisiones abiertas: ver [al final](#decisiones-abiertas).
 |---|---|---|---|
 | [P-12](https://github.com/AlejandroMG/inf331-equipo-3/issues/79) | ¿Stripe con o sin Connect? | Checkout en modo test, sin Connect; la plataforma cobra el total y registra la comisión | 3 de octubre (PA-01) |
 | [P-15](https://github.com/AlejandroMG/inf331-equipo-3/issues/82) | ¿Quién paga el consumo de la API de Gemini? | Usar créditos educativos si están disponibles; no configurar una clave compartida hasta acordarlo | Antes de habilitar IA-02 |
-| [P-17](https://github.com/AlejandroMG/inf331-equipo-3/issues/84) | ¿Dónde desplegamos? | Vercel (front), Render o Railway (back), Neon o Supabase (BD) | 3 de octubre (QA-03) |
 | [P-16](https://github.com/AlejandroMG/inf331-equipo-3/issues/83) | ¿Reseñas en una o ambas direcciones? | Solo al espacio en el MVP | Después del 9 de octubre |
 
 ## Plantilla para una decisión nueva

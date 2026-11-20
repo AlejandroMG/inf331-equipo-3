@@ -1,0 +1,23 @@
+# Caddy de producción (QA-03). Sirve la SPA y reenvía la API al contenedor "back".
+# PUBLIC_URL viene de .env.prod. Con https://<dominio> Caddy saca solo el certificado de Let's Encrypt
+# (necesita los puertos 80 y 443 abiertos); con http://localhost sirve sin HTTPS, para probar en local.
+{$PUBLIC_URL} {
+	encode zstd gzip
+
+	# API, fotos del almacenamiento local (/api/uploads) y webhook de Stripe.
+	handle /api/* {
+		reverse_proxy back:3000
+	}
+
+	# Swagger.
+	handle /docs* {
+		reverse_proxy back:3000
+	}
+
+	# La SPA usa rutas reales (createBrowserRouter): cualquier ruta que no sea un archivo devuelve index.html.
+	handle {
+		root * /srv
+		try_files {path} /index.html
+		file_server
+	}
+}

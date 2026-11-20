@@ -621,6 +621,27 @@ Solo `PORT`, `VITE_API_URL` y `VITE_USE_MOCKS` existen hoy. Las demás se agrega
 | `AI_PROVIDER` | back | `mock` por defecto o `gemini` para habilitar el proveedor real | IA-01 |
 | `AI_API_KEY`, `AI_MODEL` | back | Clave de Gemini (obligatoria con `AI_PROVIDER=gemini`) y modelo (por defecto `gemini-2.5-flash`) | IA-01 |
 | `AI_TIMEOUT_MS`, `AI_MAX_USES_PER_24H` | back | Timeout del proveedor (15 000 ms) y cuota por usuario (15 intentos en 24 h); cada publicación permite 5 generaciones | IA-01 |
+| `PUBLIC_URL` | producción | Solo en `.env.prod` ([`.env.prod.example`](../.env.prod.example)). URL pública sin `/` final: dirección del sitio en Caddy, `FRONTEND_URL` de la API y `VITE_API_URL` con que se compila el front | QA-03 |
+| `POSTGRES_PASSWORD` | producción | Solo en `.env.prod`. Contraseña de PostgreSQL en `docker-compose.prod.yml`, que arma `DATABASE_URL` con ella | QA-03 |
+
+## Despliegue (QA-03)
+
+Decidido en [P-17](decisiones.md#p-17--despliegue-en-una-vm-de-azure-con-docker-compose): una VM con `docker-compose.prod.yml`.
+
+```mermaid
+flowchart LR
+  user[Navegador] -->|HTTPS 443| caddy[web: Caddy<br/>SPA + proxy + certificado]
+  stripe[Stripe] -->|webhook| caddy
+  caddy -->|/api, /docs| back[back: NestJS<br/>migrate deploy al arrancar]
+  back --> db[(db: PostgreSQL 17)]
+  back --> uploads[(volumen uploads)]
+```
+
+- **`web`:** imagen de `rentsmart-front/Dockerfile`, que compila la SPA con `VITE_API_URL=PUBLIC_URL` y la sirve con Caddy según [`deploy/Caddyfile`](../deploy/Caddyfile). Cualquier ruta que no sea un archivo devuelve `index.html`.
+- **`back`:** imagen de `rentsmart-back/Dockerfile`. Aplica las migraciones pendientes antes de arrancar y queda sana cuando `/api/catalog` responde. El seed se carga a mano una vez (`docker compose ... exec back npm run seed`).
+- **`db`:** sin puerto publicado; solo la ve `back`.
+- **CD:** [`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml) entra por SSH a la VM, cambia el código a la rama que se despliega (`main` en cada push, o la elegida en *Run workflow*), reconstruye con `up -d --build --wait` y comprueba que `https://<DEPLOY_HOST>/api/catalog` responda. Sin los secretos `DEPLOY_*` termina sin hacer nada.
+- Paso a paso para crear la VM: [README](../README.md#desplegar-en-azure).
 
 ## Pruebas
 

@@ -79,6 +79,43 @@ Líder de equipo: Renato Ramírez ([@xReNatS](https://github.com/xReNatS)).
    npm run dev
    ```
 
+## Desplegar en Azure
+
+Una VM con PostgreSQL, la API y Caddy (SPA, proxy y HTTPS) en `docker-compose.prod.yml` ([P-17](docs/decisiones.md#p-17--despliegue-en-una-vm-de-azure-con-docker-compose), detalle en [arquitectura](docs/arquitectura.md#despliegue-qa-03)).
+
+1. **Crear la VM** en [portal.azure.com](https://portal.azure.com) (*Create a resource → Virtual machine*):
+   - grupo de recursos nuevo (por ejemplo `rg-rentsmart`), para borrar todo junto al terminar;
+   - imagen Ubuntu Server 24.04 LTS **x64** y tamaño B2als v2 o B2s (2 vCPU, 4 GB);
+   - autenticación con clave SSH (descarga el `.pem`) y usuario `azureuser`;
+   - puertos de entrada SSH (22), HTTP (80) y HTTPS (443).
+
+   Ya creada, en su **IP pública → Configuration** ponle un *DNS name label*: queda el dominio `<nombre>.<región>.cloudapp.azure.com`.
+2. **Instalar Docker** en la VM siguiendo [Install Docker Engine on Ubuntu](https://docs.docker.com/engine/install/ubuntu/) y agrega tu usuario al grupo `docker` (`sudo usermod -aG docker $USER`, y vuelve a entrar).
+3. **Clonar y configurar:**
+
+   ```bash
+   git clone https://github.com/AlejandroMG/inf331-equipo-3.git ~/inf331-equipo-3
+   cd ~/inf331-equipo-3
+   cp .env.prod.example .env.prod
+   nano .env.prod
+   ```
+
+   Completa `PUBLIC_URL` (`https://<dominio>`), `POSTGRES_PASSWORD` y `JWT_SECRET` (`openssl rand -hex 32` sirve para ambos).
+4. **Levantar y cargar los datos de prueba:**
+
+   ```bash
+   docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build --wait
+   ```
+
+   ```bash
+   docker compose -f docker-compose.prod.yml --env-file .env.prod exec back npm run seed
+   ```
+
+   Abre `https://<dominio>`: Caddy saca el certificado en el primer acceso.
+5. **Stripe (opcional):** en el dashboard, en modo test, *Developers → Webhooks → Add endpoint* con la URL `https://<dominio>/api/payments/webhook` y los eventos `checkout.session.completed` y `checkout.session.expired`. Pon su `whsec_…` y tu `sk_test_…` en `.env.prod` y repite el `up` del paso 4.
+6. **CD (opcional):** un admin del repo crea los secretos de Actions `DEPLOY_HOST` (el dominio), `DEPLOY_USER` (`azureuser`) y `DEPLOY_SSH_KEY` (el contenido del `.pem`). Desde ahí, cada push a `main` despliega, y *Actions → Deploy → Run workflow* despliega la rama que elijas.
+7. **Al terminar**, borra el grupo de recursos en el portal: se van la VM, el disco (con la BD) y la IP.
+
 ## Scripts útiles
 
 | Dónde | Comando | Qué hace |

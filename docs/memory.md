@@ -3715,3 +3715,53 @@ Dejar `develop` con todos los PRs de la Entrega 3 y comprobar que las pruebas de
 - `develop` ya trae la IA (#148): publicar con una descripción generada exige confirmar su revisión; con descripción manual no cambia nada.
 
 ---
+
+### 2026-11-19 · C (gonzzza-lol) · Despliegue en una VM de Azure (QA-03, P-17)
+
+**Issues:** #66 (QA-03), #84 (P-17)
+**Rama / PR:** `feature/QA-03-despliegue-azure` · sin PR todavía
+**Duración aproximada:** 1,5 h
+**Herramientas:** Claude Code
+
+#### Objetivo
+Tener la app desplegada en Azure para la demo de mañana y un flujo de CD que despliegue al mergear a `main`.
+
+#### Qué se hizo
+- Dockerfiles de producción: la API (compila, genera Prisma y aplica `migrate deploy` al arrancar) y el front (compila la SPA y la sirve con Caddy). Reemplazan a los de desarrollo que quedaron sin publicar en `feature/docker-compose-dev`.
+- `docker-compose.prod.yml` con PostgreSQL, la API y Caddy; `deploy/Caddyfile` (SPA con fallback a `index.html`, proxy de `/api` y `/docs`, HTTPS automático); `.env.prod.example`, y `.env.prod` en `.gitignore`.
+- `.github/workflows/deploy.yml`: por SSH, `git checkout` de la rama y `up -d --build --wait`, con smoke test de `/api/catalog`. Corre en cada push a `main` y a mano; sin los secretos `DEPLOY_*` termina sin hacer nada.
+- Registré P-17 en `decisiones.md`, la sección «Despliegue» en `arquitectura.md` y el paso a paso en el README.
+
+#### Decisiones y por qué
+| Decisión | Alternativas consideradas | Por qué se eligió |
+|---|---|---|
+| Una VM de Azure for Students con todo (P-17) | Vercel + Render + Neon; front en Vercel o GitHub Pages | El barrido de vencimientos y el webhook necesitan un proceso siempre encendido; un solo origen evita CORS y un segundo pipeline |
+| Caddy como servidor del front | nginx | Saca y renueva el certificado HTTPS solo, con una config de pocas líneas |
+| Construir las imágenes en la VM | Construirlas en Actions y subirlas a GHCR | Para una demo de un día es más simple y la VM de 4 GB lo aguanta |
+| Imagen del back con dependencias de desarrollo | Imagen multietapa solo con producción | `prisma migrate deploy` y el seed (`tsx`) usan devDependencies |
+
+#### Archivos principales
+- `rentsmart-back/Dockerfile`, `rentsmart-front/Dockerfile` y sus `.dockerignore`.
+- `docker-compose.prod.yml`, `deploy/Caddyfile`, `.env.prod.example`, `.gitignore`.
+- `.github/workflows/deploy.yml`.
+- `docs/decisiones.md`, `docs/arquitectura.md`, `README.md`.
+
+#### Cómo probarlo
+- En local: crear `.env.prod` con `PUBLIC_URL=http://localhost`, `POSTGRES_PASSWORD` y `JWT_SECRET`, y correr `docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build --wait`; después el seed y abrir http://localhost.
+- En Azure: sección «Desplegar en Azure» del README.
+
+#### Estado de verificación
+- Stack de producción en local: ✅ los tres contenedores quedan sanos, se aplican las 8 migraciones, carga el seed, y a través de Caddy responden la portada, una ruta del SPA, la API, Swagger, las fotos y el login; la portada se ve con datos en el navegador.
+- En Azure, con HTTPS real y el workflow `deploy.yml`: ❌ no probado todavía.
+- Build, lint y tests de las apps: no aplica, no cambia código.
+
+#### Pendientes y bloqueos
+- Crear la VM y probar el despliegue real; los secretos `DEPLOY_HOST`, `DEPLOY_USER` y `DEPLOY_SSH_KEY` los crea un admin (A).
+- Cerrar #84 con un comentario que apunte a P-17.
+- `feature/docker-compose-dev` queda obsoleta frente a estos Dockerfiles.
+
+#### Para el resto del equipo
+- @AlejandroMG: QA-03 (#66) estaba asignada a ti; la tomé para la demo. Revisa P-17.
+- Borrar el grupo de recursos de Azure borra la BD de la demo.
+
+---
