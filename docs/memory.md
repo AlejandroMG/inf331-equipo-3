@@ -3715,3 +3715,50 @@ Dejar `develop` con todos los PRs de la Entrega 3 y comprobar que las pruebas de
 - `develop` ya trae la IA (#148): publicar con una descripción generada exige confirmar su revisión; con descripción manual no cambia nada.
 
 ---
+
+### 2026-11-19 · B (xReNatS) · Entrega 3: observaciones de las rúbricas E1 y E2
+
+**Issues:** #153 (QA-08)
+**Rama / PR:** `feature/QA-08-documentacion-entrega-3` · sin PR todavía
+**Duración aproximada:** 2 h
+**Herramientas:** Claude Code
+
+#### Objetivo
+Corregir lo que el profesor observó en las rúbricas de las entregas 1 y 2, y lo que pidió explícitamente para la 3: empaquetado en el pipeline, reportes de pruebas publicados, notificaciones con evidencia y documentación al día.
+
+#### Qué se hizo
+- `ci.yml`: job «Empaquetar» (solo si pasan todas las pruebas; paquetes del back y del front con manifiesto, artefacto de 30 días) y el JUnit de Selenium publicado como el check «Reporte E2E (Selenium)» con `dorny/test-reporter`. `notify` ahora espera también al empaquetado.
+- README: badges del CI, estado de la Entrega 3 (antes decía Entrega 1), videos de las entregas 1 y 2, releases y cifras de pruebas y cobertura de las tres entregas.
+- CHANGELOG: entradas v2 (con la corrección de las notas del release, que decían que los reembolsos quedaban para después) y v3.
+- `docs/entrega-3.md`: sección «Qué corregimos desde las entregas 1 y 2», con cada observación de las rúbricas, lo hecho y dónde verlo; capturas de Discord de una ejecución en verde y una en rojo, enlace al milestone como tablero Kanban, comparación GitHub Actions frente a Jenkins, tabla de etapas del pipeline, empaquetado, notificaciones con la integración nativa de GitHub con Discord y su captura, problemas con cómo se detectaron y cómo se arreglaron, y una sección de metodología.
+- Wiki (sin publicar todavía): enlaces a los videos que seguían como `PENDIENTE_LINK_VIDEO`, Entrega 2 sin «(pendiente)» y la página Entrega 3 al día.
+
+#### Decisiones y por qué
+| Decisión | Alternativas consideradas | Por qué se eligió |
+|---|---|---|
+| Empaquetar sin desplegar | Desplegar a un servicio gratuito | No hay ambiente definido (P-17) y un deploy de back con base de datos no cabe en un día; los paquetes dejan listo el paso siguiente |
+| Paquete del back sin `node_modules` | Incluir las dependencias | El paquete pesa 331 KB en vez de cientos de MB; en el servidor se instala con `npm ci --omit=dev` |
+| `dorny/test-reporter` para el check | Solo el resumen de la ejecución | El profesor pidió reportes publicados; el check muestra cada prueba en el PR sin descargar artefactos |
+| Mantener `notify` como opcional | Quitarlo | La integración nativa ya avisa por job; `notify` suma un mensaje con el resultado global si se configura el secreto |
+
+#### Archivos principales
+- `.github/workflows/ci.yml` (**archivo de C, dueño del CI**).
+- `README.md`, `CHANGELOG.md`, `docs/entrega-3.md`, `docs/plan-de-pruebas.md`, `docs/arquitectura.md` y `docs/images/entrega-3/discord-pipeline-verde.png`.
+
+#### Cómo probarlo
+- El CI del PR muestra los jobs «Empaquetar» y el check «Reporte E2E (Selenium)»; el artefacto `rentsmart-paquetes` trae los dos `.tar.gz` y el manifiesto.
+
+#### Estado de verificación
+- Build, lint y tests: no aplica (no cambia código de la app). El YAML se validó con `js-yaml` y el armado de los paquetes se probó en local.
+- El job nuevo y el check se verifican en el primer CI del PR.
+
+#### Pendientes y bloqueos
+- `develop` quedó protegida por A el 19 de noviembre (ruleset «Protect main and Develop»: PR, una aprobación y checks Backend y Frontend). Falta sumar los checks E2E al ruleset.
+- Video de la entrega y confirmar si al equipo le toca presentar (las diapositivas están preparadas).
+- Publicar los cambios de la Wiki después de la revisión.
+
+#### Para el resto del equipo
+- C: el job «Empaquetar» y el paso del reporte están al final de `ci.yml`; no cambian los jobs existentes.
+- A: hace falta el ruleset de `develop` y, si pueden, una revisión posterior de #148 y #155 a #158, que se mergearon sin revisión.
+
+---
