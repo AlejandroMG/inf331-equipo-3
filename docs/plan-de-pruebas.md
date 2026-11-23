@@ -95,7 +95,7 @@ El workflow [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) corre en c
 | **Empaquetar** | Solo si todos los jobs de pruebas pasaron: build del back y del front, paquetes `.tar.gz` con un manifiesto de la versión, y el artefacto `rentsmart-paquetes` (30 días). |
 | **Notificar a Discord** | Mensaje único con el resultado del pipeline. Solo envía si el secreto `DISCORD_WEBHOOK_URL` está configurado; sin él se omite. El canal recibe además los avisos de la integración de GitHub con Discord, uno por job. |
 
-Los nombres «Backend (NestJS)» y «Frontend (React)» son checks obligatorios del ruleset de `main`: no se cambian. «E2E (Playwright)» y «E2E (Selenium)» todavía no son obligatorios; conviene agregarlo al ruleset cuando lleve algunas semanas estable.
+Los nombres «Backend (NestJS)» y «Frontend (React)» son checks obligatorios del ruleset de `main`: no se cambian. Desde la Entrega 3 también son obligatorios «E2E (Playwright)» y «E2E (Selenium)».
 
 ## Estado actual
 

@@ -3762,3 +3762,43 @@ Corregir lo que el profesor observó en las rúbricas de las entregas 1 y 2, y l
 - A: hace falta el ruleset de `develop` y, si pueden, una revisión posterior de #148 y #155 a #158, que se mergearon sin revisión.
 
 ---
+
+### 2026-11-23 · B (xReNatS) · Documentar el despliegue de Azure (QA-03) en la Entrega 3
+
+**Issues:** #153 (QA-08), #66 (QA-03)
+**Rama / PR:** `feature/QA-08-despliegue-en-docs` · sin PR todavía
+**Duración aproximada:** 1 h
+**Herramientas:** Claude Code
+
+#### Objetivo
+Llevar a la documentación de la Entrega 3 el despliegue de C (PR #161) y el ruleset con los checks E2E obligatorios, y dejar listo el guion del video.
+
+#### Qué se hizo
+- Mergeado el PR #159 (aprobado por A) a `develop`.
+- `docs/entrega-3.md` y la página «Entrega 3» de la Wiki: sección «Despliegue continuo» (compose de producción, `deploy.yml`, secretos y estado), fila del empaquetado/deploy en «Qué corregimos», reparto de C, pendientes y el ruleset con los checks E2E obligatorios.
+- README (estado de la Entrega 3), CHANGELOG v3 y `plan-de-pruebas.md` con lo mismo.
+
+#### Decisiones y por qué
+| Decisión | Alternativas consideradas | Por qué se eligió |
+|---|---|---|
+| Documentar el despliegue como «probado en local, falta la VM» | Presentarlo como desplegado | Es lo que dice el PR #161: en Azure todavía no está probado |
+
+#### Archivos principales
+- `docs/entrega-3.md`, `README.md`, `CHANGELOG.md`, `docs/plan-de-pruebas.md`; Wiki `Entrega-3.md`.
+
+#### Cómo probarlo
+- Leer la sección «Despliegue continuo» de `docs/entrega-3.md` y compararla con el PR #161.
+
+#### Estado de verificación
+- Build, lint y tests: no aplica (solo documentación).
+
+#### Pendientes y bloqueos
+- El PR #161 choca con `develop` solo en `docs/memory.md` (las dos entradas del 19-11). La resolución, con ambas entradas, quedó en local; falta subirla o que C la haga, y una aprobación.
+- Esta documentación supone que el #161 entra antes del release; si no entra, hay que revertir estas menciones.
+- Video de la entrega y su enlace en el README, la Wiki y las notas del release.
+
+#### Para el resto del equipo
+- C: en el despliegue, la API queda detrás de Caddy y no confía en el proxy, así que el límite de 10 logins cada 15 minutos se cuenta para la IP de Caddy y lo comparten todos los usuarios. Conviene `app.set('trust proxy', 1)` en la API desplegada.
+- A: los checks E2E ya figuran como obligatorios en la documentación, como quedó en el ruleset.
+
+---

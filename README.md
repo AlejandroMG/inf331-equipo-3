@@ -37,7 +37,9 @@ Líder de equipo: Renato Ramírez ([@xReNatS](https://github.com/xReNatS)).
 - **Paneles:** propietario (mis espacios, reservas y métricas), arrendatario (mis reservas y pagos) y administración de espacios y tipos (PN-01 a PN-04, AD-02).
 - **Calidad:** pruebas unitarias, de integración, de componentes y E2E/UI con Selenium y Playwright, todas dentro del pipeline de GitHub Actions, que además empaqueta el build y avisa el resultado en Discord.
 
-**Todavía no:** administración de usuarios (AD-01), reseñas (RS-01 a RS-03) y despliegue público. La aplicación corre en local; el pipeline genera los paquetes listos para desplegar.
+**Despliegue:** configuración lista para una VM de Azure con Docker Compose y un workflow que despliega en cada merge a `main` (QA-03, ver «Desplegar en Azure»). Probada en local; falta crear la VM.
+
+**Todavía no:** administración de usuarios (AD-01) y reseñas (RS-01 a RS-03).
 
 ## Estructura
 
