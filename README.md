@@ -1,5 +1,8 @@
 # RentSmart
 
+[![CI](https://github.com/AlejandroMG/inf331-equipo-3/actions/workflows/ci.yml/badge.svg?branch=develop)](https://github.com/AlejandroMG/inf331-equipo-3/actions/workflows/ci.yml?query=branch%3Adevelop)
+[![CI en main](https://github.com/AlejandroMG/inf331-equipo-3/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/AlejandroMG/inf331-equipo-3/actions/workflows/ci.yml?query=branch%3Amain)
+
 Aplicación web para arrendar espacios entre particulares (salas de reuniones, estudios, cocinas, canchas y otros) por hora o por día: publicación, búsqueda, reserva y pago en línea.
 
 Proyecto de INF331 Pruebas de Software, Universidad Técnica Federico Santa María, semestre 2 de 2026. Equipo 3, tema 1.
@@ -8,9 +11,11 @@ Proyecto de INF331 Pruebas de Software, Universidad Técnica Federico Santa Mar�
 
 | | |
 |---|---|
-| Video Entrega 1 | [Ver en YouTube](https://youtu.be/QrpY-6-MbvQ) |
-| Wiki (documentación de entregas) | [github.com/AlejandroMG/inf331-equipo-3/wiki](https://github.com/AlejandroMG/inf331-equipo-3/wiki) |
-| Release Entrega 1 | [`v1.0-entrega1`](https://github.com/AlejandroMG/inf331-equipo-3/releases/tag/v1.0-entrega1) · [Release notes](CHANGELOG.md) |
+| Videos | [Entrega 1](https://youtu.be/QrpY-6-MbvQ) · [Entrega 2](https://youtu.be/YdUN9zQ58AY) · Entrega 3: se agrega al publicar el release `v3.0-entrega3` |
+| Wiki (documentación de entregas) | [Inicio](https://github.com/AlejandroMG/inf331-equipo-3/wiki) · [Entrega 1](https://github.com/AlejandroMG/inf331-equipo-3/wiki/Entrega-1) · [Entrega 2](https://github.com/AlejandroMG/inf331-equipo-3/wiki/Entrega-2) · [Entrega 3](https://github.com/AlejandroMG/inf331-equipo-3/wiki/Entrega-3) |
+| Releases | [`v1.0-entrega1`](https://github.com/AlejandroMG/inf331-equipo-3/releases/tag/v1.0-entrega1) · [`v2.0-entrega2`](https://github.com/AlejandroMG/inf331-equipo-3/releases/tag/v2.0-entrega2) · [Release notes de cada entrega](CHANGELOG.md) |
+| CI/CD | [Ejecuciones de GitHub Actions](https://github.com/AlejandroMG/inf331-equipo-3/actions/workflows/ci.yml) · avisos en el canal de Discord del equipo |
+| Entrega 3 (pruebas E2E/UI con Selenium) | [`docs/entrega-3.md`](docs/entrega-3.md) · [`e2e-selenium/`](e2e-selenium/README.md) |
 | Backlog | [Issues y milestones](https://github.com/AlejandroMG/inf331-equipo-3/issues) |
 
 ## Integrantes
@@ -23,11 +28,16 @@ Proyecto de INF331 Pruebas de Software, Universidad Técnica Federico Santa Mar�
 
 Líder de equipo: Renato Ramírez ([@xReNatS](https://github.com/xReNatS)).
 
-## Estado de la Entrega 1
+## Estado de la Entrega 3
 
-**Funciona:** registro e inicio de sesión con roles; CRUD de espacios (publicar por pasos con fotos y horario semanal, listar, buscar con filtros, ver el detalle con galería y mapa, editar y eliminar); panel "Mis espacios" del propietario; favoritos; administración de espacios y de tipos de espacio.
+**Funciona:**
+- **Cuentas:** registro e inicio de sesión con roles, modo propietario, perfil editable y seguridad de la API (CU-01 a CU-06).
+- **Espacios:** CRUD completo (publicar por pasos con fotos y horario semanal, listar, buscar con filtros, ver el detalle con galería, mapa y calendario de disponibilidad, editar y eliminar), con la descripción generada por IA como opción (ES-01 a ES-08, BU-01 a BU-08, IA-01, IA-02).
+- **Reservas y pagos:** reservar sin cruces, cancelar, vencimientos, pago con Stripe Checkout en modo test, confirmación por webhook, confirmación automática de la reserva y reembolsos (RE-02 a RE-06, DI-02, PA-01 a PA-03).
+- **Paneles:** propietario (mis espacios, reservas y métricas), arrendatario (mis reservas y pagos) y administración de espacios y tipos (PN-01 a PN-04, AD-02).
+- **Calidad:** pruebas unitarias, de integración, de componentes y E2E/UI con Selenium y Playwright, todas dentro del pipeline de GitHub Actions, que además empaqueta el build y avisa el resultado en Discord.
 
-**Todavía no:** reservar y pagar (Entrega 2), IA, administración de usuarios y despliegue público. La aplicación corre en local.
+**Todavía no:** administración de usuarios (AD-01), reseñas (RS-01 a RS-03) y despliegue público. La aplicación corre en local; el pipeline genera los paquetes listos para desplegar.
 
 ## Estructura
 
@@ -154,7 +164,13 @@ DATABASE_URL=postgresql://testuser:testpassword@localhost:5433/testdb npx prisma
 npm run test:e2e
 ```
 
-**Resultados de la Entrega 1:** 1438 pruebas en verde (343 unitarias y 454 de integración del back, 641 del front). Cobertura de líneas de las unitarias del back: 45,6 %.
+**Resultados de la Entrega 3:** 2198 pruebas en verde en el CI (784 unitarias y 612 de integración del back, 774 del front, 3 de Playwright y 25 E2E/UI de Selenium). Cobertura de líneas de las unitarias del back: 62,1 %.
+
+| Entrega | Pruebas | Cobertura de líneas del back |
+|---|---|---|
+| Entrega 1 | 1438 | 45,6 % |
+| Entrega 2 | 1961 | 57 % |
+| Entrega 3 | 2198 | 62,1 % |
 
 El CI (`.github/workflows/ci.yml`) corre lint, tests unitarios con cobertura, tests de integración y build del back y del front, el smoke test de Playwright y las 25 pruebas E2E/UI con Selenium contra el stack real (PostgreSQL, API y front), en cada pull request. Las pruebas de Selenium, su ejecución y su evidencia se explican en [`docs/entrega-3.md`](docs/entrega-3.md). El detalle por nivel está en el [plan de pruebas](docs/plan-de-pruebas.md) y la estrategia para el ramo en la [Wiki](https://github.com/AlejandroMG/inf331-equipo-3/wiki/Proyecto-Estrategia-de-pruebas).
 

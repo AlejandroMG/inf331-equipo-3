@@ -611,6 +611,7 @@ Solo `PORT`, `VITE_API_URL` y `VITE_USE_MOCKS` existen hoy. Las demás se agrega
 | `FRONTEND_URL` | back | Origen permitido por CORS (por defecto `http://localhost:5173`) y URLs de retorno de Stripe | CU-01, CU-05 |
 | `BASE_URL`, `API_URL` | e2e-selenium | Dónde corre el front y la API durante las pruebas de interfaz. `BASE_URL` por defecto `http://localhost:4173`; `API_URL` por defecto igual a `BASE_URL` | QA-05 |
 | `HEADLESS`, `WAIT_MS` | e2e-selenium | `HEADLESS=false` abre el navegador (por defecto headless); `WAIT_MS` es la espera máxima de un elemento (10000 ms) | QA-05 |
+| `PACKAGE_API_URL` | CI (variable de repositorio) | URL de la API con que el job «Empaquetar» compila el front. Opcional; sin ella usa `http://localhost:3000` | QA-08 |
 | `STORAGE_DRIVER` | back | `local` (por defecto) o `supabase`: dónde se guardan las fotos | ES-03 |
 | `UPLOADS_DIR` | back | Carpeta de las fotos con `local` (`./uploads` por defecto) | ES-03 |
 | `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_BUCKET` | back | Subida de fotos; obligatorias con `STORAGE_DRIVER=supabase` | ES-03 |
