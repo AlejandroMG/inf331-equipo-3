@@ -11,9 +11,9 @@ Proyecto de INF331 Pruebas de Software, Universidad Técnica Federico Santa Mar�
 
 | | |
 |---|---|
-| Videos | [Entrega 1](https://youtu.be/QrpY-6-MbvQ) · [Entrega 2](https://youtu.be/YdUN9zQ58AY) · Entrega 3: se agrega al publicar el release `v3.0-entrega3` |
+| Videos | [Entrega 1](https://youtu.be/QrpY-6-MbvQ) · [Entrega 2](https://youtu.be/YdUN9zQ58AY) · [Entrega 3](https://youtu.be/BXYN_tfirII) |
 | Wiki (documentación de entregas) | [Inicio](https://github.com/AlejandroMG/inf331-equipo-3/wiki) · [Entrega 1](https://github.com/AlejandroMG/inf331-equipo-3/wiki/Entrega-1) · [Entrega 2](https://github.com/AlejandroMG/inf331-equipo-3/wiki/Entrega-2) · [Entrega 3](https://github.com/AlejandroMG/inf331-equipo-3/wiki/Entrega-3) |
-| Releases | [`v1.0-entrega1`](https://github.com/AlejandroMG/inf331-equipo-3/releases/tag/v1.0-entrega1) · [`v2.0-entrega2`](https://github.com/AlejandroMG/inf331-equipo-3/releases/tag/v2.0-entrega2) · [Release notes de cada entrega](CHANGELOG.md) |
+| Releases | [`v1.0-entrega1`](https://github.com/AlejandroMG/inf331-equipo-3/releases/tag/v1.0-entrega1) · [`v2.0-entrega2`](https://github.com/AlejandroMG/inf331-equipo-3/releases/tag/v2.0-entrega2) · [`v3.0-entrega3`](https://github.com/AlejandroMG/inf331-equipo-3/releases/tag/v3.0-entrega3) · [Release notes de cada entrega](CHANGELOG.md) |
 | CI/CD | [Ejecuciones de GitHub Actions](https://github.com/AlejandroMG/inf331-equipo-3/actions/workflows/ci.yml) · avisos en el canal de Discord del equipo |
 | Entrega 3 (pruebas E2E/UI con Selenium) | [`docs/entrega-3.md`](docs/entrega-3.md) · [`e2e-selenium/`](e2e-selenium/README.md) |
 | Backlog | [Issues y milestones](https://github.com/AlejandroMG/inf331-equipo-3/issues) |

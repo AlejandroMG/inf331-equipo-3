@@ -14,7 +14,7 @@ Tercera entrega: pruebas de interfaz (E2E/UI) con Selenium integradas al pipelin
 - Job «Empaquetar»: cuando todas las pruebas pasan, genera los paquetes del back y del front listos para desplegar.
 - Despliegue en una VM de Azure con Docker Compose (PostgreSQL, API y Caddy con HTTPS) y workflow de CD que despliega en cada push a `main` (QA-03, P-17). Probado en local; falta la VM.
 - Reporte de las pruebas E2E como check del pull request, con el resultado de cada caso.
-- Documentación de la entrega en [`docs/entrega-3.md`](docs/entrega-3.md) y en la Wiki (QA-08).
+- Documentación de la entrega en [`docs/entrega-3.md`](docs/entrega-3.md) y en la Wiki, y el [video](https://youtu.be/BXYN_tfirII) (QA-08).
 
 **Reservas, pagos y paneles**
 - Confirmación del pago por webhook de Stripe (PA-02) y confirmación automática de la reserva pagada, con reembolso total si la validación falla (RE-04).

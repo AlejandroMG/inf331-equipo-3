@@ -2,6 +2,8 @@
 
 Documento de la Entrega 3 del ramo INF331 (equipo 3). Sigue el orden del Anexo B de la pauta. La misma información se publica en la página «Entrega 3» de la Wiki.
 
+**Video de la entrega:** [https://youtu.be/BXYN_tfirII](https://youtu.be/BXYN_tfirII)
+
 ## Objetivo de la Entrega 3
 
 Sumar pruebas de interfaz (E2E/UI) a RentSmart, que corran solas dentro del pipeline de la Entrega 2 y dejen evidencia clara de cada ejecución. Queda así:
@@ -18,7 +20,7 @@ Esta tabla resume cada observación de las rúbricas anteriores, qué hicimos en
 
 | Observación (entrega) | Qué hicimos | Dónde verlo |
 |---|---|---|
-| El enlace al video quedó como `PENDIENTE` en el tag y en la Wiki (E1) | Enlaces a los videos de las entregas 1 y 2 en el README y la Wiki. El de esta entrega se agrega antes de publicar el release, no después | README («Enlaces»), Wiki (Inicio y Entrega 1) |
+| El enlace al video quedó como `PENDIENTE` en el tag y en la Wiki (E1) | Enlaces a los videos de las tres entregas en el README y la Wiki. El de esta entrega ([video](https://youtu.be/BXYN_tfirII)) se agregó antes de publicar el release, también en sus notas | README («Enlaces»), Wiki (Inicio, Entrega 1 y Entrega 3), release `v3.0-entrega3` |
 | Agregar pruebas E2E (E1) | Smoke con Playwright desde la Entrega 2 y 25 pruebas E2E/UI con Selenium contra el stack real en esta | [Set de pruebas](#set-de-pruebas) |
 | Subir la cobertura del back, 45,6 % (E1) | 57 % en la Entrega 2 y 62,1 % de líneas en esta | README («Pruebas») y resumen de cada ejecución del CI |
 | GitFlow aplicado tarde: casi todo entró directo a `main` (E1) | Cada historia en una rama `feature/<ID>` con PR a `develop`; la entrega pasa a `main` por `release/v3.0-entrega3` con su tag | PRs #149, #154 a #160 |

@@ -3802,3 +3802,40 @@ Llevar a la documentación de la Entrega 3 el despliegue de C (PR #161) y el rul
 - A: los checks E2E ya figuran como obligatorios en la documentación, como quedó en el ruleset.
 
 ---
+
+### 2026-11-27 · B (xReNatS) · Video de la Entrega 3 y cierre del release
+
+**Issues:** #153 (QA-08)
+**Rama / PR:** `feature/QA-08-despliegue-en-docs` · PR #162
+**Duración aproximada:** 1,5 h
+**Herramientas:** Claude Code, FFmpeg
+
+#### Objetivo
+Grabar el video de la entrega, publicar su enlace y dejar listo el release `v3.0-entrega3`.
+
+#### Qué se hizo
+- Video grabado en cinco partes y unido con FFmpeg (fundido de 0,5 s entre partes): [https://youtu.be/BXYN_tfirII](https://youtu.be/BXYN_tfirII).
+- Enlace del video en `docs/entrega-3.md`, README, CHANGELOG, la Wiki (Inicio y Entrega 3) y las notas del release.
+- Conflicto del PR #161 en `docs/memory.md` resuelto conservando las dos entradas del 19-11.
+
+#### Decisiones y por qué
+| Decisión | Alternativas consideradas | Por qué se eligió |
+|---|---|---|
+| Unir las partes con FFmpeg | Un editor de video | Las cinco partes tenían el mismo formato y bastaba un fundido; se hace en un comando y se puede repetir |
+
+#### Archivos principales
+- `docs/entrega-3.md`, `README.md`, `CHANGELOG.md`; Wiki `Home.md` y `Entrega-3.md`.
+
+#### Cómo probarlo
+- Abrir el enlace del video desde el README.
+
+#### Estado de verificación
+- Build, lint y tests: no aplica (solo documentación).
+
+#### Pendientes y bloqueos
+- Aprobaciones: #161 (C es autor; puede aprobar A o B), #162 y #160 (B es autor; aprueba A o C).
+
+#### Para el resto del equipo
+- Después del release, `main` vuelve a `develop`.
+
+---
