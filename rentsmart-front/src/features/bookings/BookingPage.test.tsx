@@ -210,6 +210,92 @@ describe('BookingPage', () => {
       expect(screen.queryByText('Pago recibido, confirmando tu reserva…')).not.toBeInTheDocument()
     })
 
+    // RE-04: la validación automática termina en CONFIRMED o en CANCELLED con reembolso total.
+    describe('cómo termina la validación automática', () => {
+      /** Responde cada consulta con lo que toca, repitiendo la última, y cuenta las consultas. */
+      const serveBookings = (answers: Booking[]) => {
+        const counter = { calls: 0 }
+        server.use(
+          http.get('*/api/bookings/:id', () => {
+            const answer = answers[Math.min(counter.calls, answers.length - 1)]
+            counter.calls += 1
+            return HttpResponse.json(answer)
+          }),
+        )
+        return counter
+      }
+      const withDetail = { ...booking().space, addressDetail: 'Oficina 402' }
+
+      it('al quedar CONFIRMED deja de consultar y recién ahí muestra el detalle de la dirección (P-09)', async () => {
+        const counter = serveBookings([booking({ status: 'PAID' }), booking({ status: 'CONFIRMED', space: withDetail })])
+        renderPage('/bookings/b1?pago=ok')
+
+        await screen.findByText('Pago recibido, confirmando tu reserva…')
+        expect(screen.queryByText('Oficina 402')).not.toBeInTheDocument()
+
+        await advance(POLL_INTERVAL_MS)
+        expect(await screen.findByText('Confirmada')).toBeInTheDocument()
+        expect(screen.getByText('Oficina 402')).toBeInTheDocument()
+        expect(screen.queryByText(/No pudimos confirmar/)).not.toBeInTheDocument()
+
+        await advance(5 * POLL_INTERVAL_MS)
+        expect(counter.calls).toBe(2)
+      })
+
+      it('al quedar CANCELLED sin reembolso registrado deja de consultar y no afirma que ya se devolvió', async () => {
+        const counter = serveBookings([booking({ status: 'PAID' }), booking({ status: 'CANCELLED', refundedAmount: 0 })])
+        renderPage('/bookings/b1?pago=ok')
+
+        await screen.findByText('Pago recibido, confirmando tu reserva…')
+        await advance(POLL_INTERVAL_MS)
+
+        const notice = await screen.findByText(/No pudimos confirmar tu reserva/)
+        expect(notice).toHaveTextContent(
+          'No pudimos confirmar tu reserva, así que quedó cancelada. Se reembolsa el total, $26.400; todavía no aparece como devuelto.',
+        )
+        expect(notice).not.toHaveTextContent(/Te devolvimos/)
+        expect(screen.queryByText(/Reembolsado:/)).not.toBeInTheDocument()
+        expect(screen.queryByText('Pago recibido, confirmando tu reserva…')).not.toBeInTheDocument()
+        // Un solo aviso: sin el texto general de una cancelada sin reembolso, que diría otra cosa.
+        expect(screen.queryByText(/No hay un reembolso registrado/)).not.toBeInTheDocument()
+        expect(screen.getByRole('link', { name: 'Ver el catálogo' })).toHaveAttribute('href', '/')
+
+        await advance(5 * POLL_INTERVAL_MS)
+        expect(counter.calls).toBe(2)
+      })
+
+      it('al quedar CANCELLED con el reembolso registrado dice cuánto se devolvió', async () => {
+        serveBookings([booking({ status: 'PAID' }), booking({ status: 'CANCELLED', refundedAmount: 26400 })])
+        renderPage('/bookings/b1?pago=ok')
+
+        await screen.findByText('Pago recibido, confirmando tu reserva…')
+        await advance(POLL_INTERVAL_MS)
+
+        const notice = await screen.findByText(/No pudimos confirmar tu reserva/)
+        expect(notice).toHaveTextContent('No pudimos confirmar tu reserva, así que quedó cancelada. Te devolvimos $26.400.')
+        expect(notice).not.toHaveTextContent(/todavía no/)
+        expect(screen.getByText('Reembolsado: $26.400')).toBeInTheDocument()
+      })
+
+      it('si el webhook ganó y ya está CANCELLED en la primera carga, avisa igual y no consulta', async () => {
+        const counter = serveBookings([booking({ status: 'CANCELLED' })])
+        renderPage('/bookings/b1?pago=ok')
+
+        expect(await screen.findByText(/No pudimos confirmar tu reserva/)).toBeInTheDocument()
+
+        await advance(3 * POLL_INTERVAL_MS)
+        expect(counter.calls).toBe(1)
+      })
+
+      it('sin pago=ok, una cancelada no muestra este aviso', async () => {
+        serveBookings([booking({ status: 'CANCELLED' })])
+        renderPage()
+
+        await screen.findByText('Cancelada')
+        expect(screen.queryByText(/No pudimos confirmar/)).not.toBeInTheDocument()
+      })
+    })
+
     it(`si después de ${POLL_MAX_ATTEMPTS} consultas sigue pendiente, deja de consultar y deja el botón para actualizar`, async () => {
       const counter = serveSequence(['PENDING'])
       const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
@@ -227,6 +313,17 @@ describe('BookingPage', () => {
 
       await user.click(screen.getByRole('button', { name: 'Actualizar el estado' }))
       await waitFor(() => expect(counter.calls).toBe(2 + POLL_MAX_ATTEMPTS))
+    })
+
+    it('si se agotan las consultas con la reserva PAID, dice que el pago se recibió y falta la confirmación', async () => {
+      serveSequence(['PAID'])
+      renderPage('/bookings/b1?pago=ok')
+
+      await screen.findByText('Pago recibido, confirmando tu reserva…')
+      for (let i = 0; i < POLL_MAX_ATTEMPTS; i += 1) await advance(POLL_INTERVAL_MS)
+
+      expect(await screen.findByText(/Recibimos tu pago y falta la confirmación de la reserva/)).toBeInTheDocument()
+      expect(screen.queryByText(/Todavía no recibimos la confirmación del pago/)).not.toBeInTheDocument()
     })
 
     it('al salir de la página deja de consultar', async () => {

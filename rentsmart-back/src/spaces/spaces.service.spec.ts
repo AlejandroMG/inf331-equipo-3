@@ -10,6 +10,7 @@ import { SpacesService } from './spaces.service';
 describe('SpacesService', () => {
   let service: SpacesService;
   const prisma = {
+    $transaction: jest.fn(),
     space: {
       create: jest.fn(),
       update: jest.fn(),
@@ -17,6 +18,7 @@ describe('SpacesService', () => {
       findMany: jest.fn(),
     },
     spaceType: { findUnique: jest.fn() },
+    aiSpaceGeneration: { updateMany: jest.fn() },
     amenity: { count: jest.fn() },
     commune: { findUnique: jest.fn() },
     region: { findUnique: jest.fn() },
@@ -26,10 +28,22 @@ describe('SpacesService', () => {
     status: 'DRAFT',
     name: 'Sala',
     amenities: [{ amenityId: 2 }, { amenityId: 5 }],
+    aiSpaceGenerations: [],
   };
 
   beforeEach(async () => {
     jest.resetAllMocks();
+    prisma.$transaction.mockImplementation(
+      (
+        run: (
+          tx: Pick<typeof prisma, 'space' | 'aiSpaceGeneration'>,
+        ) => Promise<unknown>,
+      ) =>
+        run({
+          space: prisma.space,
+          aiSpaceGeneration: prisma.aiSpaceGeneration,
+        }),
+    );
     const module = await Test.createTestingModule({
       providers: [SpacesService, { provide: PrismaService, useValue: prisma }],
     }).compile();
@@ -102,6 +116,41 @@ describe('SpacesService', () => {
   });
 
   describe('update', () => {
+    it('guarda el cambio de descripción y reinicia la revisión de IA en la misma transacción', async () => {
+      prisma.space.findUnique.mockResolvedValue({
+        ...row,
+        ownerId: 'u1',
+        description: 'Sugerencia anterior',
+        aiSpaceGenerations: [
+          {
+            description: 'Sugerencia anterior',
+            reviewedAt: new Date(),
+          },
+        ],
+      });
+      prisma.space.update.mockResolvedValue({
+        ...row,
+        description: 'Descripción editada',
+        aiSpaceGenerations: [
+          {
+            description: 'Sugerencia anterior',
+            reviewedAt: new Date(),
+          },
+        ],
+      });
+
+      const result = await service.update('u1', 's1', {
+        description: 'Descripción editada',
+      });
+
+      expect(prisma.$transaction).toHaveBeenCalled();
+      expect(prisma.aiSpaceGeneration.updateMany).toHaveBeenCalledWith({
+        where: { spaceId: 's1', description: { not: null } },
+        data: { reviewedAt: null },
+      });
+      expect(result.aiDescriptionNeedsReview).toBe(true);
+    });
+
     it('lanza 404 si el espacio no existe', async () => {
       prisma.space.findUnique.mockResolvedValue(null);
 
@@ -307,7 +356,10 @@ describe('SpacesService', () => {
     });
 
     it('deja cambiar de precio por hora a solo por día', async () => {
-      await service.update('u1', 's1', { pricePerHour: null, pricePerDay: 50000 });
+      await service.update('u1', 's1', {
+        pricePerHour: null,
+        pricePerDay: 50000,
+      });
 
       expect(prisma.space.update).toHaveBeenCalled();
     });
@@ -338,7 +390,10 @@ describe('SpacesService', () => {
       });
 
       it('deja editar lo que no tiene que ver', async () => {
-        await service.update('u1', 's1', { name: 'Sala 2', pricePerHour: 12000 });
+        await service.update('u1', 's1', {
+          name: 'Sala 2',
+          pricePerHour: 12000,
+        });
 
         expect(prisma.space.update).toHaveBeenCalled();
       });
@@ -354,7 +409,10 @@ describe('SpacesService', () => {
     it('un borrador sí puede quedar incompleto', async () => {
       prisma.space.findUnique.mockResolvedValue({ ...active, status: 'DRAFT' });
 
-      await service.update('u1', 's1', { pricePerHour: null, description: null });
+      await service.update('u1', 's1', {
+        pricePerHour: null,
+        description: null,
+      });
 
       expect(prisma.space.update).toHaveBeenCalled();
     });
@@ -429,11 +487,19 @@ describe('SpacesService', () => {
       expect(space.typeName).toBeNull();
       expect(space.communeName).toBeNull();
       expect(space.coverUrl).toBeNull();
-      expect(space.missing).toEqual(['type', 'commune', 'price', 'photos', 'schedule']);
+      expect(space.missing).toEqual([
+        'type',
+        'commune',
+        'price',
+        'photos',
+        'schedule',
+      ]);
     });
 
     it('no devuelve datos internos ni privados', async () => {
-      prisma.space.findMany.mockResolvedValue([{ ...base, ownerId: 'u1', addressDetail: 'secreto' }]);
+      prisma.space.findMany.mockResolvedValue([
+        { ...base, ownerId: 'u1', addressDetail: 'secreto' },
+      ]);
 
       const [space] = await service.findMine('u1');
 

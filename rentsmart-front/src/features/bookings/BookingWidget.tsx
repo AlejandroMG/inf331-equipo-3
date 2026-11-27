@@ -25,11 +25,24 @@ import {
 import { createBooking, getAvailability } from './bookings-api'
 import type { AvailabilityDay, BookingUnit } from './types'
 
+/** Un bloque elegido desde afuera, por ejemplo en el calendario del detalle (BU-06). */
+export interface BookingPreselection {
+  /** Cambia con cada elección: así elegir de nuevo el mismo bloque vuelve a cargarlo. */
+  key: number
+  unit: BookingUnit
+  /** `AAAA-MM-DD`, hora de Chile. */
+  date: string
+  /** El `startAt` UTC del bloque de una hora; null al elegir un día completo. */
+  startAt: string | null
+}
+
 export interface BookingWidgetProps {
   spaceId: string
   /** Precios del espacio en CLP; null si no se arrienda en esa unidad. */
   pricePerHour: number | null
   pricePerDay: number | null
+  /** Deja el día y el bloque ya elegidos. Se aplica una vez por cada `key` y cuando ya cargó la disponibilidad. */
+  preselection?: BookingPreselection
 }
 
 const UNIT_LABELS: Record<BookingUnit, string> = { HOUR: 'Por hora', DAY: 'Por día' }
@@ -54,7 +67,7 @@ const bookableDays = (days: AvailabilityDay[], unit: BookingUnit) =>
  * (seguidos, mínimo una hora), se ve el desglose y se reserva. Las horas se muestran en la hora de Chile y se
  * mandan en UTC, tal como las entrega la disponibilidad. Sin sesión, reservar lleva al login.
  */
-export function BookingWidget({ spaceId, pricePerHour, pricePerDay }: BookingWidgetProps) {
+export function BookingWidget({ spaceId, pricePerHour, pricePerDay, preselection }: BookingWidgetProps) {
   const navigate = useNavigate()
   const location = useLocation()
   const token = useToken()
@@ -68,6 +81,21 @@ export function BookingWidget({ spaceId, pricePerHour, pricePerDay }: BookingWid
   const [range, setRange] = useState<SlotRange | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
+  const [appliedKey, setAppliedKey] = useState(0)
+
+  // Una elección de afuera (BU-06) se aplica una vez, cuando ya hay disponibilidad con qué compararla. Si el bloque
+  // ya no está libre queda el día elegido y sin horas marcadas.
+  if (preselection && preselection.key !== appliedKey && availability.data) {
+    setAppliedKey(preselection.key)
+    if (units.includes(preselection.unit)) {
+      const target = availability.data.days.find((item) => item.date === preselection.date)
+      const index = target?.slots.findIndex((slot) => slot.startAt === preselection.startAt) ?? -1
+      setUnit(preselection.unit)
+      setDate(preselection.date)
+      setRange(preselection.unit === 'HOUR' && index >= 0 ? { from: index, to: index } : null)
+      setSubmitError(null)
+    }
+  }
 
   if (units.length === 0) {
     return <p className="text-[15px] text-muted">Este espacio todavía no tiene precio para reservar.</p>

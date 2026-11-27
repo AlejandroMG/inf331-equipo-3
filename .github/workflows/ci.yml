@@ -170,3 +170,230 @@ jobs:
             rentsmart-front/playwright-report/
             rentsmart-front/test-results/
           retention-days: 7
+
+  # E2E/UI con Selenium WebDriver (Entrega 3, QA-05 a QA-07). A diferencia del job anterior (Playwright con la API
+  # simulada), este levanta el stack completo: PostgreSQL con el seed, la API de NestJS y el front compilado, y recorre
+  # los flujos críticos con Chrome headless. Si una prueba falla, el job falla y el pipeline queda en rojo.
+  e2e-selenium:
+    name: E2E (Selenium)
+    runs-on: ubuntu-latest
+    # checks: write permite publicar el reporte JUnit como un check del commit o del PR («Reporte E2E (Selenium)»).
+    permissions:
+      contents: read
+      checks: write
+
+    services:
+      db-e2e:
+        image: postgres:17
+        env:
+          POSTGRES_USER: e2euser
+          POSTGRES_PASSWORD: e2epassword
+          POSTGRES_DB: e2edb
+        ports:
+          - 5434:5432
+        options: >-
+          --health-cmd "pg_isready -U e2euser -d e2edb"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://e2euser:e2epassword@localhost:5434/e2edb
+      # Solo para los tests del CI; no es un secreto real.
+      JWT_SECRET: ci-e2e-secret-de-al-menos-32-caracteres
+      # Dónde corre el front durante las pruebas. Las pruebas leen BASE_URL; la API se alcanza por el mismo origen
+      # porque `vite preview` reenvía /api al back.
+      BASE_URL: http://localhost:4173
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: |
+            rentsmart-back/package-lock.json
+            rentsmart-front/package-lock.json
+            e2e-selenium/package-lock.json
+
+      - name: Preparar el back (dependencias, migraciones y seed)
+        working-directory: rentsmart-back
+        run: |
+          npm ci
+          npx prisma generate
+          npx prisma migrate deploy
+          npm run seed
+          npm run build
+
+      - name: Preparar el front (el build apunta a la API por el mismo origen)
+        working-directory: rentsmart-front
+        env:
+          VITE_API_URL: ${{ env.BASE_URL }}
+        run: |
+          npm ci
+          npm run build
+
+      - name: Levantar la API y el front
+        run: |
+          mkdir -p e2e-selenium/reports
+          (cd rentsmart-back && FRONTEND_URL="$BASE_URL" BOOKING_SWEEP_ENABLED=false PORT=3000 nohup node dist/main.js > ../e2e-selenium/reports/api.log 2>&1 &)
+          (cd rentsmart-front && nohup npx vite preview --port 4173 --strictPort > ../e2e-selenium/reports/front.log 2>&1 &)
+          for i in $(seq 1 60); do
+            if curl -sf "$BASE_URL/api/catalog" > /dev/null; then echo "Stack listo"; exit 0; fi
+            sleep 2
+          done
+          echo "El stack no levantó a tiempo"; cat e2e-selenium/reports/api.log e2e-selenium/reports/front.log; exit 1
+
+      - name: Instalar Selenium y pruebas
+        working-directory: e2e-selenium
+        run: npm ci
+
+      - name: Pruebas E2E con Selenium (Chrome headless)
+        working-directory: e2e-selenium
+        run: npm test
+
+      # Evidencia: el reporte HTML, el JUnit, los logs del stack y los screenshots de las pruebas que fallaron.
+      - name: Resumen de resultados
+        if: always()
+        working-directory: e2e-selenium
+        run: |
+          echo "### Pruebas E2E con Selenium" >> "$GITHUB_STEP_SUMMARY"
+          if [ -f reports/index.json ]; then
+            node -e "
+              const s = require('./reports/index.json').stats;
+              console.log('| Pruebas | Pasaron | Fallaron | Duración |');
+              console.log('|---|---|---|---|');
+              console.log('| ' + s.tests + ' | ' + s.passes + ' | ' + s.failures + ' | ' + Math.round(s.duration / 1000) + ' s |');
+            " >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "No se generó el reporte." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Subir reportes y logs de Selenium
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: selenium-report
+          path: e2e-selenium/reports/
+          retention-days: 14
+
+      - name: Subir screenshots de las fallas
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: selenium-screenshots
+          path: e2e-selenium/screenshots/
+          retention-days: 14
+
+      # Publica el JUnit como un check con el resultado de cada prueba, visible en el PR sin descargar artefactos.
+      # En PRs desde forks GitHub no da permiso de escritura, así que ahí se omite.
+      - name: Publicar el reporte de pruebas como check
+        if: always() && (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository)
+        uses: dorny/test-reporter@v1
+        with:
+          name: Reporte E2E (Selenium)
+          path: e2e-selenium/reports/junit.xml
+          reporter: java-junit
+          fail-on-error: false
+          fail-on-empty: false
+          # Por defecto la acción escribe en el resumen de la ejecución; así crea además el check visible en el PR.
+          use-actions-summary: false
+
+  # Empaquetado: solo corre si todas las pruebas pasaron. Genera los paquetes del back y del front listos para
+  # desplegar, con un manifiesto de la versión, y los deja como artefacto de la ejecución (30 días). No hay un
+  # ambiente donde desplegarlos todavía (P-17); el paso de deploy se agregaría aquí, a partir de estos paquetes.
+  package:
+    name: Empaquetar
+    runs-on: ubuntu-latest
+    needs: [backend, frontend, e2e, e2e-selenium]
+
+    env:
+      # prisma.config.ts exige DATABASE_URL incluso para generar el cliente; no se conecta a ninguna base.
+      DATABASE_URL: postgresql://build:build@localhost:5432/build
+      # El front lee la URL de la API al compilar. La variable de repositorio PACKAGE_API_URL permite fijar la del
+      # ambiente de destino; sin ella se usa la de un despliegue local.
+      VITE_API_URL: ${{ vars.PACKAGE_API_URL || 'http://localhost:3000' }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: |
+            rentsmart-back/package-lock.json
+            rentsmart-front/package-lock.json
+
+      - name: Build del back
+        working-directory: rentsmart-back
+        run: |
+          npm ci
+          npx prisma generate
+          npm run build
+
+      - name: Build del front
+        working-directory: rentsmart-front
+        run: |
+          npm ci
+          npm run build
+
+      - name: Armar los paquetes
+        run: |
+          VERSION="${GITHUB_REF_NAME//\//-}-${GITHUB_SHA::7}"
+          mkdir -p paquetes
+          # Back: el código compilado más lo necesario para instalar dependencias de producción y migrar la base.
+          # En el servidor: npm ci --omit=dev && npx prisma migrate deploy && node dist/main.js
+          tar -czf "paquetes/rentsmart-back-$VERSION.tar.gz" -C rentsmart-back dist package.json package-lock.json prisma prisma.config.ts
+          # Front: archivos estáticos listos para cualquier servidor web.
+          tar -czf "paquetes/rentsmart-front-$VERSION.tar.gz" -C rentsmart-front/dist .
+          {
+            echo "version: $VERSION"
+            echo "commit: $GITHUB_SHA"
+            echo "rama: $GITHUB_REF_NAME"
+            echo "fecha: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "api_url_del_front: $VITE_API_URL"
+          } > paquetes/manifiesto.txt
+          ls -lh paquetes
+
+      - name: Resumen del empaquetado
+        run: |
+          echo "### Paquetes generados" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Archivo | Tamaño |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|---|---|" >> "$GITHUB_STEP_SUMMARY"
+          for f in paquetes/*; do echo "| $(basename "$f") | $(du -h "$f" | cut -f1) |" >> "$GITHUB_STEP_SUMMARY"; done
+
+      - name: Subir los paquetes
+        uses: actions/upload-artifact@v4
+        with:
+          name: rentsmart-paquetes
+          path: paquetes/
+          retention-days: 30
+
+  # Mensaje único con el resultado del pipeline completo. El canal ya recibe los avisos de la integración de GitHub con
+  # Discord (uno por job); este job es opcional y solo envía si el secreto DISCORD_WEBHOOK_URL está configurado.
+  # Sin él se omite sin fallar. La URL nunca se escribe en el repositorio ni en los logs.
+  notify:
+    name: Notificar a Discord
+    runs-on: ubuntu-latest
+    needs: [backend, frontend, e2e, e2e-selenium, package]
+    if: always()
+    env:
+      DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+    steps:
+      - name: Enviar el resultado
+        if: env.DISCORD_WEBHOOK_URL != ''
+        env:
+          RESULTS: ${{ join(needs.*.result, ',') }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          BRANCH: ${{ github.head_ref || github.ref_name }}
+          ACTOR: ${{ github.actor }}
+        run: |
+          if [[ "$RESULTS" == *failure* || "$RESULTS" == *cancelled* ]]; then ICON="❌ Falló"; else ICON="✅ Pasó"; fi
+          MESSAGE="$ICON el pipeline de RentSmart en \`$BRANCH\` (por $ACTOR): $RUN_URL"
+          curl -sf -H "Content-Type: application/json" -d "$(jq -n --arg content "$MESSAGE" '{content: $content}')" "$DISCORD_WEBHOOK_URL" > /dev/null

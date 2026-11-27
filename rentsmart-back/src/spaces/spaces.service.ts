@@ -37,16 +37,39 @@ const OWNER_VIEW = {
     select: { id: true, url: true, position: true },
     orderBy: { position: 'asc' },
   },
+  aiSpaceGenerations: {
+    select: { description: true, reviewedAt: true, attemptCount: true },
+    take: 1,
+  },
 } as const;
 
 type OwnerRow = {
   amenities: { amenityId: number }[];
-} & Omit<SpaceDto, 'amenityIds'>;
+  aiSpaceGenerations: {
+    description: string | null;
+    reviewedAt: Date | null;
+    attemptCount: number;
+  }[];
+} & Omit<
+  SpaceDto,
+  | 'amenityIds'
+  | 'aiDescriptionGenerated'
+  | 'aiDescriptionNeedsReview'
+  | 'aiDescriptionAttempts'
+>;
 
 function toDto(row: OwnerRow & { _count?: unknown }): SpaceDto {
-  const { amenities, _count, ...space } = row;
+  const { amenities, aiSpaceGenerations, _count, ...space } = row;
   void _count; // los conteos son para decidir, no se devuelven
-  return { ...space, amenityIds: amenities.map((a) => a.amenityId) };
+  const generation = aiSpaceGenerations?.[0];
+  const generated = generation?.description != null;
+  return {
+    ...space,
+    aiDescriptionGenerated: generated,
+    aiDescriptionNeedsReview: generated && generation?.reviewedAt == null,
+    aiDescriptionAttempts: generation?.attemptCount ?? 0,
+    amenityIds: amenities.map((a) => a.amenityId),
+  };
 }
 
 /** La latitud y la longitud van juntas: o el espacio tiene punto en el mapa, o no lo tiene (ES-07). */
@@ -54,8 +77,10 @@ function checkCoordinates(
   dto: CreateSpaceDto | UpdateSpaceDto,
   current?: { latitude: number | null; longitude: number | null },
 ): void {
-  const latitude = dto.latitude !== undefined ? dto.latitude : current?.latitude;
-  const longitude = dto.longitude !== undefined ? dto.longitude : current?.longitude;
+  const latitude =
+    dto.latitude !== undefined ? dto.latitude : current?.latitude;
+  const longitude =
+    dto.longitude !== undefined ? dto.longitude : current?.longitude;
   if ((latitude == null) !== (longitude == null)) {
     throw new BadRequestException('La latitud y la longitud van juntas');
   }
@@ -91,7 +116,8 @@ export class SpacesService {
     dto: UpdateSpaceDto,
   ): Promise<SpaceDto> {
     const current = await this.findOwned(ownerId, id);
-    if (dto.name === null) throw new BadRequestException('El nombre es obligatorio');
+    if (dto.name === null)
+      throw new BadRequestException('El nombre es obligatorio');
 
     const { amenityIds, ...fields } = dto;
     const regionId = await this.checkReferences(dto);
@@ -136,7 +162,11 @@ export class SpacesService {
       }
     }
 
-    const space = await this.prisma.space.update({
+    const descriptionChanged =
+      current.status !== SpaceStatus.ACTIVE &&
+      dto.description !== undefined &&
+      dto.description !== current.description;
+    const updateArgs = {
       where: { id },
       data: {
         ...fields,
@@ -150,8 +180,22 @@ export class SpacesService {
         }),
       },
       select: OWNER_VIEW,
-    });
-    return toDto(space);
+    } as const;
+    const space = descriptionChanged
+      ? await this.prisma.$transaction(async (tx) => {
+          const updated = await tx.space.update(updateArgs);
+          await tx.aiSpaceGeneration.updateMany({
+            where: { spaceId: id, description: { not: null } },
+            data: { reviewedAt: null },
+          });
+          return updated;
+        })
+      : await this.prisma.space.update(updateArgs);
+    const response = toDto(space);
+    if (descriptionChanged && response.aiDescriptionGenerated) {
+      response.aiDescriptionNeedsReview = true;
+    }
+    return response;
   }
 
   /** Los espacios del usuario, los modificados más recientemente primero, con lo que le falta a cada uno. */
@@ -173,7 +217,11 @@ export class SpacesService {
         updatedAt: true,
         type: { select: { name: true } },
         commune: { select: { name: true } },
-        photos: { select: { url: true }, orderBy: { position: 'asc' }, take: 1 },
+        photos: {
+          select: { url: true },
+          orderBy: { position: 'asc' },
+          take: 1,
+        },
         _count: { select: { photos: true, rulesWeek: true } },
       },
     });

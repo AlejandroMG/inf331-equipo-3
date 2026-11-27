@@ -3,9 +3,12 @@ import type { RawBodyRequest } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
   ApiBearerAuth,
+  ApiConflictResponse,
   ApiHeader,
+  ApiInternalServerErrorResponse,
   ApiOkResponse,
   ApiOperation,
+  ApiServiceUnavailableResponse,
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
@@ -28,11 +31,14 @@ export class PaymentsController {
   @ApiOperation({
     summary: 'Webhook de Stripe',
     description:
-      'Solo lo llama Stripe. Recibe el evento con el cuerpo sin interpretar y verifica su firma. `checkout.session.completed` pasa la reserva a `PAID` y dispara la confirmación; `checkout.session.expired` la pasa a `EXPIRED`. Es idempotente: un evento repetido o de un tipo que no interesa responde 200 sin hacer nada.',
+      'Solo lo llama Stripe. Recibe el evento con el cuerpo sin interpretar y verifica su firma. `checkout.session.completed` pasa la reserva `PENDING` a `PAID` y la valida: queda `CONFIRMED` o, si no pasa la validación, `CANCELLED` con reembolso del total; si la reserva ya está `EXPIRED` o `CANCELLED`, no cambia y se reembolsa el total. `checkout.session.expired` pasa la reserva `PENDING` a `EXPIRED`. Es idempotente: un evento repetido o de un tipo que no interesa responde 200 sin cambiar nada; sobre una reserva `PAID`, además vuelve a pedir la confirmación. Un 409 o un 500 hacen que Stripe reintente, un número limitado de veces.',
   })
   @ApiHeader({ name: 'stripe-signature', required: true, description: 'Firma del evento, la pone Stripe' })
   @ApiOkResponse({ type: WebhookAckDto })
   @ApiBadRequestResponse({ description: 'Falta la firma o no corresponde al cuerpo' })
+  @ApiConflictResponse({ description: 'La reserva cambió de estado mientras se procesaba el pago; Stripe reintenta' })
+  @ApiInternalServerErrorResponse({ description: 'Falló un reembolso o la base de datos; Stripe reintenta' })
+  @ApiServiceUnavailableResponse({ description: 'Stripe no está configurado en esta API' })
   webhook(
     @Req() request: RawBodyRequest<Request>,
     @Headers('stripe-signature') signature?: string,

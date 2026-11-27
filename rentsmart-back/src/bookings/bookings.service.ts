@@ -20,8 +20,8 @@ import { BOOKING_VIEW, toBookingDto, type BookingWithSpace } from './booking-vie
 import { cancellationRefund, CancelledBy } from './cancellation-policy';
 import { BookingCheckoutDto, BookingDto, BookingsPageDto } from './dto/booking.dto';
 import { CancelBookingDto } from './dto/cancel-booking.dto';
+import { BookingsQueryDto } from './dto/page-query.dto';
 import { CreateBookingDto } from './dto/create-booking.dto';
-import { PageQueryDto } from './dto/page-query.dto';
 import { overlapAsConflict } from './overlap-error';
 import { bookingAmounts, priceFor } from './pricing';
 import { lockSpaceForBooking } from './space-booking-lock';
@@ -194,8 +194,8 @@ export class BookingsService {
   }
 
   /** Mis reservas como arrendatario, de cualquier estado, las creadas más recientemente primero. */
-  async findMine(userId: string, { page, pageSize }: PageQueryDto): Promise<BookingsPageDto> {
-    const where = { renterId: userId };
+  async findMine(userId: string, { page, pageSize, status }: BookingsQueryDto): Promise<BookingsPageDto> {
+    const where = { renterId: userId, ...(status ? { status } : {}) };
     const [bookings, total] = await Promise.all([
       this.prisma.booking.findMany({
         where,
@@ -208,6 +208,42 @@ export class BookingsService {
       this.prisma.booking.count({ where }),
     ]);
     return { items: bookings.map(toBookingDto), total, page, pageSize };
+  }
+
+  /** Recupera el enlace de checkout vigente de una reserva propia pendiente. */
+  async resumeCheckout(userId: string, id: string, now: Date = new Date()): Promise<BookingCheckoutDto> {
+    const booking = await this.prisma.booking.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        renterId: true,
+        status: true,
+        expiresAt: true,
+        stripeCheckoutSessionId: true,
+        subtotal: true,
+        fee: true,
+        total: true,
+        space: { select: { name: true } },
+      },
+    });
+    if (!booking) throw new NotFoundException('La reserva no existe');
+    if (booking.renterId !== userId) throw new ForbiddenException('Esta reserva no es tuya');
+    if (booking.status !== BookingStatus.PENDING || !booking.expiresAt || booking.expiresAt <= now) {
+      throw new ConflictException('La reserva ya no está pendiente de pago');
+    }
+
+    const session = await this.checkout.resumeSession(
+      {
+        id: booking.id,
+        spaceName: booking.space.name,
+        subtotal: booking.subtotal,
+        fee: booking.fee,
+        total: booking.total,
+        expiresAt: booking.expiresAt,
+      },
+      booking.stripeCheckoutSessionId ?? undefined,
+    );
+    return { bookingId: booking.id, checkoutUrl: session.url };
   }
 
   /** Una reserva mía. 404 si no existe y 403 si es de otro arrendatario. */

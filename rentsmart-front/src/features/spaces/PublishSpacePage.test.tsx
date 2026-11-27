@@ -16,7 +16,11 @@ function renderPublish(path = '/publish') {
 
 /** Cuenta y guarda los cuerpos de POST y PATCH que recibe la API simulada, sin cambiar su respuesta. */
 function spyOnSaves() {
-  const calls: Array<{ method: string; url: string; body: Record<string, unknown> }> = []
+  const calls: Array<{
+    method: string
+    url: string
+    body: Record<string, unknown>
+  }> = []
   server.events.on('request:start', async ({ request }) => {
     if (['POST', 'PATCH'].includes(request.method) && new URL(request.url).pathname.startsWith('/api/spaces')) {
       // Publicar no manda cuerpo y las fotos mandan un formulario: solo los JSON se leen.
@@ -27,7 +31,11 @@ function spyOnSaves() {
       } catch {
         // sin cuerpo o no JSON
       }
-      calls.push({ method: request.method, url: new URL(request.url).pathname, body })
+      calls.push({
+        method: request.method,
+        url: new URL(request.url).pathname,
+        body,
+      })
     }
   })
   return calls
@@ -96,7 +104,14 @@ describe('PublishSpacePage', () => {
     expect(saves[0]).toMatchObject({
       method: 'POST',
       url: '/api/spaces',
-      body: { name: 'Sala Alameda', typeId: 1, capacity: 10, regionId: 1, amenityIds: [1], description: null },
+      body: {
+        name: 'Sala Alameda',
+        typeId: 1,
+        capacity: 10,
+        regionId: 1,
+        amenityIds: [1],
+        description: null,
+      },
     })
     expect(router.state.location.pathname).toBe('/publish/draft-1')
   })
@@ -118,7 +133,12 @@ describe('PublishSpacePage', () => {
     expect(saves[1]).toMatchObject({
       method: 'PATCH',
       url: '/api/spaces/draft-1',
-      body: { name: 'Sala Alameda', communeId: 2, address: 'Av. Libertador 1234', addressDetail: 'Oficina 301' },
+      body: {
+        name: 'Sala Alameda',
+        communeId: 2,
+        address: 'Av. Libertador 1234',
+        addressDetail: 'Oficina 301',
+      },
     })
 
     await userEvent.click(screen.getByRole('button', { name: 'Atrás' }))
@@ -146,17 +166,23 @@ describe('PublishSpacePage', () => {
 
   it('la lista "Para publicar necesitas" se va completando con lo que se escribe', async () => {
     await openForm()
-    const aside = screen.getByRole('complementary', { name: 'Estado del borrador' })
+    const aside = screen.getByRole('complementary', {
+      name: 'Estado del borrador',
+    })
     const item = (label: string) => within(aside).getByText(label).closest('li')!
     expect(item('Capacidad')).toHaveTextContent('Pendiente')
 
+    await userEvent.type(screen.getByLabelText('Nombre del espacio'), 'Sala')
     await userEvent.type(screen.getByLabelText('Capacidad (personas)'), '10')
-    await userEvent.type(screen.getByLabelText('Descripción'), 'Luminosa')
-
     expect(item('Capacidad')).toHaveTextContent('Listo')
-    expect(item('Descripción')).toHaveTextContent('Listo')
+    expect(item('Descripción')).toHaveTextContent('Pendiente')
     expect(item('Precio por hora o por día')).toHaveTextContent('Pendiente')
     expect(item('Al menos una foto')).toHaveTextContent('Pendiente')
+
+    await userEvent.click(screen.getByRole('button', { name: /Revisar/ }))
+    await screen.findByText('Paso 5 de 5 · Revisar')
+    await userEvent.type(screen.getByLabelText('Descripción'), 'Luminosa')
+    expect(item('Descripción')).toHaveTextContent('Listo')
   })
 
   describe('horario semanal en "Para publicar necesitas"', () => {
@@ -165,9 +191,13 @@ describe('PublishSpacePage', () => {
     afterEach(() => clearToken())
 
     const labels = () =>
-      within(screen.getByRole('complementary', { name: 'Estado del borrador' })).getAllByRole('listitem').map((li) => li.textContent)
+      within(screen.getByRole('complementary', { name: 'Estado del borrador' }))
+        .getAllByRole('listitem')
+        .map((li) => li.textContent)
     const schedule = () =>
-      within(screen.getByRole('complementary', { name: 'Estado del borrador' })).getByText('Horario semanal').closest('li')
+      within(screen.getByRole('complementary', { name: 'Estado del borrador' }))
+        .getByText('Horario semanal')
+        .closest('li')
 
     it('va antes de las fotos, que quedan al final', async () => {
       await openForm()
@@ -205,13 +235,29 @@ describe('PublishSpacePage', () => {
       server.use(
         mswHttp.get('*/api/spaces/draft-9', () =>
           HttpResponse.json({
-            id: 'draft-9', status: 'DRAFT', name: 'Mi borrador', typeId: 2, description: 'Texto', capacity: 6,
-            pricePerHour: 7000, pricePerDay: null, regionId: 1, communeId: 3, address: 'Calle 1', addressDetail: null,
-            rules: null, amenityIds: [2], photos: [], createdAt: '2026-10-05T00:00:00.000Z', updatedAt: '2026-10-05T00:00:00.000Z',
+            id: 'draft-9',
+            status: 'DRAFT',
+            name: 'Mi borrador',
+            typeId: 2,
+            description: 'Texto',
+            capacity: 6,
+            pricePerHour: 7000,
+            pricePerDay: null,
+            regionId: 1,
+            communeId: 3,
+            address: 'Calle 1',
+            addressDetail: null,
+            rules: null,
+            amenityIds: [2],
+            photos: [],
+            createdAt: '2026-10-05T00:00:00.000Z',
+            updatedAt: '2026-10-05T00:00:00.000Z',
           }),
         ),
         mswHttp.get('*/api/spaces/draft-9/schedule', () =>
-          HttpResponse.json({ rules: [{ weekday: 1, startTime: '09:00', endTime: '18:00' }] }),
+          HttpResponse.json({
+            rules: [{ weekday: 1, startTime: '09:00', endTime: '18:00' }],
+          }),
         ),
       )
       await openForm('/publish/draft-9')
@@ -238,11 +284,10 @@ describe('PublishSpacePage', () => {
 
   describe('publicar', () => {
     /** Llena un borrador con lo necesario (menos fotos) y llega al último paso. */
-    async function fillAndReview({ withPhoto = true, price = '12000' }: { withPhoto?: boolean; price?: string } = {}) {
+    async function fillAndReview({ withPhoto = true, price = '12000', description = 'Luminosa' }: { withPhoto?: boolean; price?: string; description?: string } = {}) {
       const router = await openForm()
       await userEvent.type(screen.getByLabelText('Nombre del espacio'), 'Sala Alameda')
       await userEvent.selectOptions(screen.getByLabelText('Tipo de espacio'), 'Sala de reuniones')
-      await userEvent.type(screen.getByLabelText('Descripción'), 'Luminosa')
       await userEvent.type(screen.getByLabelText('Capacidad (personas)'), '10')
       await next()
       await screen.findByText('Paso 2 de 5 · Ubicación')
@@ -258,8 +303,62 @@ describe('PublishSpacePage', () => {
       }
       await userEvent.click(screen.getByRole('button', { name: /Revisar/ }))
       await screen.findByText('Paso 5 de 5 · Revisar')
+      if (description) {
+        await userEvent.type(screen.getByLabelText('Descripción'), description)
+        await userEvent.click(screen.getByRole('button', { name: /Fotos/ }))
+        await userEvent.click(screen.getByRole('button', { name: /Revisar/ }))
+        await screen.findByText('Paso 5 de 5 · Revisar')
+      }
       return router
     }
+
+    it('permite generar, editar y exige confirmar la revisión antes de publicar', async () => {
+      await fillAndReview({ description: '' })
+      const description = screen.getByLabelText('Descripción')
+      expect(description).toHaveAttribute('placeholder', 'Anota tu descripción o genérala con IA')
+      await userEvent.click(screen.getByRole('button', { name: /Generar descripción con IA/ }))
+      await waitFor(() => expect((description as HTMLTextAreaElement).value).toContain('Sala Alameda'))
+      expect((description as HTMLTextAreaElement).value).toContain('Revisa y edita')
+      for (let attempt = 2; attempt <= 5; attempt += 1) {
+        await userEvent.click(
+          screen.getByRole('button', {
+            name: new RegExp(`Generar descripción con IA \\(${attempt - 1}/5\\)`),
+          }),
+        )
+      }
+      expect(
+        screen.getByRole('button', {
+          name: 'Límite de generaciones alcanzado',
+        }),
+      ).toBeDisabled()
+
+      const currentDescription = screen.getByLabelText('Descripción')
+      await userEvent.type(currentDescription, ' Ajustada por el propietario.')
+      expect((currentDescription as HTMLTextAreaElement).value).toContain('Ajustada por el propietario')
+
+      await userEvent.click(screen.getByRole('button', { name: /Revisar/ }))
+      await screen.findByText('Paso 5 de 5 · Revisar')
+      const publish = screen.getByRole('button', { name: 'Publicar espacio' })
+      expect(publish).toBeDisabled()
+
+      const review = screen.getByRole('checkbox', {
+        name: /Revisé la descripción generada/,
+      })
+      await userEvent.click(review)
+      await waitFor(() => expect(publish).toBeEnabled())
+
+      await userEvent.type(screen.getByLabelText('Descripción'), ' Una precisión adicional.')
+      expect(publish).toBeDisabled()
+      await userEvent.click(
+        screen.getByRole('checkbox', {
+          name: /Revisé la descripción generada/,
+        }),
+      )
+      await waitFor(() => expect(publish).toBeEnabled())
+
+      await userEvent.click(screen.getByRole('button', { name: 'Publicar espacio' }))
+      expect(await screen.findByRole('status')).toHaveTextContent('¡Tu espacio está publicado!')
+    })
 
     it('con todo completo publica y muestra el espacio con enlaces al catálogo y a Mis espacios', async () => {
       await fillAndReview()
@@ -302,11 +401,7 @@ describe('PublishSpacePage', () => {
     })
 
     it('el horario semanal faltante se avisa sin enlace, porque todavía no se puede cargar', async () => {
-      server.use(
-        mswHttp.post('*/api/spaces/:id/publish', () =>
-          HttpResponse.json({ statusCode: 409, message: 'Faltan datos', missing: ['schedule'] }, { status: 409 }),
-        ),
-      )
+      server.use(mswHttp.post('*/api/spaces/:id/publish', () => HttpResponse.json({ statusCode: 409, message: 'Faltan datos', missing: ['schedule'] }, { status: 409 })))
       await fillAndReview()
 
       await userEvent.click(screen.getByRole('button', { name: 'Publicar espacio' }))
@@ -348,14 +443,33 @@ describe('PublishSpacePage', () => {
       server.use(
         mswHttp.get('*/api/spaces/draft-7', () =>
           HttpResponse.json({
-            id: 'draft-7', status, name: 'Publicado', typeId: 1, description: 'x', capacity: 5, pricePerHour: 5000, pricePerDay: null,
-            regionId: 1, communeId: 1, address: null, addressDetail: null, rules: null, amenityIds: [], photos: [],
-            createdAt: '2026-10-05T00:00:00.000Z', updatedAt: '2026-10-05T00:00:00.000Z',
+            id: 'draft-7',
+            status,
+            name: 'Publicado',
+            typeId: 1,
+            description: 'x',
+            capacity: 5,
+            pricePerHour: 5000,
+            pricePerDay: null,
+            regionId: 1,
+            communeId: 1,
+            address: null,
+            addressDetail: null,
+            rules: null,
+            amenityIds: [],
+            photos: [],
+            createdAt: '2026-10-05T00:00:00.000Z',
+            updatedAt: '2026-10-05T00:00:00.000Z',
           }),
         ),
       )
       renderPublish('/publish/draft-7')
-      expect(await screen.findByRole('heading', { level: 1, name: 'Edita tu espacio' })).toBeInTheDocument()
+      expect(
+        await screen.findByRole('heading', {
+          level: 1,
+          name: 'Edita tu espacio',
+        }),
+      ).toBeInTheDocument()
       expect(screen.getByText('Cambios guardados')).toBeInTheDocument()
 
       await userEvent.click(screen.getByRole('button', { name: /Revisar/ }))
@@ -370,16 +484,33 @@ describe('PublishSpacePage', () => {
       server.use(
         mswHttp.get('*/api/spaces/draft-7', () =>
           HttpResponse.json({
-            id: 'draft-7', status: 'ACTIVE', name: 'Publicado', typeId: 1, description: 'x', capacity: 5, pricePerHour: 5000, pricePerDay: null,
-            regionId: 1, communeId: 1, address: null, addressDetail: null, rules: null, amenityIds: [], photos: [],
-            createdAt: '2026-10-05T00:00:00.000Z', updatedAt: '2026-10-05T00:00:00.000Z',
+            id: 'draft-7',
+            status: 'ACTIVE',
+            name: 'Publicado',
+            typeId: 1,
+            description: 'x',
+            capacity: 5,
+            pricePerHour: 5000,
+            pricePerDay: null,
+            regionId: 1,
+            communeId: 1,
+            address: null,
+            addressDetail: null,
+            rules: null,
+            amenityIds: [],
+            photos: [],
+            createdAt: '2026-10-05T00:00:00.000Z',
+            updatedAt: '2026-10-05T00:00:00.000Z',
           }),
         ),
       )
 
     async function editNameAndReview() {
       renderPublish('/publish/draft-7')
-      await screen.findByRole('heading', { level: 1, name: 'Edita tu espacio' })
+      await screen.findByRole('heading', {
+        level: 1,
+        name: 'Edita tu espacio',
+      })
       await userEvent.type(screen.getByLabelText('Nombre del espacio'), ' 2')
       await userEvent.click(screen.getByRole('button', { name: /Revisar/ }))
     }
@@ -389,7 +520,10 @@ describe('PublishSpacePage', () => {
       const saves = spyOnSaves()
       server.use(mswHttp.patch('*/api/spaces/draft-7', () => HttpResponse.json({})))
       renderPublish('/publish/draft-7')
-      await screen.findByRole('heading', { level: 1, name: 'Edita tu espacio' })
+      await screen.findByRole('heading', {
+        level: 1,
+        name: 'Edita tu espacio',
+      })
       await userEvent.click(screen.getByRole('button', { name: /Revisar/ }))
       expect(await screen.findByRole('button', { name: 'Guardar cambios' })).toBeDisabled()
 
@@ -407,7 +541,13 @@ describe('PublishSpacePage', () => {
       useActiveSpace()
       server.use(
         mswHttp.patch('*/api/spaces/draft-7', () =>
-          HttpResponse.json({ message: 'Un espacio publicado debe seguir teniendo lo necesario', missing: ['price'] }, { status: 409 }),
+          HttpResponse.json(
+            {
+              message: 'Un espacio publicado debe seguir teniendo lo necesario',
+              missing: ['price'],
+            },
+            { status: 409 },
+          ),
         ),
       )
 
@@ -419,9 +559,7 @@ describe('PublishSpacePage', () => {
   })
 
   it('si el servidor rechaza el guardado muestra el mensaje y no avanza', async () => {
-    server.use(
-      mswHttp.post('*/api/spaces', () => HttpResponse.json({ message: 'El tipo de espacio no existe' }, { status: 400 })),
-    )
+    server.use(mswHttp.post('*/api/spaces', () => HttpResponse.json({ message: 'El tipo de espacio no existe' }, { status: 400 })))
     await openForm()
     await userEvent.type(screen.getByLabelText('Nombre del espacio'), 'Sala')
 
@@ -437,9 +575,22 @@ describe('PublishSpacePage', () => {
     server.use(
       mswHttp.get('*/api/spaces/draft-9', () =>
         HttpResponse.json({
-          id: 'draft-9', status: 'DRAFT', name: 'Mi borrador', typeId: 2, description: 'Texto', capacity: 6,
-          pricePerHour: 7000, pricePerDay: null, regionId: 1, communeId: 3, address: 'Calle 1', addressDetail: null,
-          rules: null, amenityIds: [2], createdAt: '2026-10-05T00:00:00.000Z', updatedAt: '2026-10-05T00:00:00.000Z',
+          id: 'draft-9',
+          status: 'DRAFT',
+          name: 'Mi borrador',
+          typeId: 2,
+          description: 'Texto',
+          capacity: 6,
+          pricePerHour: 7000,
+          pricePerDay: null,
+          regionId: 1,
+          communeId: 3,
+          address: 'Calle 1',
+          addressDetail: null,
+          rules: null,
+          amenityIds: [2],
+          createdAt: '2026-10-05T00:00:00.000Z',
+          updatedAt: '2026-10-05T00:00:00.000Z',
         }),
       ),
       mswHttp.patch('*/api/spaces/draft-9', () => HttpResponse.json({})),
@@ -458,16 +609,35 @@ describe('PublishSpacePage', () => {
 
     await screen.findByText('Paso 2 de 5 · Ubicación')
     expect(saves).toHaveLength(1)
-    expect(saves[0]).toMatchObject({ method: 'PATCH', url: '/api/spaces/draft-9', body: { name: 'Renombrado', capacity: 6 } })
+    expect(saves[0]).toMatchObject({
+      method: 'PATCH',
+      url: '/api/spaces/draft-9',
+      body: { name: 'Renombrado', capacity: 6 },
+    })
   })
 
   describe('punto en el mapa', () => {
     const draftWithPoint = (point: { latitude: number | null; longitude: number | null }) =>
       mswHttp.get('*/api/spaces/draft-7', () =>
         HttpResponse.json({
-          id: 'draft-7', status: 'DRAFT', name: 'Con mapa', typeId: null, description: null, capacity: null,
-          pricePerHour: null, pricePerDay: null, regionId: 1, communeId: null, address: null, addressDetail: null,
-          ...point, rules: null, amenityIds: [], photos: [], createdAt: '2026-10-05T00:00:00.000Z', updatedAt: '2026-10-05T00:00:00.000Z',
+          id: 'draft-7',
+          status: 'DRAFT',
+          name: 'Con mapa',
+          typeId: null,
+          description: null,
+          capacity: null,
+          pricePerHour: null,
+          pricePerDay: null,
+          regionId: 1,
+          communeId: null,
+          address: null,
+          addressDetail: null,
+          ...point,
+          rules: null,
+          amenityIds: [],
+          photos: [],
+          createdAt: '2026-10-05T00:00:00.000Z',
+          updatedAt: '2026-10-05T00:00:00.000Z',
         }),
       )
 
@@ -481,7 +651,11 @@ describe('PublishSpacePage', () => {
       await openForm()
       await openStep2()
 
-      expect(await screen.findByRole('region', { name: 'Mapa para marcar la ubicación del espacio' })).toBeInTheDocument()
+      expect(
+        await screen.findByRole('region', {
+          name: 'Mapa para marcar la ubicación del espacio',
+        }),
+      ).toBeInTheDocument()
       expect(screen.getByLabelText('Latitud')).toHaveValue(null)
       expect(screen.getByLabelText('Longitud')).toHaveValue(null)
       expect(screen.queryByRole('button', { name: 'Quitar el punto' })).not.toBeInTheDocument()
@@ -497,7 +671,10 @@ describe('PublishSpacePage', () => {
       await next()
 
       expect(await screen.findByText('Paso 3 de 5 · Precio y horario')).toBeInTheDocument()
-      expect(saves[1]).toMatchObject({ method: 'PATCH', body: { latitude: -33.4489, longitude: -70.6693 } })
+      expect(saves[1]).toMatchObject({
+        method: 'PATCH',
+        body: { latitude: -33.4489, longitude: -70.6693 },
+      })
     })
 
     it('un borrador que no marcó el punto se guarda con null en las dos', async () => {
@@ -505,7 +682,10 @@ describe('PublishSpacePage', () => {
       await openForm()
       await openStep2()
 
-      expect(saves[0]).toMatchObject({ method: 'POST', body: { latitude: null, longitude: null } })
+      expect(saves[0]).toMatchObject({
+        method: 'POST',
+        body: { latitude: null, longitude: null },
+      })
     })
 
     it('una coordenada fuera de Chile no se guarda y marca el campo', async () => {
@@ -536,7 +716,10 @@ describe('PublishSpacePage', () => {
 
     it('al continuar un borrador carga el punto guardado, y "Quitar el punto" lo borra en el servidor', async () => {
       const saves = spyOnSaves()
-      server.use(draftWithPoint({ latitude: -33.4489, longitude: -70.6693 }), mswHttp.patch('*/api/spaces/draft-7', () => HttpResponse.json({})))
+      server.use(
+        draftWithPoint({ latitude: -33.4489, longitude: -70.6693 }),
+        mswHttp.patch('*/api/spaces/draft-7', () => HttpResponse.json({})),
+      )
       await openForm('/publish/draft-7')
       await userEvent.click(screen.getByRole('button', { name: 'Siguiente' }))
       await screen.findByText('Paso 2 de 5 · Ubicación')
@@ -551,14 +734,22 @@ describe('PublishSpacePage', () => {
 
       await next()
       await screen.findByText('Paso 3 de 5 · Precio y horario')
-      expect(saves.at(-1)).toMatchObject({ method: 'PATCH', url: '/api/spaces/draft-7', body: { latitude: null, longitude: null } })
+      expect(saves.at(-1)).toMatchObject({
+        method: 'PATCH',
+        url: '/api/spaces/draft-7',
+        body: { latitude: null, longitude: null },
+      })
     })
   })
 
   it('un borrador que no existe o no es del usuario muestra un aviso con salida', async () => {
     renderPublish('/publish/no-existe')
 
-    expect(await screen.findByRole('heading', { name: 'No encontramos este borrador' })).toBeInTheDocument()
+    expect(
+      await screen.findByRole('heading', {
+        name: 'No encontramos este borrador',
+      }),
+    ).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Publicar un espacio nuevo' })).toHaveAttribute('href', '/publish')
   })
 
@@ -580,7 +771,9 @@ describe('PublishSpacePage', () => {
     await userEvent.type(screen.getByLabelText('Nombre del espacio'), 'Sala Alameda')
     await userEvent.click(screen.getByRole('button', { name: /Fotos/ }))
     expect(await screen.findByText('Paso 4 de 5 · Fotos')).toBeInTheDocument()
-    const aside = screen.getByRole('complementary', { name: 'Estado del borrador' })
+    const aside = screen.getByRole('complementary', {
+      name: 'Estado del borrador',
+    })
     expect(within(aside).getByText('Al menos una foto').closest('li')).toHaveTextContent('Pendiente')
 
     await userEvent.upload(screen.getByLabelText('Elegir fotos'), new File(['x'], 'sala.png', { type: 'image/png' }))
@@ -611,7 +804,6 @@ describe('PublishSpacePage', () => {
     expect(screen.getByText('1 de 10 fotos')).toBeInTheDocument()
   })
 
-
   it('si falla la carga muestra el error y permite reintentar', async () => {
     let calls = 0
     server.use(
@@ -627,6 +819,11 @@ describe('PublishSpacePage', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'Reintentar' }))
 
-    expect(await screen.findByRole('heading', { level: 1, name: 'Publica tu espacio' })).toBeInTheDocument()
+    expect(
+      await screen.findByRole('heading', {
+        level: 1,
+        name: 'Publica tu espacio',
+      }),
+    ).toBeInTheDocument()
   })
 })

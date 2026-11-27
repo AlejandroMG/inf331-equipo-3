@@ -20,6 +20,7 @@ import { PublishSpacePage } from './features/spaces/PublishSpacePage'
 import { BookingPage } from './features/bookings/BookingPage'
 import { ProfilePage } from './features/users/ProfilePage'
 import { PublicProfilePage } from './features/users/PublicProfilePage'
+import { RenterBookingsPage } from './features/bookings/RenterBookingsPage'
 
 /**
  * Rutas de la app. Cada dominio agrega las suyas aquí y reemplaza el placeholder por su pantalla.
@@ -44,6 +45,7 @@ export const routes: RouteObject[] = [
           { path: 'owner/metrics', element: <OwnerMetricsPage />, handle: { title: 'Métricas' } },
           { path: 'favorites', element: <FavoritesPage />, handle: { title: 'Mis favoritos' } },
           { path: 'bookings/:bookingId', element: <BookingPage /> },
+          { path: 'bookings', element: <RenterBookingsPage />, handle: { title: 'Mis reservas y pagos' } },
         ],
       },
       {

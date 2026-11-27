@@ -414,7 +414,7 @@ describe('BookingsService (RE-02)', () => {
   const state = { recordCreation: jest.fn() };
   const availability = { isAvailable: jest.fn() };
   const expiry = { expireStalePending: jest.fn() };
-  const checkout = { createSession: jest.fn(), cancelSession: jest.fn() };
+  const checkout = { createSession: jest.fn(), resumeSession: jest.fn(), cancelSession: jest.fn() };
 
   // Lunes 14 de octubre de 2030, de 10:00 a 12:00 en Chile; el reloj está un día antes.
   const CLOCK = new Date('2030-10-13T15:07:00.000Z');
@@ -434,6 +434,7 @@ describe('BookingsService (RE-02)', () => {
     expiry.expireStalePending.mockResolvedValue({ changed: 0, skipped: 0, failed: 0 });
     availability.isAvailable.mockResolvedValue(true);
     checkout.createSession.mockResolvedValue({ url: 'http://front.test/bookings/b1' });
+    checkout.resumeSession.mockResolvedValue({ url: 'https://checkout.stripe.test/session' });
     checkout.cancelSession.mockResolvedValue(undefined);
     const module = await Test.createTestingModule({
       providers: [
@@ -447,6 +448,71 @@ describe('BookingsService (RE-02)', () => {
       ],
     }).compile();
     service = module.get(BookingsService);
+  });
+
+  describe('resumeCheckout', () => {
+    const storedPending = (extra: Record<string, unknown> = {}) => ({
+      id: 'b1',
+      renterId: 'renter',
+      status: BookingStatus.PENDING,
+      expiresAt: new Date(CLOCK.getTime() + 10 * 60_000),
+      stripeCheckoutSessionId: 'cs_test_1',
+      subtotal: 24000,
+      fee: 2400,
+      total: 26400,
+      space: { name: 'Sala Alameda' },
+      ...extra,
+    });
+
+    it('recupera la sesión vigente de una reserva propia pendiente', async () => {
+      const booking = storedPending();
+      prisma.booking.findUnique.mockResolvedValue(booking);
+
+      await expect(service.resumeCheckout('renter', 'b1', CLOCK)).resolves.toEqual({
+        bookingId: 'b1',
+        checkoutUrl: 'https://checkout.stripe.test/session',
+      });
+      expect(prisma.booking.findUnique).toHaveBeenCalledWith({
+        where: { id: 'b1' },
+        select: {
+          id: true,
+          renterId: true,
+          status: true,
+          expiresAt: true,
+          stripeCheckoutSessionId: true,
+          subtotal: true,
+          fee: true,
+          total: true,
+          space: { select: { name: true } },
+        },
+      });
+      expect(checkout.resumeSession).toHaveBeenCalledWith(
+        {
+          id: 'b1',
+          spaceName: 'Sala Alameda',
+          subtotal: 24000,
+          fee: 2400,
+          total: 26400,
+          expiresAt: booking.expiresAt,
+        },
+        'cs_test_1',
+      );
+    });
+
+    it('rechaza reservas inexistentes, ajenas o que ya no pueden pagarse', async () => {
+      prisma.booking.findUnique.mockResolvedValue(null);
+      await expect(service.resumeCheckout('renter', 'b1', CLOCK)).rejects.toThrow(NotFoundException);
+
+      prisma.booking.findUnique.mockResolvedValue(storedPending({ renterId: 'other' }));
+      await expect(service.resumeCheckout('renter', 'b1', CLOCK)).rejects.toThrow(ForbiddenException);
+
+      prisma.booking.findUnique.mockResolvedValue(storedPending({ expiresAt: new Date(CLOCK.getTime()) }));
+      await expect(service.resumeCheckout('renter', 'b1', CLOCK)).rejects.toThrow(ConflictException);
+
+      prisma.booking.findUnique.mockResolvedValue(storedPending({ status: BookingStatus.CONFIRMED }));
+      await expect(service.resumeCheckout('renter', 'b1', CLOCK)).rejects.toThrow(ConflictException);
+      expect(checkout.resumeSession).not.toHaveBeenCalled();
+    });
   });
 
   describe('create', () => {
@@ -877,6 +943,18 @@ describe('BookingsService (RE-02)', () => {
         page: 1,
         pageSize: 20,
       });
+    });
+
+    it('filtra por estado antes de paginar', async () => {
+      prisma.booking.findMany.mockResolvedValue([]);
+      prisma.booking.count.mockResolvedValue(0);
+
+      await service.findMine('renter', { page: 1, pageSize: 20, status: BookingStatus.CONFIRMED });
+
+      expect(prisma.booking.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { renterId: 'renter', status: BookingStatus.CONFIRMED } }),
+      );
+      expect(prisma.booking.count).toHaveBeenCalledWith({ where: { renterId: 'renter', status: BookingStatus.CONFIRMED } });
     });
   });
 

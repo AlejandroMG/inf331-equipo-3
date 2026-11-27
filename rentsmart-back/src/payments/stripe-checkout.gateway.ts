@@ -1,4 +1,4 @@
-import { BadGatewayException, Logger } from '@nestjs/common';
+import { BadGatewayException, ConflictException, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type Stripe from 'stripe';
 import { CheckoutBooking, CheckoutGateway, CheckoutSession } from './checkout-gateway';
@@ -6,7 +6,7 @@ import { bookingPageUrl } from './frontend-url';
 
 /** Lo único que este gateway usa del cliente de Stripe; así los tests le pasan un doble pequeño. */
 export type StripeCheckoutClient = {
-  checkout: { sessions: Pick<Stripe['checkout']['sessions'], 'create' | 'expire'> };
+  checkout: { sessions: Pick<Stripe['checkout']['sessions'], 'create' | 'expire' | 'retrieve'> };
 };
 
 /** Lo que ve el arrendatario si Stripe falla: no se cobró nada y la reserva no quedó creada. */
@@ -17,6 +17,8 @@ export const STRIPE_UNAVAILABLE_MESSAGE = 'No pudimos iniciar el pago con Stripe
  * reserva y devuelve su URL y su id, que `BookingsService.create` guarda en la reserva y en su `Payment`.
  *
  * - CLP no tiene decimales en Stripe: el monto va tal cual, sin multiplicar por 100.
+ * - Solo con tarjeta (`allowed_payment_method_types`; el SDK 23 ya no acepta `payment_method_types` al crear la sesión),
+ *   aunque se activen otros medios en el dashboard: así no entra un pago asíncrono, que el webhook no atiende.
  * - El id de la reserva va en `metadata.bookingId` y en `client_reference_id`, para que el webhook (PA-02) la encuentre.
  * - La sesión vence en el mismo instante que la retención (`expiresAt`, P-06). Stripe exige que `expires_at` quede al
  *   menos 30 minutos después de crear la sesión; con 31 minutos de retención queda un margen de unos 40 s o más (ver
@@ -42,6 +44,7 @@ export class StripeCheckoutGateway implements CheckoutGateway {
       session = await this.stripe.checkout.sessions.create({
         mode: 'payment',
         currency: 'clp',
+        allowed_payment_method_types: ['card'],
         line_items: [
           {
             quantity: 1,
@@ -69,6 +72,25 @@ export class StripeCheckoutGateway implements CheckoutGateway {
         this.logger.warn(`No se pudo expirar la sesión ${session.id}: ${describeStripeError(error)}`),
       );
       throw new BadGatewayException(STRIPE_UNAVAILABLE_MESSAGE);
+    }
+    return { url: session.url, sessionId: session.id };
+  }
+
+  async resumeSession(_booking: CheckoutBooking, sessionId?: string): Promise<CheckoutSession> {
+    if (!sessionId) {
+      throw new ConflictException('No hay un pago disponible para continuar en esta reserva');
+    }
+
+    let session: Awaited<ReturnType<StripeCheckoutClient['checkout']['sessions']['retrieve']>>;
+    try {
+      session = await this.stripe.checkout.sessions.retrieve(sessionId);
+    } catch (error) {
+      this.logger.error(`No se pudo recuperar el checkout ${sessionId}: ${describeStripeError(error)}`);
+      throw new BadGatewayException(STRIPE_UNAVAILABLE_MESSAGE);
+    }
+
+    if (session.status !== 'open' || !session.url) {
+      throw new ConflictException('La sesión de pago ya no está disponible; actualiza el estado de la reserva');
     }
     return { url: session.url, sessionId: session.id };
   }

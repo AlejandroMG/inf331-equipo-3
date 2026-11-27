@@ -37,6 +37,7 @@ inf331-equipo-3/
 ├── README.md              ← cómo levantar el proyecto
 ├── .env.example           ← variables de entorno documentadas
 ├── docs/                  ← documentación (ver índice en docs/README.md)
+├── e2e-selenium/          ← pruebas E2E/UI con Selenium + Mocha (Entrega 3), contra el stack real
 ├── rentsmart-back/        ← API REST, NestJS 12 + TypeScript
 │   ├── src/               ← un módulo por dominio (src/<dominio>/)
 │   └── test/              ← tests e2e de la API (Supertest)
@@ -98,4 +99,5 @@ El detalle está en [`docs/producto.md`](docs/producto.md) y [`docs/decisiones.m
 | [`docs/plan.md`](docs/plan.md) | Sprints, responsables y entregas entre integrantes |
 | [`docs/flujo-de-trabajo.md`](docs/flujo-de-trabajo.md) | Ramas, commits, PRs, revisiones y definición de terminado |
 | [`docs/plan-de-pruebas.md`](docs/plan-de-pruebas.md) | Niveles de prueba, herramientas, qué corre el CI y meta de cobertura |
+| [`docs/entrega-3.md`](docs/entrega-3.md) | Entrega 3: E2E/UI con Selenium, ejecución, CI, evidencias y problemas |
 | [`docs/memory.md`](docs/memory.md) | Bitácora de sesiones de trabajo (obligatoria) |

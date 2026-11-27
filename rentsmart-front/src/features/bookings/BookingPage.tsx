@@ -81,6 +81,28 @@ function CancelledPaymentNotice({ booking }: { booking: Booking }) {
 }
 
 /**
+ * Volvió de pagar y la reserva quedó cancelada: no pasó la validación automática (RE-04), o el pago llegó sobre una que
+ * ya no seguía en pie (enmienda a P-06). En los dos casos corresponde devolver el total. Solo afirma que ya se devolvió
+ * si el pago lo dice; con `refundedAmount` en 0, este aviso reemplaza al texto general de `RefundNotice`. La URL conserva
+ * `?pago=ok`: quien monte `CancelBookingDialog` debe revisar el caso de una cancelación posterior sin reembolso (P-14).
+ */
+function UnconfirmedNotice({ booking }: { booking: Booking }) {
+  return (
+    <div role="status" className="rounded-xl border border-accent bg-accent-soft p-4 text-[15px] text-accent-ink">
+      <p>
+        No pudimos confirmar tu reserva, así que quedó cancelada.{' '}
+        {booking.refundedAmount > 0
+          ? `Te devolvimos ${formatClp(booking.refundedAmount)}.`
+          : `Se reembolsa el total, ${formatClp(booking.total)}; todavía no aparece como devuelto.`}
+      </p>
+      <LinkButton to={paths.home} variant="secondary" size="sm" className="mt-3">
+        Ver el catálogo
+      </LinkButton>
+    </div>
+  )
+}
+
+/**
  * Qué se devolvió (PA-03). Solo afirma lo que dice el pago: una cancelada con `refundedAmount` en 0 puede ser una
  * pendiente que nunca se pagó, una sin derecho a reembolso o un reembolso que falló, y la página no sabe cuál es, así
  * que el texto vale para todas.
@@ -106,10 +128,11 @@ function BookingDetail({
   payment: PaymentReturn
   onRefresh: () => void
 }) {
-  // Al volver de pagar, consulta hasta ver la reserva confirmada (PA-01).
+  // Al volver de pagar, consulta hasta ver la reserva confirmada o cancelada (PA-01, RE-04).
   const { booking, polling, exhausted } = useConfirmationPolling(initial, payment === 'ok')
   const hours = hoursBetween(booking.startAt, booking.endAt)
   const { space } = booking
+  const unconfirmed = payment === 'ok' && booking.status === 'CANCELLED'
 
   return (
     <div className="flex flex-col gap-6">
@@ -139,9 +162,12 @@ function BookingDetail({
       )}
       {exhausted && (
         <div role="status" className="rounded-xl border border-accent bg-accent-soft p-4 text-[15px] text-accent-ink">
-          Todavía no recibimos la confirmación del pago. Prueba con «Actualizar el estado» en unos minutos.
+          {booking.status === 'PAID'
+            ? 'Recibimos tu pago y falta la confirmación de la reserva. Prueba con «Actualizar el estado» en unos minutos.'
+            : 'Todavía no recibimos la confirmación del pago. Prueba con «Actualizar el estado» en unos minutos.'}
         </div>
       )}
+      {unconfirmed && <UnconfirmedNotice booking={booking} />}
       {payment === 'cancelado' && <CancelledPaymentNotice booking={booking} />}
 
       {booking.status === 'PENDING' && !polling && <HoldCountdown booking={booking} />}
@@ -169,7 +195,7 @@ function BookingDetail({
           <dt className="border-t border-line pt-1 font-bold">Total</dt>
           <dd className="border-t border-line pt-1 text-right font-bold">{formatClp(booking.total)}</dd>
         </dl>
-        <RefundNotice booking={booking} />
+        {(!unconfirmed || booking.refundedAmount > 0) && <RefundNotice booking={booking} />}
       </section>
 
       <div>

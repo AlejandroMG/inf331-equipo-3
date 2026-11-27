@@ -1,0 +1,69 @@
+name: Deploy
+
+# QA-03 (#66): cada merge a main despliega en la VM (P-17). También se puede lanzar a mano desde Actions
+# ("Run workflow") eligiendo la rama, por ejemplo para una demo desde develop.
+# La VM tiene el repo clonado en ~/inf331-equipo-3 y su .env.prod; el workflow solo cambia el código y reconstruye.
+# Secretos de Actions (los crea un admin del repo): DEPLOY_HOST (dominio de la VM), DEPLOY_USER y DEPLOY_SSH_KEY
+# (la clave privada completa). Sin DEPLOY_HOST el workflow termina sin hacer nada.
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Desplegar en la VM
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+      DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+      DEPLOY_REF: ${{ github.ref_name }}
+    steps:
+      - name: Revisar la configuración
+        id: config
+        run: |
+          if [ -z "$DEPLOY_HOST" ] || [ -z "$DEPLOY_USER" ]; then
+            echo "::notice::Faltan los secretos DEPLOY_HOST/DEPLOY_USER/DEPLOY_SSH_KEY: no hay VM a la que desplegar."
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Preparar SSH
+        if: steps.config.outputs.enabled == 'true'
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts
+
+      - name: Actualizar el código y reconstruir
+        if: steps.config.outputs.enabled == 'true'
+        run: |
+          ssh -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" "DEPLOY_REF='$DEPLOY_REF' bash -s" <<'EOF'
+          set -euo pipefail
+          cd ~/inf331-equipo-3
+          git fetch --prune origin
+          git checkout --detach "origin/$DEPLOY_REF"
+          docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build --wait
+          docker image prune -f
+          EOF
+
+      - name: Smoke test
+        if: steps.config.outputs.enabled == 'true'
+        run: |
+          for i in $(seq 1 20); do
+            if curl -fsS "https://$DEPLOY_HOST/api/catalog?page=1&pageSize=1" > /dev/null; then
+              echo "La API responde en https://$DEPLOY_HOST"; exit 0
+            fi
+            sleep 6
+          done
+          echo "::error::La API no respondió en https://$DEPLOY_HOST"; exit 1
