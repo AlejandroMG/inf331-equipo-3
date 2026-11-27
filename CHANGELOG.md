@@ -12,8 +12,9 @@ Tercera entrega: pruebas de interfaz (E2E/UI) con Selenium integradas al pipelin
 - 25 pruebas E2E/UI con Selenium WebDriver y Mocha en Chrome headless, contra el stack real (PostgreSQL con seed, API y front compilado): catálogo y búsqueda, registro y login con validaciones, rutas protegidas y permisos, publicar, editar, desactivar y eliminar un espacio, reservar, favoritos y perfil (QA-05, QA-06).
 - Job «E2E (Selenium)» en GitHub Actions: levanta el stack, corre las pruebas, falla el pipeline si una falla y publica el resumen, el reporte HTML y JUnit, y los screenshots de las fallas (QA-07).
 - Job «Empaquetar»: cuando todas las pruebas pasan, genera los paquetes del back y del front listos para desplegar.
+- Despliegue en una VM de Azure con Docker Compose (PostgreSQL, API y Caddy con HTTPS) y workflow de CD que despliega en cada push a `main` (QA-03, P-17). Probado en local; falta la VM.
 - Reporte de las pruebas E2E como check del pull request, con el resultado de cada caso.
-- Documentación de la entrega en [`docs/entrega-3.md`](docs/entrega-3.md) y en la Wiki (QA-08).
+- Documentación de la entrega en [`docs/entrega-3.md`](docs/entrega-3.md) y en la Wiki, y el [video](https://youtu.be/BXYN_tfirII) (QA-08).
 
 **Reservas, pagos y paneles**
 - Confirmación del pago por webhook de Stripe (PA-02) y confirmación automática de la reserva pagada, con reembolso total si la validación falla (RE-04).
@@ -32,7 +33,7 @@ Tercera entrega: pruebas de interfaz (E2E/UI) con Selenium integradas al pipelin
 ### No incluido en esta entrega
 
 - Administración de usuarios (AD-01), reseñas (RS-01 a RS-03) y búsqueda en lenguaje natural (IA-03).
-- Despliegue público: el pipeline genera los paquetes, pero la aplicación no tiene un ambiente donde publicarlos (P-17).
+- La VM de Azure creada y el despliegue probado con HTTPS real (QA-03).
 - Pago con Stripe y cancelación de una reserva dentro de las pruebas E2E/UI (QA-01, BOK-04).
 
 ## [v2.0-entrega2] · 2026-11-02

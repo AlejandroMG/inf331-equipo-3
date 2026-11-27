@@ -11,9 +11,9 @@ Proyecto de INF331 Pruebas de Software, Universidad Técnica Federico Santa Mar�
 
 | | |
 |---|---|
-| Videos | [Entrega 1](https://youtu.be/QrpY-6-MbvQ) · [Entrega 2](https://youtu.be/YdUN9zQ58AY) · Entrega 3: se agrega al publicar el release `v3.0-entrega3` |
+| Videos | [Entrega 1](https://youtu.be/QrpY-6-MbvQ) · [Entrega 2](https://youtu.be/YdUN9zQ58AY) · [Entrega 3](https://youtu.be/BXYN_tfirII) |
 | Wiki (documentación de entregas) | [Inicio](https://github.com/AlejandroMG/inf331-equipo-3/wiki) · [Entrega 1](https://github.com/AlejandroMG/inf331-equipo-3/wiki/Entrega-1) · [Entrega 2](https://github.com/AlejandroMG/inf331-equipo-3/wiki/Entrega-2) · [Entrega 3](https://github.com/AlejandroMG/inf331-equipo-3/wiki/Entrega-3) |
-| Releases | [`v1.0-entrega1`](https://github.com/AlejandroMG/inf331-equipo-3/releases/tag/v1.0-entrega1) · [`v2.0-entrega2`](https://github.com/AlejandroMG/inf331-equipo-3/releases/tag/v2.0-entrega2) · [Release notes de cada entrega](CHANGELOG.md) |
+| Releases | [`v1.0-entrega1`](https://github.com/AlejandroMG/inf331-equipo-3/releases/tag/v1.0-entrega1) · [`v2.0-entrega2`](https://github.com/AlejandroMG/inf331-equipo-3/releases/tag/v2.0-entrega2) · [`v3.0-entrega3`](https://github.com/AlejandroMG/inf331-equipo-3/releases/tag/v3.0-entrega3) · [Release notes de cada entrega](CHANGELOG.md) |
 | CI/CD | [Ejecuciones de GitHub Actions](https://github.com/AlejandroMG/inf331-equipo-3/actions/workflows/ci.yml) · avisos en el canal de Discord del equipo |
 | Entrega 3 (pruebas E2E/UI con Selenium) | [`docs/entrega-3.md`](docs/entrega-3.md) · [`e2e-selenium/`](e2e-selenium/README.md) |
 | Backlog | [Issues y milestones](https://github.com/AlejandroMG/inf331-equipo-3/issues) |
@@ -37,7 +37,9 @@ Líder de equipo: Renato Ramírez ([@xReNatS](https://github.com/xReNatS)).
 - **Paneles:** propietario (mis espacios, reservas y métricas), arrendatario (mis reservas y pagos) y administración de espacios y tipos (PN-01 a PN-04, AD-02).
 - **Calidad:** pruebas unitarias, de integración, de componentes y E2E/UI con Selenium y Playwright, todas dentro del pipeline de GitHub Actions, que además empaqueta el build y avisa el resultado en Discord.
 
-**Todavía no:** administración de usuarios (AD-01), reseñas (RS-01 a RS-03) y despliegue público. La aplicación corre en local; el pipeline genera los paquetes listos para desplegar.
+**Despliegue:** configuración lista para una VM de Azure con Docker Compose y un workflow que despliega en cada merge a `main` (QA-03, ver «Desplegar en Azure»). Probada en local; falta crear la VM.
+
+**Todavía no:** administración de usuarios (AD-01) y reseñas (RS-01 a RS-03).
 
 ## Estructura
 

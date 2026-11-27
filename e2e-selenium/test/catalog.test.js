@@ -1,5 +1,5 @@
 const assert = require('node:assert/strict');
-const { By, until, visible, click, type, button, heading, open, currentPath, waitForPath } = require('../lib/helpers');
+const { By, until, visible, click, type, button, heading, open, currentPath, waitForPath, texts } = require('../lib/helpers');
 const { useBrowser } = require('../lib/session');
 
 // Catálogo público (BU-01 a BU-04): lo ve cualquier persona, sin sesión. El seed deja al menos 10 espacios activos.
@@ -7,10 +7,7 @@ const { useBrowser } = require('../lib/session');
 describe('Catálogo y búsqueda', function () {
   const browser = useBrowser();
 
-  const cardTitles = async () => {
-    const titles = await browser.driver.findElements(By.css('a[href^="/spaces/"] h3'));
-    return Promise.all(titles.map((title) => title.getText()));
-  };
+  const cardTitles = () => texts(browser.driver, By.css('a[href^="/spaces/"] h3'));
 
   /** Espera a que el catálogo termine de cargar y devuelve los nombres de los espacios visibles. */
   async function loadedCards() {
@@ -43,7 +40,7 @@ describe('Catálogo y búsqueda', function () {
       return titles.length > 0 && titles.length < all.length;
     }, 10000, 'El catálogo no se acotó con la búsqueda');
     // La búsqueda mira el nombre, el tipo y la comuna: cada tarjeta debe mencionar «Las Condes» en alguno de ellos.
-    const cards = await Promise.all((await driver.findElements(By.css('a[href^="/spaces/"]'))).map((card) => card.getText()));
+    const cards = await texts(driver, By.css('a[href^="/spaces/"]'));
     assert.ok(cards.every((text) => text.includes('Las Condes')), `Resultados fuera de la búsqueda: ${cards.join(' | ')}`);
   });
 
@@ -89,8 +86,8 @@ describe('Catálogo y búsqueda', function () {
     // Lee el precio por hora de cada tarjeta, en el orden en que aparecen, y comprueba que no baja: no depende de los
     // precios que tenga el seed.
     const hourlyPrices = async () => {
-      const texts = await Promise.all((await driver.findElements(By.css('a[href^="/spaces/"]'))).map((card) => card.getText()));
-      return texts.map((text) => text.match(/\$\s?([\d.]+)\s*\/\s*hora/)).filter(Boolean).map((match) => Number(match[1].replace(/\./g, '')));
+      const cards = await texts(driver, By.css('a[href^="/spaces/"]'));
+      return cards.map((text) => text.match(/\$\s?([\d.]+)\s*\/\s*hora/)).filter(Boolean).map((match) => Number(match[1].replace(/\./g, '')));
     };
     await driver.wait(async () => {
       const prices = await hourlyPrices();

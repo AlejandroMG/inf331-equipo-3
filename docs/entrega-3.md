@@ -2,6 +2,8 @@
 
 Documento de la Entrega 3 del ramo INF331 (equipo 3). Sigue el orden del Anexo B de la pauta. La misma información se publica en la página «Entrega 3» de la Wiki.
 
+**Video de la entrega:** [https://youtu.be/BXYN_tfirII](https://youtu.be/BXYN_tfirII)
+
 ## Objetivo de la Entrega 3
 
 Sumar pruebas de interfaz (E2E/UI) a RentSmart, que corran solas dentro del pipeline de la Entrega 2 y dejen evidencia clara de cada ejecución. Queda así:
@@ -18,20 +20,20 @@ Esta tabla resume cada observación de las rúbricas anteriores, qué hicimos en
 
 | Observación (entrega) | Qué hicimos | Dónde verlo |
 |---|---|---|
-| El enlace al video quedó como `PENDIENTE` en el tag y en la Wiki (E1) | Enlaces a los videos de las entregas 1 y 2 en el README y la Wiki. El de esta entrega se agrega antes de publicar el release, no después | README («Enlaces»), Wiki (Inicio y Entrega 1) |
+| El enlace al video quedó como `PENDIENTE` en el tag y en la Wiki (E1) | Enlaces a los videos de las tres entregas en el README y la Wiki. El de esta entrega ([video](https://youtu.be/BXYN_tfirII)) se agregó antes de publicar el release, también en sus notas | README («Enlaces»), Wiki (Inicio, Entrega 1 y Entrega 3), release `v3.0-entrega3` |
 | Agregar pruebas E2E (E1) | Smoke con Playwright desde la Entrega 2 y 25 pruebas E2E/UI con Selenium contra el stack real en esta | [Set de pruebas](#set-de-pruebas) |
 | Subir la cobertura del back, 45,6 % (E1) | 57 % en la Entrega 2 y 62,1 % de líneas en esta | README («Pruebas») y resumen de cada ejecución del CI |
 | GitFlow aplicado tarde: casi todo entró directo a `main` (E1) | Cada historia en una rama `feature/<ID>` con PR a `develop`; la entrega pasa a `main` por `release/v3.0-entrega3` con su tag | PRs #149, #154 a #160 |
 | Commits concentrados en una persona (E1) y sin aportes de Renato en la Entrega 2 (E2) | Trabajo repartido por dominio: A, IA y panel del arrendatario; B, calendario y suite Selenium; C, webhook de Stripe, confirmación automática y revisión del CI | [Metodología de trabajo](#metodología-de-trabajo) |
 | Sin JIRA (E1) | Seguimos con los issues y milestones de GitHub como tablero Kanban, cada tarea con criterios, responsable y estimación en horas | [Milestone «Entrega 3»](https://github.com/AlejandroMG/inf331-equipo-3/milestone/8) |
 | Foco CI/CD con poco aporte y sin una justificación sólida frente a Jenkins (E2) | Comparación criterio por criterio, y tres etapas nuevas: «E2E (Selenium)», «Empaquetar» y el reporte de pruebas como check | [Por qué GitHub Actions y no Jenkins](#por-qué-github-actions-y-no-jenkins), [El pipeline](#el-pipeline) |
-| Para la Entrega 3: empaquetado o deploy en el pipeline (E2) | Job «Empaquetar»: si todas las pruebas pasan, genera los paquetes del back y del front con un manifiesto. No desplegamos porque no hay un ambiente definido (P-17) | Artefacto `rentsmart-paquetes` de cada ejecución |
+| Para la Entrega 3: empaquetado o deploy en el pipeline (E2) | Job «Empaquetar»: si todas las pruebas pasan, genera los paquetes del back y del front con un manifiesto. Además, el despliegue en una VM de Azure con Docker Compose y un workflow de CD que despliega en cada merge a `main` (QA-03, P-17); probado en local, en Azure falta crear la VM | Artefacto `rentsmart-paquetes` de cada ejecución, [Despliegue continuo](#despliegue-continuo) |
 | Para la Entrega 3: reportes de pruebas publicados (E2) | Resumen en cada ejecución, check «Reporte E2E (Selenium)» con el resultado de cada prueba, y artefactos con el reporte HTML, el JUnit y los screenshots | [Evidencias](#evidencias) |
 | Notificación a Discord sin paso en el workflow ni capturas (E2) | Documentamos la integración de GitHub con Discord, que avisa el resultado de cada job, con capturas de una ejecución en verde y una en rojo. Además, un job `notify` opcional con el resultado global | [Notificaciones a Discord](#notificaciones-a-discord) |
 | Trazabilidad: badge, historial y capturas (E2) | Badges del CI de `develop` y `main` en el README, enlaces a ejecuciones verde y roja, y capturas en esta página | README, [Evidencias](#evidencias) |
 | El README no se actualizó: seguía «Estado de la Entrega 1», sin video E2 ni badge (E2) | README con el estado de la Entrega 3, videos, releases, badges y la evolución de pruebas y cobertura | README |
 | Las notas del release v2 decían que los reembolsos quedaban para después, y el CHANGELOG no se actualizó (E2) | CHANGELOG con las entradas v2 (con la corrección) y v3; las notas del release v3 repiten la corrección | `CHANGELOG.md`, release `v3.0-entrega3` |
-| El PR #144 se mergeó sin revisión y con el CI corriendo; `develop` sin proteger (E2) | Desde el 19 de noviembre, el ruleset «Protect main and Develop» exige en `develop` un PR con una aprobación y los checks Backend y Frontend en verde. Antes de crearlo, esta semana todavía se mergearon PRs sin revisión (#148 y #155 a #158). Falta agregar los checks E2E al ruleset | Settings → Rules del repositorio, [Metodología de trabajo](#metodología-de-trabajo) |
+| El PR #144 se mergeó sin revisión y con el CI corriendo; `develop` sin proteger (E2) | Desde el 19 de noviembre, el ruleset «Protect main and Develop» exige en `develop` un PR con una aprobación y los checks Backend y Frontend en verde. Antes de crearlo, esta semana todavía se mergearon PRs sin revisión (#148 y #155 a #158). Después se sumaron como obligatorios los checks «E2E (Playwright)» y «E2E (Selenium)» | Settings → Rules del repositorio, [Metodología de trabajo](#metodología-de-trabajo) |
 | Explicar en la documentación «cómo lo arreglamos» (E2) | Once problemas, cada uno con qué pasó, cómo lo detectamos y cómo lo arreglamos | [Problemas encontrados y soluciones](#problemas-encontrados-y-soluciones) |
 
 ## Herramienta E2E elegida
@@ -130,7 +132,7 @@ La pauta propone Jenkins y acepta GitHub Actions bien justificado. Lo evaluamos 
 | Costo para el equipo | Horas de instalación, actualizaciones de plugins y un servidor | Gratis en un repositorio público |
 | Dónde se ve el pipeline | Otra herramienta, con su propio acceso | En el mismo repositorio que revisa el profesor |
 
-Lo que pide la pauta de Jenkins se cumple igual: el pipeline se gatilla solo, tiene etapas explícitas (lint, pruebas, build, E2E y empaquetado), falla ante cualquier error, deja historial y logs, y avisa el resultado al canal del equipo.
+Lo que pide la pauta de Jenkins se cumple igual: el pipeline se gatilla solo, tiene etapas explícitas (lint, pruebas, build, E2E, empaquetado y despliegue), falla ante cualquier error, deja historial y logs, y avisa el resultado al canal del equipo.
 
 ### El pipeline
 
@@ -153,14 +155,23 @@ Está en [`.github/workflows/ci.yml`](../.github/workflows/ci.yml). Se gatilla c
 5. Instala `e2e-selenium` y corre `npm test` en Chrome headless.
 6. Escribe el resumen en la ejecución, sube los artefactos y publica el reporte como el check «Reporte E2E (Selenium)», con el resultado de cada prueba.
 
-**OK o FAIL:** `npm test` termina con código distinto de cero si falla una prueba, el job queda en rojo y el check del PR también. El ruleset de `main` y `develop` no deja mergear con «Backend (NestJS)» o «Frontend (React)» en rojo; falta sumar ahí «E2E (Playwright)» y «E2E (Selenium)».
+**OK o FAIL:** `npm test` termina con código distinto de cero si falla una prueba, el job queda en rojo y el check del PR también. El ruleset de `main` y `develop` no deja mergear si «Backend (NestJS)», «Frontend (React)», «E2E (Playwright)» o «E2E (Selenium)» están en rojo.
 
 **Empaquetado.** El job «Empaquetar» deja el artefacto `rentsmart-paquetes`, que dura 30 días:
 - `rentsmart-back-<versión>.tar.gz`: código compilado, `package.json`, `package-lock.json` y migraciones. En un servidor se instala con `npm ci --omit=dev && npx prisma migrate deploy && node dist/main.js`.
 - `rentsmart-front-<versión>.tar.gz`: archivos estáticos para cualquier servidor web.
 - `manifiesto.txt`: versión, commit, rama, fecha y la URL de la API con que se compiló el front. La variable de repositorio `PACKAGE_API_URL` fija esa URL para un ambiente real.
 
-El paso siguiente sería desplegar esos paquetes. No lo hicimos porque el ramo no definió un ambiente (P-17).
+### Despliegue continuo
+
+El despliegue es de QA-03 (C, PR #161) y está decidido en P-17: la aplicación completa corre en una sola VM Linux de Azure con Docker Compose.
+
+- **`docker-compose.prod.yml`** levanta tres contenedores: PostgreSQL 17, la API (aplica las migraciones pendientes al arrancar) y Caddy, que sirve el front, reenvía `/api` y `/docs` a la API y saca solo el certificado HTTPS. Front y API quedan en el mismo origen, sin CORS.
+- **`.github/workflows/deploy.yml`** despliega en cada push a `main`, o a mano con *Run workflow*: entra por SSH a la VM, cambia el código a esa rama, reconstruye con `up -d --build --wait` y comprueba que `https://<dominio>/api/catalog` responda. Si la comprobación falla, el workflow queda en rojo.
+- **Secretos:** `DEPLOY_HOST`, `DEPLOY_USER` y `DEPLOY_SSH_KEY` en GitHub; las variables de la aplicación viven solo en `.env.prod` dentro de la VM (plantilla en `.env.prod.example`). Sin los secretos, el workflow termina sin hacer nada.
+- **Estado:** el stack de producción se probó en local (los tres contenedores sanos, migraciones, seed, front, API, Swagger y login a través de Caddy). Falta crear la VM en Azure y probar el workflow con HTTPS real. El paso a paso está en el README, sección «Desplegar en Azure».
+
+Así el pipeline completo queda en dos workflows: `ci.yml` prueba y empaqueta cada cambio, y `deploy.yml` publica lo que llega a `main`.
 
 **Variables:** `BASE_URL` (se fija en el workflow), `DATABASE_URL` y `JWT_SECRET` (solo para el CI; no son secretos reales), `PACKAGE_API_URL` (variable de repositorio, opcional) y `DISCORD_WEBHOOK_URL` (secreto, opcional).
 
@@ -225,14 +236,13 @@ Para cada problema: qué pasó, cómo lo detectamos y cómo lo arreglamos.
 - **Tablero Kanban y estimaciones:** usamos los issues y milestones de GitHub en vez de JIRA, como declaramos desde la Entrega 1. Las tareas de esta entrega están en el [milestone «Entrega 3»](https://github.com/AlejandroMG/inf331-equipo-3/milestone/8) (QA-05 a QA-08), cada una con criterios de aceptación, responsable y estimación en horas; las historias anteriores tienen estimación en puntos. El estado de cada tarea (abierta, con PR, cerrada) y sus criterios marcados muestran el avance.
 - **GitFlow:** cada historia en una rama `feature/<ID>-…` desde `develop`, con PR hacia `develop`; la entrega pasa a `main` por `release/v3.0-entrega3` con su tag.
 - **Revisión:** el PR #154 (Selenium) tuvo revisión de C con cambios pedidos, que se resolvieron antes de mergear. Reconocemos que esta semana se mergearon PRs sin revisión (#148 y #155 a #158) por el apuro de la entrega; para corregirlo, desde el 19 de noviembre el ruleset «Protect main and Develop» exige en `develop`, igual que en `main`, un PR con una aprobación y los checks de Backend y Frontend en verde.
-- **Reparto:** A hizo IA-01, IA-02 y el panel del arrendatario (PN-03); B, el calendario de disponibilidad (BU-06), la suite de Selenium y su integración al pipeline; C, la confirmación del pago por webhook (PA-02), la confirmación automática de reservas (RE-04) y la revisión del CI.
+- **Reparto:** A hizo IA-01, IA-02 y el panel del arrendatario (PN-03); B, el calendario de disponibilidad (BU-06), la suite de Selenium y su integración al pipeline; C, la confirmación del pago por webhook (PA-02), la confirmación automática de reservas (RE-04), la revisión del CI y el despliegue en Azure (QA-03).
 
 ## Pendientes y mejoras futuras
 
 - Pago con Stripe Checkout y confirmación automática de la reserva dentro del E2E (QA-01).
 - Cancelar una reserva desde la interfaz y su prueba BOK-04 (C).
-- Desplegar los paquetes que genera el pipeline en un ambiente (P-17).
+- Crear la VM de Azure, cargar los secretos `DEPLOY_*` y probar el despliegue real con HTTPS y el webhook de Stripe apuntando a ella (QA-03).
 - Una variable de entorno para subir el límite de login en el entorno de pruebas, para repetir la suite sin reiniciar la API (módulo `auth`, de A).
 - Recorrer en la interfaz los pasos 1 a 3 del formulario de publicar (datos, ubicación con el mapa y horario semanal); hoy se cargan por API y la prueba completa la foto y la publicación.
 - Ejecutar las pruebas a 375 px y en otros navegadores.
-- Hacer obligatorios «E2E (Playwright)» y «E2E (Selenium)» en el ruleset de `main` y `develop` (lo configura A, admin del repositorio).

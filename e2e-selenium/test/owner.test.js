@@ -1,5 +1,5 @@
 const assert = require('node:assert/strict');
-const { By, until, visible, click, type, heading, ariaLabel, field, open, loginViaApi, waitForPath, api } = require('../lib/helpers');
+const { By, until, visible, click, type, heading, ariaLabel, field, open, loginViaApi, waitForPath, texts, api } = require('../lib/helpers');
 const { USERS } = require('../lib/config');
 const { useBrowser } = require('../lib/session');
 
@@ -22,7 +22,7 @@ describe('Panel del propietario', function () {
     await open(driver, '/');
     await visible(driver, heading(2, 'Espacios disponibles'));
     await driver.wait(until.elementLocated(By.css('a[href^="/spaces/"] h3')), 10000);
-    return Promise.all((await driver.findElements(By.css('a[href^="/spaces/"] h3'))).map((el) => el.getText()));
+    return texts(driver, By.css('a[href^="/spaces/"] h3'));
   }
 
   it('OWN-01 «Mis espacios» lista los espacios del propietario y su resumen', async function () {
