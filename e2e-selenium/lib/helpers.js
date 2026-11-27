@@ -58,6 +58,23 @@ async function currentPath(driver) {
   return url.pathname + url.search;
 }
 
+/**
+ * Texto de todos los elementos que coinciden con el localizador. Si React vuelve a dibujar la lista mientras se lee
+ * (por ejemplo, al llegar los resultados de una búsqueda), Selenium pierde la referencia y lanza
+ * StaleElementReferenceError: en ese caso vuelve a buscar los elementos, hasta 5 veces.
+ */
+async function texts(driver, locator, tries = 5) {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      const elements = await driver.findElements(locator);
+      return await Promise.all(elements.map((element) => element.getText()));
+    } catch (error) {
+      if (error.name !== 'StaleElementReferenceError' || attempt >= tries) throw error;
+      await driver.sleep(200);
+    }
+  }
+}
+
 const waitForPath = (driver, pattern, timeout = WAIT_MS) =>
   driver.wait(async () => pattern.test(await currentPath(driver)), timeout, `La ruta no coincide con ${pattern}`);
 
@@ -81,5 +98,5 @@ async function loginViaApi(driver, email, password = SEED_PASSWORD) {
 
 module.exports = {
   By, until, Key, literal, visible, click, type, byName, button, link, heading, textOf, ariaLabel, field,
-  open, currentPath, waitForPath, loginViaUi, loginViaApi, api,
+  open, currentPath, waitForPath, texts, loginViaUi, loginViaApi, api,
 };

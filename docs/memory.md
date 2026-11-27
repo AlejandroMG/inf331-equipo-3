@@ -3817,6 +3817,7 @@ Grabar el video de la entrega, publicar su enlace y dejar listo el release `v3.0
 - Video grabado en cinco partes y unido con FFmpeg (fundido de 0,5 s entre partes): [https://youtu.be/BXYN_tfirII](https://youtu.be/BXYN_tfirII).
 - Enlace del video en `docs/entrega-3.md`, README, CHANGELOG, la Wiki (Inicio y Entrega 3) y las notas del release.
 - Conflicto del PR #161 en `docs/memory.md` resuelto conservando las dos entradas del 19-11.
+- CAT-02 falló una vez en el CI del #162 con `StaleElementReferenceError`: leía las tarjetas mientras React las redibujaba tras la búsqueda. Nuevo helper `texts()` en `e2e-selenium/lib/helpers.js` que vuelve a buscar los elementos si quedan obsoletos (hasta 5 veces); lo usan el catálogo y OWN.
 
 #### Decisiones y por qué
 | Decisión | Alternativas consideradas | Por qué se eligió |
